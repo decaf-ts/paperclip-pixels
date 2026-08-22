@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "decaf-mcp": {
+      "command": "node",
+      "args": [
+        "node_modules/@decaf-ts/mcp-server/dist/mcp-server.cjs",
+        "start"
+      ],
+      "cwd": ".",
+      "env": {
+        "JIRA__HOST": "${JIRA__HOST}",
+        "JIRA__EMAIL": "${JIRA__EMAIL}",
+        "JIRA__PROJECT_KEY": "${JIRA__PROJECT_KEY}",
+        "ENCRYPTION_KEY": "${ENCRYPTION_KEY}",
+        "JIRA__API_KEY": "${JIRA__API_KEY}",
+        "XRAY__API_USER": "${XRAY__API_USER}",
+        "XRAY__API_SECRET": "${XRAY__API_SECRET}"
+      }
+    }
+  }
+}

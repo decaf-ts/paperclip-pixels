@@ -11,3 +11,4 @@
 /.token
 /.npmtoken
 /node_modules
+/.env

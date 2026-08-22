@@ -1,0 +1,24 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp@latest"],
+      "enabled": true
+    },
+    "decaf-mcp": {
+      "type": "local",
+      "command": ["node", "node_modules/@decaf-ts/mcp-server/dist/mcp-server.cjs", "start"],
+      "enabled": true,
+      "environment": {
+        "JIRA__HOST": "{env:JIRA__HOST}",
+        "JIRA__EMAIL": "{env:JIRA__EMAIL}",
+        "JIRA__PROJECT_KEY": "{env:JIRA__PROJECT_KEY}",
+        "ENCRYPTION_KEY": "{env:ENCRYPTION_KEY}",
+        "JIRA__API_KEY": "{env:JIRA__API_KEY}",
+        "XRAY__API_USER": "{env:XRAY__API_USER}",
+        "XRAY__API_SECRET": "{env:XRAY__API_SECRET}"
+      }
+    }
+  }
+}

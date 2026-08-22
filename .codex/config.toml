@@ -1,0 +1,8 @@
+[mcp_servers.decaf-mcp]
+command="node"
+args=["./node_modules/@decaf-ts/mcp-server/dist/mcp-server.cjs","start"]
+cwd="."
+# Pass these through by name from the host/shell environment -- no values
+# live in this file. Source .env before running codex (e.g.
+# `set -a && source .env && set +a`) so these are actually populated.
+env_vars=["JIRA__HOST","JIRA__EMAIL","JIRA__PROJECT_KEY","ENCRYPTION_KEY","JIRA__API_KEY","XRAY__API_USER","XRAY__API_SECRET"]
