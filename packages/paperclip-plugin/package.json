@@ -1,0 +1,48 @@
+{
+  "name": "@paperclip-pixel/paperclip-plugin",
+  "version": "0.1.0",
+  "description": "Paperclip host integration worker for the Paperclip <-> Pixel Agents bridge: manifest, event subscriptions, snapshot bootstrap, plugin state, worker->UI bridge, and action policy wiring.",
+  "private": true,
+  "type": "module",
+  "main": "dist/worker.js",
+  "types": "dist/worker.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/worker.js",
+      "types": "./dist/worker.d.ts"
+    },
+    "./manifest": {
+      "import": "./dist/manifest.js",
+      "types": "./dist/manifest.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "rimraf ./dist && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:ui": "tsc -p tsconfig.test.json --noEmit",
+    "lint": "eslint .",
+    "lint-fix": "eslint --fix .",
+    "test": "jest --config jest.config.ts",
+    "test:watch": "jest --config jest.config.ts --watch",
+    "test:worker": "vitest run"
+  },
+  "keywords": [
+    "paperclip",
+    "pixel-agents",
+    "bridge",
+    "plugin",
+    "worker"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@paperclip-pixel/core": "^0.1.0",
+    "@paperclipai/plugin-sdk": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@paperclipai/plugin-sdk": "workspace:*",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}

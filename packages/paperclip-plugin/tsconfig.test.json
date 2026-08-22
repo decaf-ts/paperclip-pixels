@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "noImplicitAny": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@paperclipai/plugin-sdk/ui": ["src/ui/test-utils/sdk-ui.ts"],
+      "@paperclip-pixel/core": ["../core/dist/index.d.ts"]
+    }
+  },
+  "include": ["src/ui/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,0 +1,46 @@
+{
+  "name": "@paperclip-pixel/pixel-agents-provider",
+  "version": "0.1.0",
+  "description": "Paperclip <-> Pixel Agents bridge adapter: maps only semantically valid current bridge events into current Pixel Agents AgentEvent semantics, retaining richer behavior in a sidecar (spec PAPERCLIP_PIXELS-1, Phases 6-7, sections 7.3/21).",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "rimraf ./dist && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "lint-fix": "eslint --fix .",
+    "test": "jest --testPathPattern=\"/test/.*\\.(test|spec)\\.ts$\" --detectOpenHandles",
+    "test:coverage": "jest --coverage --testPathPattern=\"/test/.*\\.(test|spec)\\.ts$\" --detectOpenHandles"
+  },
+  "keywords": [
+    "paperclip",
+    "pixel-agents",
+    "bridge",
+    "adapter",
+    "provider",
+    "sidecar"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@paperclip-pixel/core": "file:../core"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.12.0",
+    "@types/jest": "^29.5.13",
+    "eslint": "^9.12.0",
+    "eslint-config-prettier": "^9.1.0",
+    "jest": "^29.7.0",
+    "rimraf": "^6.0.1",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.10.0"
+  }
+}
