@@ -1,0 +1,54 @@
+# syntax=docker/dockerfile:1
+#
+# Paperclip Pixel Agents bridge host.
+#
+# Derived from the published Paperclip host image so we reuse the (heavy)
+# upstream build instead of rebuilding the host from source. The only things
+# added on top are:
+#   1. The built Paperclip-Pixel bridge plugin at /opt/paperclip-pixel-plugin
+#      (installed into the running instance at first boot by the entrypoint).
+#   2. A custom entrypoint (docker/bridge-stack-entrypoint.sh) that performs a
+#      one-shot loopback `local_trusted` bootstrap to install the local plugin
+#      with no auth, then `exec`s the real authenticated/lan server.
+#
+# Build:
+#   docker build -t paperclip-pixel-host:local -f docker/Dockerfile.paperclip-pixel-host .
+#
+# For exact-submodule-commit fidelity, replace the base image with one built
+# from the paperclip submodule:
+#   docker build -t paperclip:local ./paperclip
+#   docker tag paperclip:local ghcr.io/paperclipai/paperclip:latest
+# (then rebuild this Dockerfile).
+
+ARG PAPERCLIP_BASE=ghcr.io/paperclipai/paperclip:latest
+FROM ${PAPERCLIP_BASE}
+
+USER root
+
+# Assemble a self-contained copy of the bridge plugin. The committed plugin
+# uses bare `tsc` (no bundling) and does not vendor its runtime deps, so the
+# forked worker cannot resolve @paperclip-pixel/core / @paperclipai/plugin-sdk
+# / zod from its install location. We vendor them here as real files so the
+# install + manifest load at least succeed. See deploy/README.md "Known
+# limitations" for the residual worker-runtime defects that still block the
+# worker from staying up.
+COPY deploy/docker/build-plugin-bundle.sh /tmp/build-plugin-bundle.sh
+COPY packages/paperclip-plugin  /tmp/src/paperclip-plugin
+COPY packages/core              /tmp/src/core
+COPY paperclip/packages/plugins/sdk   /tmp/src/plugin-sdk
+COPY paperclip/packages/shared        /tmp/src/shared
+
+RUN /tmp/build-plugin-bundle.sh /opt/paperclip-pixel-plugin \
+    && rm -rf /tmp/src /tmp/build-plugin-bundle.sh
+
+COPY deploy/docker/bridge-stack-entrypoint.sh /usr/local/bin/bridge-stack-entrypoint.sh
+RUN chmod +x /usr/local/bin/bridge-stack-entrypoint.sh
+
+# Resolve volume ownership for the non-root UID the upstream entrypoint drops
+# to. /paperclip arrives root-owned from a fresh PVC.
+RUN mkdir -p /paperclip && chown -R node:node /paperclip /opt/paperclip-pixel-plugin
+
+USER node
+
+ENTRYPOINT ["/usr/local/bin/bridge-stack-entrypoint.sh"]
+CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]

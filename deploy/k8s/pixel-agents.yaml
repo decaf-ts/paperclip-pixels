@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pixel-agents
+  namespace: paperclip-pixels
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: pixel-agents }
+  template:
+    metadata:
+      labels: { app: pixel-agents }
+    spec:
+      containers:
+        - name: pixel-agents
+          # Built locally from docker/Dockerfile.pixel-agents and loaded into
+          # minikube with `minikube image load`. Never pulled from a registry.
+          image: pixel-agents:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+              name: http
+          # The standalone CLI takes --host/--port flags (no env override).
+          # Bind 0.0.0.0 so it is reachable via the pod IP / port-forward
+          # (the CLI default 127.0.0.1 is unreachable in k8s).
+          args: ["--host", "0.0.0.0", "--port", "8080"]
+          readinessProbe:
+            httpGet: { path: /api/health, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 18
+          livenessProbe:
+            httpGet: { path: /api/health, port: 8080 }
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 1Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pixel-agents
+  namespace: paperclip-pixels
+spec:
+  selector: { app: pixel-agents }
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http

@@ -75,4 +75,8 @@ export const MANIFEST_CAPABILITIES = [
   "agent.sessions.send",
   "agent.sessions.close",
   "ui.page.register",
+  // Required by the host's plugin-capability-validator: any non-empty
+  // manifest.jobs requires the `jobs.schedule` capability to be declared.
+  // The bridge schedules the `bridge-reconcile` job (see manifest.ts).
+  "jobs.schedule",
 ] as const;

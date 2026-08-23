@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: paperclip-secrets
+  namespace: paperclip-pixels
+type: Opaque
+stringData:
+  # Required by the Paperclip host (Better Auth). Change for any non-local use.
+  BETTER_AUTH_SECRET: paperclip-pixels-dev-auth-secret-change-me
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: paperclip-data
+  namespace: paperclip-pixels
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: paperclip
+  namespace: paperclip-pixels
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: paperclip }
+  template:
+    metadata:
+      labels: { app: paperclip }
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      initContainers:
+        # Waits for Postgres to accept connections before the host starts.
+        - name: wait-for-db
+          image: postgres:17-alpine
+          command:
+            - sh
+            - -c
+            - "until pg_isready -h postgres -U paperclip -d paperclip; do echo waiting for postgres; sleep 2; done"
+      containers:
+        - name: paperclip
+          # Built locally from docker/Dockerfile.paperclip-pixel-host and loaded
+          # into minikube with `minikube image load`. Never pulled from a registry.
+          image: paperclip-pixel-host:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 3100
+              name: http
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "3100"
+            - name: SERVE_UI
+              value: "true"
+            # lan bind so kubelet probes / port-forward / sibling pods can reach
+            # the listener via the pod IP (loopback bind is unreachable in k8s).
+            - name: PAPERCLIP_BIND
+              value: "lan"
+            - name: PAPERCLIP_DEPLOYMENT_MODE
+              value: "authenticated"
+            - name: PAPERCLIP_DEPLOYMENT_EXPOSURE
+              value: "private"
+            - name: PAPERCLIP_PUBLIC_URL
+              value: "http://localhost:3100"
+            - name: PAPERCLIP_HOME
+              value: "/paperclip"
+            - name: PAPERCLIP_INSTANCE_ID
+              value: "default"
+            - name: PAPERCLIP_CONFIG
+              value: "/paperclip/instances/default/config.json"
+            - name: PAPERCLIP_MIGRATION_AUTO_APPLY
+              value: "true"
+            - name: NODE_ENV
+              value: "production"
+            # The loopback bootstrap subprocess (plugin install) runs on this
+            # alternate port so it does not clash with the main listener.
+            - name: PAPERCLIP_BOOTSTRAP_PORT
+              value: "3101"
+            # Local path of the baked-in bridge plugin, installed at first boot
+            # by the loopback bootstrap (local_trusted = no-auth admin).
+            - name: PAPERCLIP_PIXEL_PLUGIN_PATH
+              value: "/opt/paperclip-pixel-plugin"
+          envFrom:
+            - secretRef: { name: postgres-credentials }
+            - secretRef: { name: paperclip-secrets }
+          volumeMounts:
+            - name: data
+              mountPath: /paperclip
+          # In authenticated/private exposure the /api/health endpoint returns
+          # 403 for non-loopback callers (kubelet probes hit the pod IP, not
+          # 127.0.0.1).  Use a TCP socket probe instead — if the port accepts a
+          # connection the server is up.
+          readinessProbe:
+            tcpSocket: { port: 3100 }
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            tcpSocket: { port: 3100 }
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { cpu: "2", memory: 2Gi }
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: paperclip-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: paperclip
+  namespace: paperclip-pixels
+spec:
+  selector: { app: paperclip }
+  ports:
+    - port: 3100
+      targetPort: 3100
+      name: http

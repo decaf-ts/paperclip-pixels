@@ -1,0 +1,78 @@
+# Docker-compose fallback for the Paperclip Pixel Agents bridge stack.
+#
+# Use this when minikube/k8s is unavailable. It mirrors the k8s manifests in
+# deploy/k8s/ one-to-one. Build the images first:
+#
+#   docker build -t paperclip-pixel-host:local \
+#     -f deploy/docker/Dockerfile.paperclip-pixel-host .
+#   docker build -t pixel-agents:local \
+#     -f deploy/docker/Dockerfile.pixel-agents .
+#
+# Then:
+#   PAPERCLIP_AUTH_SECRET=$(openssl rand -hex 32) \
+#     docker compose -f deploy/docker/docker-compose.bridge-stack.yml up
+#
+# Reach the UIs:
+#   Paperclip:   http://localhost:3100
+#   Pixel Agents: http://localhost:8080
+#
+# NOTE: the Paperclip host runs in `authenticated` mode. The bridge plugin is
+# installed at first boot by the loopback-bootstrap entrypoint baked into the
+# paperclip-pixel-host image (no manual admin step). See deploy/README.md.
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: paperclip
+      POSTGRES_PASSWORD: paperclip
+      POSTGRES_DB: paperclip
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paperclip -d paperclip"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  paperclip:
+    image: paperclip-pixel-host:local
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.paperclip-pixel-host
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3100:3100"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3100"
+      SERVE_UI: "true"
+      PAPERCLIP_BIND: "lan"
+      PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
+      PAPERCLIP_PUBLIC_URL: "http://localhost:3100"
+      PAPERCLIP_HOME: "/paperclip"
+      PAPERCLIP_INSTANCE_ID: "default"
+      PAPERCLIP_CONFIG: "/paperclip/instances/default/config.json"
+      PAPERCLIP_MIGRATION_AUTO_APPLY: "true"
+      PAPERCLIP_BOOTSTRAP_PORT: "3101"
+      PAPERCLIP_PIXEL_PLUGIN_PATH: "/opt/paperclip-pixel-plugin"
+      DATABASE_URL: "postgres://paperclip:paperclip@db:5432/paperclip"
+      BETTER_AUTH_SECRET: "${PAPERCLIP_AUTH_SECRET:?set PAPERCLIP_AUTH_SECRET}"
+    volumes:
+      - paperclip-data:/paperclip
+
+  pixel-agents:
+    image: pixel-agents:local
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.pixel-agents
+    ports:
+      - "8080:8080"
+    command: ["--host", "0.0.0.0", "--port", "8080"]
+
+volumes:
+  pgdata:
+  paperclip-data:

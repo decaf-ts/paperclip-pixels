@@ -1,0 +1,40 @@
+# Exclude everything heavy that neither Dockerfile needs. The build context
+# otherwise balloons to multiple GB (pnpm/npm node_modules across the repo +
+# submodules) and the daemon rejects it.
+**/node_modules
+**/.git
+**/node_modules/.cache
+**/.turbo
+**/.next
+**/coverage
+**/.nyc_output
+**/dist-web
+**/build
+
+# Keep built `dist/` for the bridge packages the host image vendores:
+#   packages/core/dist, packages/paperclip-plugin/dist,
+#   paperclip/packages/plugins/sdk/dist, paperclip/packages/shared/dist
+# (these are NOT under node_modules, so the rule above does not touch them).
+
+# Paperclip submodule: only packages/plugins/sdk and packages/shared are
+# COPYed by the host Dockerfile. Drop the rest of the (very large) submodule.
+paperclip/server
+paperclip/cli
+paperclip/packages/plugins/create-paperclip-plugin
+paperclip/packages/plugins/examples
+paperclip/packages/plugins/sandbox-providers
+paperclip/packages/plugins/plugin-*
+paperclip/evals
+paperclip/doc
+paperclip/docs
+paperclip/design
+paperclip/patches
+paperclip/docker
+paperclip/.changeset
+
+# Pixel Agents: the pixel-agents Dockerfile copies only the dirs it needs;
+# drop the rest of the submodule to keep context small.
+pixel-agents/.changeset
+pixel-agents/.git
+pixel-agents/e2e
+pixel-agents/docs

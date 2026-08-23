@@ -1,0 +1,52 @@
+# syntax=docker/dockerfile:1
+#
+# Pixel Agents standalone server (SPA + WebSocket + hook ingest endpoint).
+# The upstream submodule ships no Dockerfile, so this builds the standalone
+# CLI from source. Runtime serves the React webview + /ws + /api/hooks/:id +
+# /api/health.
+#
+# Build (from the repo root, with the pixel-agents submodule initialized):
+#   docker build -t pixel-agents:local -f deploy/docker/Dockerfile.pixel-agents .
+#
+# Run:  docker run --rm -p 8080:8080 pixel-agents:local --host 0.0.0.0 --port 8080
+# (the CLI takes --host/--port flags; there is no env override.)
+
+FROM node:22-bookworm-slim AS builder
+WORKDIR /build
+
+# Copy the submodule (with its lockfile) and install all workspace deps.
+COPY pixel-agents/package.json pixel-agents/package-lock.json ./
+COPY pixel-agents/server ./server
+COPY pixel-agents/webview-ui ./webview-ui
+COPY pixel-agents/core ./core
+COPY pixel-agents/adapters ./adapters
+COPY pixel-agents/scripts ./scripts
+COPY pixel-agents/esbuild.js pixel-agents/tsconfig.json pixel-agents/eslint.config.mjs ./
+
+RUN npm ci --ignore-scripts
+
+# Produce runtime artifacts only (skip dev gates: check-types / lint).
+RUN npm run asyncapi:generate || true
+RUN node esbuild.js
+RUN cd webview-ui && npm run build
+
+# --- runtime stage ---
+FROM node:22-bookworm-slim AS runtime
+WORKDIR /app
+
+# The server reads its dist from the cwd's dist/ and serves dist/webview/.
+# esbuild externalizes node_modules, so the runtime stage needs the server's
+# runtime deps (fastify + plugins) alongside the bundle.
+COPY --from=builder /build/dist ./dist
+COPY --from=builder /build/package.json ./package.json
+COPY --from=builder /build/node_modules ./node_modules
+
+# Pixel Agents persists server registry + layout under ~/.pixel-agents/.
+RUN mkdir -p /home/node/.pixel-agents && chown -R node:node /home/node /app
+
+USER node
+ENV HOME=/home/node
+
+EXPOSE 8080
+ENTRYPOINT ["node", "dist/cli.js"]
+CMD ["--host", "0.0.0.0", "--port", "8080"]
