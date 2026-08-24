@@ -262,9 +262,9 @@ describe("Pixel bridge live integration (real Paperclip host, not mocks)", () =>
       const issue = snap.issues.find((i: any) => i.id === fixtures.issue1Id);
       expect(issue).toBeDefined();
       expect(issue.assigneeAgentId).toBe(fixtures.agentId);
-      const agent = snap.agents.find((a: any) => a.agentId === fixtures.agentId);
+      const agent = snap.agents.find((a: any) => a.projection?.agentId === fixtures.agentId);
       expect(agent).toBeDefined();
-      expect(agent.assignedIssues.map((i: any) => i.issueId)).toContain(fixtures.issue1Id);
+      expect(agent.projection.assignedIssues.map((i: any) => i.issueId)).toContain(fixtures.issue1Id);
     }, 60000);
 
     test("real agent.run.started (and .failed terminal) flow through the reducer", async () => {
@@ -273,8 +273,8 @@ describe("Pixel bridge live integration (real Paperclip host, not mocks)", () =>
       await waitFor(async () => {
         const s = await getData<any>(fixtures.pluginId, "bridge-snapshot", fixtures.companyId);
         if (!s || s.error) return null;
-        const agent = s.agents.find((a: any) => a.agentId === fixtures.agentId);
-        const kinds = (agent?.recentEvents ?? []).map((e: any) => e.kind);
+        const agent = s.agents.find((a: any) => a.projection?.agentId === fixtures.agentId);
+        const kinds = (agent?.projection?.recentEvents ?? []).map((e: any) => e.kind);
         return kinds.includes("agent.run.started") ? s : null;
       }, 20000);
 
@@ -297,8 +297,8 @@ describe("Pixel bridge live integration (real Paperclip host, not mocks)", () =>
       await waitFor(async () => {
         const s = await getData<any>(fixtures.pluginId, "bridge-snapshot", fixtures.companyId);
         if (!s || s.error) return null;
-        const a = s.agents.find((x: any) => x.agentId === fixtures.agentId);
-        return a && a.activeRunCount === 0 ? s : null;
+        const a = s.agents.find((x: any) => x.projection?.agentId === fixtures.agentId);
+        return a && a.projection.activeRunCount === 0 ? s : null;
       }, 20000);
     }, 90000);
 
@@ -649,13 +649,13 @@ describe("Pixel bridge live integration (real Paperclip host, not mocks)", () =>
       await waitFor(async () => {
         const s = await getData<any>(fixtures.pluginId, "bridge-snapshot", fixtures.companyId);
         if (!s || s.error) return null;
-        const agent = s.agents.find((a: any) => a.agentId === fixtures.agentId);
-        const evs = (agent?.recentEvents ?? []).filter((e: any) => e.eventId === eventId);
+        const agent = s.agents.find((a: any) => a.projection?.agentId === fixtures.agentId);
+        const evs = (agent?.projection?.recentEvents ?? []).filter((e: any) => e.eventId === eventId);
         return evs.length === 1 ? s : null;
       }, 15000);
       const snap = await getData<any>(fixtures.pluginId, "bridge-snapshot", fixtures.companyId);
-      const agent = snap.agents.find((a: any) => a.agentId === fixtures.agentId);
-      const evMatches = (agent?.recentEvents ?? []).filter((e: any) => e.eventId === eventId);
+      const agent = snap.agents.find((a: any) => a.projection?.agentId === fixtures.agentId);
+      const evMatches = (agent?.projection?.recentEvents ?? []).filter((e: any) => e.eventId === eventId);
       expect(evMatches.length).toBe(1); // deduped — not double-counted
     }, 60000);
 

@@ -5,7 +5,11 @@ import {
   type BehaviorChangedEvent,
   type BridgeUiEvent,
   BRIDGE_SCHEMA_VERSION,
+  TIME_WINDOWS,
+  type TimeWindow,
+  type WindowedMetrics,
 } from "@paperclip-pixel/core";
+import type { BridgeAgentView, BridgeCompanySnapshot } from "./ui/bridge-contract.js";
 import manifest from "./manifest.js";
 import {
   DATA_KEYS,
@@ -23,11 +27,66 @@ import {
   persistSchemaVersion,
 } from "./persistence.js";
 import { registerActions } from "./actions.js";
+import { BridgeRelay } from "./relay.js";
+
+/**
+ * A valid `pixelAgentsTokenRef` is either the shared
+ * `{ type: "secret_ref", secretId, version? }` binding produced by the host's
+ * secret-ref config field, or a legacy non-empty string ref. Anything else is
+ * rejected by `onValidateConfig` so a malformed stored ref surfaces at validate
+ * time rather than as a runtime resolution error.
+ */
+/**
+ * Validates that a token reference is either a non‑empty string or a secret‑ref binding.
+ * Used by configuration validation to ensure the bearer token is supplied correctly.
+ */
+function isValidTokenRef(value: unknown): boolean {
+  if (typeof value === "string") return value.trim().length > 0;
+  return (
+    typeof value === "object"
+    && value !== null
+    && !Array.isArray(value)
+    && (value as { type?: unknown }).type === "secret_ref"
+    && typeof (value as { secretId?: unknown }).secretId === "string"
+  );
+}
 
 interface CompanyRuntime {
   store: BridgeStore;
   companyId: string;
   leadershipAgentId?: string;
+}
+
+/**
+ * Composes the UI-view `BridgeCompanySnapshot` served by the `bridge-snapshot`
+ * data handler (spec §15) from the authoritative `BridgeStore`. The store's
+ * `RawSnapshot` is a persistence-centric projection; the UI contract carries
+ * `summary`, per-agent `BridgeAgentView` entries (projection + full
+ * TIME_WINDOWS metrics + behavior vector FR-3/FR-4), and outstanding
+ * `feedback`. Composing here keeps core free of UI-view types while honoring
+ * the canonical UI contract for every host that consumes `bridge-snapshot`.
+ */
+function buildCompanySnapshot(rt: CompanyRuntime): BridgeCompanySnapshot {
+  const raw = rt.store.getRawSnapshot();
+  const agents: BridgeAgentView[] = raw.agents.map((projection) => ({
+    projection,
+    metrics: Object.fromEntries(
+      TIME_WINDOWS.map((window) => [window, rt.store.getWindowedMetrics(projection.agentId, window)] as const),
+    ) as Record<TimeWindow, WindowedMetrics>,
+    behavior: rt.store.getBehaviorVector(projection.agentId),
+  }));
+  return {
+    schemaVersion: BRIDGE_SCHEMA_VERSION,
+    company: raw.company ?? { id: rt.companyId, name: rt.companyId },
+    summary: rt.store.getCompanySummary(),
+    agents,
+    issues: raw.issues,
+    projects: raw.projects,
+    approvals: raw.approvals,
+    feedback: rt.store.getOutstandingFeedback(rt.companyId),
+    observedAt: raw.observedAt,
+    lastReconciledAt: raw.lastReconciledAt,
+  };
 }
 
 class BridgeRuntime {
@@ -105,7 +164,7 @@ class BridgeRuntime {
   }
 }
 
-async function setupCompany(ctx: PluginContext, runtime: BridgeRuntime, companyId: string): Promise<CompanyRuntime> {
+async function setupCompany(ctx: PluginContext, runtime: BridgeRuntime, companyId: string, relay: BridgeRelay): Promise<CompanyRuntime> {
   const restoredBuckets = await loadCompactBuckets(ctx, companyId);
   const rt = runtime.getOrCreateCompany(companyId);
   if (restoredBuckets) {
@@ -115,18 +174,33 @@ async function setupCompany(ctx: PluginContext, runtime: BridgeRuntime, companyI
   const result = await bootstrapSnapshot(ctx, companyId);
   rt.store.replaceAuthoritativeSnapshot(result.snapshot);
 
+  // Open the company-scoped behavior stream channel so the SDK's
+  // channelCompanyMap is populated for subsequent emit() calls (spec §16).
   ctx.streams.open(behaviorChannel(companyId), companyId);
 
   rt.store.on("agentBehaviorChanged", (change) => {
     runtime.emitBehaviorChange(change);
   });
 
-  runtime.emitBridgeEvent(companyId, "bridge.snapshot.loaded", rt.store.getRawSnapshot());
+  runtime.emitBridgeEvent(companyId, "bridge.snapshot.loaded", buildCompanySnapshot(rt));
+
+  // Configure this company's bridge relay from its operator plugin config and
+  // seed it with the authoritative snapshot (spawns a character per agent).
+  try {
+    const companyConfig = await ctx.config.get(companyId);
+    await relay.configure(companyId, companyConfig);
+    relay.ingestSnapshot(companyId, result.snapshot);
+  } catch (err) {
+    ctx.logger.warn("Bridge relay setup failed for company", {
+      companyId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   return rt;
 }
 
-async function reconcileCompany(ctx: PluginContext, runtime: BridgeRuntime, companyId: string): Promise<void> {
+async function reconcileCompany(ctx: PluginContext, runtime: BridgeRuntime, companyId: string, relay: BridgeRelay): Promise<void> {
   const rt = runtime.getCompany(companyId);
   if (!rt) return;
   try {
@@ -138,6 +212,9 @@ async function reconcileCompany(ctx: PluginContext, runtime: BridgeRuntime, comp
         changedEntities: recon.changedEntities,
       });
     }
+    // Re-feed the authoritative snapshot so the relay sidecar resyncs and
+    // re-spawns any agents that appeared since the last reconciliation.
+    relay.ingestSnapshot(companyId, result.snapshot);
     ctx.logger.debug("Reconciliation complete", { companyId, changed: recon.changedEntities.length });
   } catch (err) {
     ctx.logger.warn("Reconciliation failed", {
@@ -146,6 +223,12 @@ async function reconcileCompany(ctx: PluginContext, runtime: BridgeRuntime, comp
     });
   }
 }
+
+// Module-level runtime singletons. The host forks one worker process per
+// plugin instance, so a single BridgeRuntime + BridgeRelay pair is correct.
+// They are assigned in `setup()` and read by the lifecycle hooks below.
+let runtime: BridgeRuntime | null = null;
+let relay: BridgeRelay | null = null;
 
 const plugin = definePlugin({
   async setup(ctx) {
@@ -156,34 +239,40 @@ const plugin = definePlugin({
 
     await persistSchemaVersion(ctx);
 
-    const runtime = new BridgeRuntime(ctx);
+    runtime = new BridgeRuntime(ctx);
+    relay = new BridgeRelay(ctx);
+    const localRuntime = runtime;
+    const localRelay = relay;
 
     const bootResults = await bootstrapAllCompanies(ctx);
     for (const br of bootResults) {
-      await setupCompany(ctx, runtime, br.companyId);
+      await setupCompany(ctx, localRuntime, br.companyId, localRelay);
     }
 
     for (const eventType of SUBSCRIBED_EVENT_TYPES) {
       ctx.events.on(eventType, async (event: PluginEvent) => {
         const companyId = event.companyId;
-        const rt = runtime.getCompany(companyId);
+        const rt = localRuntime.getCompany(companyId);
         if (!rt) {
           ctx.logger.debug("Event for unknown company, bootstrapping", { companyId });
           try {
-            await setupCompany(ctx, runtime, companyId);
+            await setupCompany(ctx, localRuntime, companyId, localRelay);
           } catch {
             ctx.logger.warn("Cannot bootstrap company for event", { companyId });
             return;
           }
         }
-        const rt2 = runtime.getCompany(companyId);
+        const rt2 = localRuntime.getCompany(companyId);
         if (!rt2) return;
 
         const bridgeEvent = mapPluginEvent(event);
         if (!bridgeEvent) return;
 
         await rt2.store.applyPaperclipEvent(bridgeEvent);
-        runtime.emitBridgeEvent(companyId, "bridge.event.received", {
+        // Forward the canonical event to the Pixel Agents relay (no-op when
+        // the company has no relay configured).
+        localRelay.ingestEvent(companyId, bridgeEvent);
+        localRuntime.emitBridgeEvent(companyId, "bridge.event.received", {
           eventId: event.eventId,
           eventType: event.eventType,
         });
@@ -191,8 +280,8 @@ const plugin = definePlugin({
     }
 
     ctx.jobs.register(JOB_KEYS.reconciliation, async () => {
-      for (const companyId of runtime.companies.keys()) {
-        await reconcileCompany(ctx, runtime, companyId);
+      for (const companyId of localRuntime.companies.keys()) {
+        await reconcileCompany(ctx, localRuntime, companyId, localRelay);
       }
     });
 
@@ -207,14 +296,14 @@ const plugin = definePlugin({
     // scoping assumption is the accepted V1 resolution for data handlers.
     ctx.data.register(DATA_KEYS.bridgeSnapshot, async (params) => {
       const companyId = String(params.companyId ?? "");
-      const rt = runtime.getCompany(companyId);
+      const rt = localRuntime.getCompany(companyId);
       if (!rt) return { schemaVersion: BRIDGE_SCHEMA_VERSION, error: "company-not-found" };
-      return rt.store.getRawSnapshot();
+      return buildCompanySnapshot(rt);
     });
 
     ctx.data.register(DATA_KEYS.companySummary, async (params) => {
       const companyId = String(params.companyId ?? "");
-      const rt = runtime.getCompany(companyId);
+      const rt = localRuntime.getCompany(companyId);
       if (!rt) return { schemaVersion: BRIDGE_SCHEMA_VERSION, error: "company-not-found" };
       return rt.store.getCompanySummary();
     });
@@ -222,14 +311,14 @@ const plugin = definePlugin({
     ctx.data.register(DATA_KEYS.agentBehavior, async (params) => {
       const companyId = String(params.companyId ?? "");
       const agentId = String(params.agentId ?? "");
-      const rt = runtime.getCompany(companyId);
+      const rt = localRuntime.getCompany(companyId);
       if (!rt) return { schemaVersion: BRIDGE_SCHEMA_VERSION, error: "company-not-found" };
       return rt.store.getBehaviorVector(agentId);
     });
 
     ctx.data.register(DATA_KEYS.outstandingFeedback, async (params) => {
       const companyId = String(params.companyId ?? "");
-      const rt = runtime.getCompany(companyId);
+      const rt = localRuntime.getCompany(companyId);
       if (!rt) return { schemaVersion: BRIDGE_SCHEMA_VERSION, error: "company-not-found" };
       return rt.store.getOutstandingFeedback(companyId);
     });
@@ -239,24 +328,127 @@ const plugin = definePlugin({
       // C1: feedback is resolved server-side from the company's BridgeStore
       // (state.feedback, keyed by feedback id), company-scoped by
       // getFeedbackById. The worker never held a parallel feedback map.
-      getFeedback: (cid, fid) => runtime.getCompany(cid)?.store.getFeedbackById(cid, fid),
-      getLeadershipAgentId: (cid) => runtime.getCompany(cid)?.leadershipAgentId,
+      getFeedback: (cid, fid) => localRuntime.getCompany(cid)?.store.getFeedbackById(cid, fid),
+      getLeadershipAgentId: (cid) => localRuntime.getCompany(cid)?.leadershipAgentId,
     });
 
-    runtime.startTimers();
+    localRuntime.startTimers();
   },
 
+  // The bridge bootstraps and relays state for every company the worker is
+  // configured for, keyed by companyId. Declaring multi-company support opts
+  // in to per-company configChanged delivery instead of single-tenant
+  // collapse/restart.
+  multiCompanyConfig: true,
+
+  /**
+   * Called when the operator config for a company changes.
+   * Reconfigures the {@link BridgeRelay} for the affected company based on the new
+   * configuration. Errors are caught and logged; they must not crash the worker.
+   *
+   * @param newConfig - Raw operator config object for the company.
+   * @param context - Context containing the `companyId` whose config changed.
+   */
+  async onConfigChanged(newConfig, context) {
+    // Reconfigure the relay for the company whose config changed. The relay
+    // disposes its prior transport and rebuilds from the new config; without
+    // a `pixelAgentsUrl` it disables itself for that company. Uses the
+    // delivered `newConfig` directly (no `ctx` is available in this hook).
+    const companyId = context?.companyId;
+    if (!companyId) return;
+    try {
+      await relay?.configure(companyId, newConfig);
+    } catch (err) {
+      // Best-effort: a config change must never crash the worker.
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[paperclip-pixel-bridge] relay reconfigure failed for ${companyId}: ${msg}`);
+    }
+  },
+
+  /**
+   * Validates the operator configuration for a company.
+   * Returns an object indicating overall validity and an optional array of error
+   * messages describing each validation failure.
+   *
+   * @param config - The raw config supplied by the operator.
+   * @returns An object `{ ok: boolean, errors?: string[] }` where `ok` is true when
+   *          the config passes all checks.
+   */
+  async onValidateConfig(config) {
+    const errors: string[] = [];
+    const url = config.pixelAgentsUrl;
+    let urlProtocol: string | null = null;
+    if (url != null) {
+      if (typeof url !== "string" || url.trim().length === 0) {
+        errors.push("pixelAgentsUrl must be a non-empty string when present");
+      } else {
+        try {
+          const parsed = new URL(url);
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+            errors.push("pixelAgentsUrl must be an http(s) URL");
+          } else {
+            urlProtocol = parsed.protocol;
+          }
+        } catch {
+          errors.push("pixelAgentsUrl is not a valid URL");
+        }
+      }
+    }
+    // M2 (fail-securely): a token must never travel over cleartext http:.
+    // Allow http: only for token-less sidecar-internal deployments.
+    const hasToken = config.pixelAgentsTokenRef != null;
+    if (hasToken && urlProtocol === "http:") {
+      errors.push("pixelAgentsUrl must be https: when pixelAgentsTokenRef is configured");
+    }
+    if (
+      config.pixelAgentsTokenRef != null
+      && !isValidTokenRef(config.pixelAgentsTokenRef)
+    ) {
+      errors.push("pixelAgentsTokenRef must be a secret_ref binding or non-empty string when present");
+    }
+    if (
+      config.pixelAgentsProviderId != null
+      && (typeof config.pixelAgentsProviderId !== "string"
+        || !/^[a-z0-9-]+$/.test(config.pixelAgentsProviderId))
+    ) {
+      errors.push("pixelAgentsProviderId must match ^[a-z0-9-]+$ when present");
+    }
+    if (
+      config.pixelAgentsRelayEnabled != null
+      && typeof config.pixelAgentsRelayEnabled !== "boolean"
+    ) {
+      errors.push("pixelAgentsRelayEnabled must be a boolean when present");
+    }
+    return { ok: errors.length === 0, errors: errors.length ? errors : undefined };
+  },
+
+  /**
+   * Provides health information for the worker process.
+   * Includes counts of companies bootstrapped and active relay connections.
+   *
+   * @returns An object describing the health status.
+   */
   async onHealth() {
+    const activeRelays = relay?.activeCompanyCount ?? 0;
     return {
       status: "ok" as const,
       message: "Bridge worker running",
-      details: {},
+      details: {
+        companies: runtime?.companies.size ?? 0,
+        relayCompanies: activeRelays,
+      },
     };
   },
 
+  /**
+   * Called during worker shutdown.
+   * Disposes all relay connections and allows timers to be cleared by the host.
+   */
   async onShutdown() {
-    // Timers are owned by the runtime instance; in a real process the host
-    // tears down the worker process. This hook documents intent.
+    // Dispose the relay's outbound connections. Timers are owned by the
+    // runtime instance; the host tears down the worker process after this
+    // hook resolves.
+    relay?.disposeAll();
   },
 });
 
