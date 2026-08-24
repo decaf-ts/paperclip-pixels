@@ -2,9 +2,12 @@ import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
 import {
   JOB_KEYS,
   MANIFEST_CAPABILITIES,
+  PIXEL_OFFICE_PAGE_ROUTE,
   PLUGIN_API_VERSION,
   PLUGIN_ID,
   PLUGIN_VERSION,
+  UI_EXPORT_NAMES,
+  UI_SLOT_IDS,
 } from "./constants.js";
 
 const manifest: PaperclipPluginManifestV1 = {
@@ -17,8 +20,30 @@ const manifest: PaperclipPluginManifestV1 = {
   author: "Paperclip",
   categories: ["ui", "automation", "connector"],
   capabilities: [...MANIFEST_CAPABILITIES],
+  /** Entrypoints for the plugin: worker script and UI bundle. */
   entrypoints: {
     worker: "./dist/worker.js",
+    ui: "./dist/ui",
+  },
+  /** UI slot configuration exposed to the host. */
+  ui: {
+    slots: [
+      {
+        /** Page slot for the Pixel Office page. */
+        type: "page",
+        id: UI_SLOT_IDS.page,
+        displayName: "Pixel Office",
+        exportName: UI_EXPORT_NAMES.page,
+        routePath: PIXEL_OFFICE_PAGE_ROUTE,
+      },
+      {
+        /** Sidebar slot for the Pixel Office sidebar component. */
+        type: "sidebar",
+        id: UI_SLOT_IDS.sidebar,
+        displayName: "Pixel Office",
+        exportName: UI_EXPORT_NAMES.sidebar,
+      },
+    ],
   },
   jobs: [
     {

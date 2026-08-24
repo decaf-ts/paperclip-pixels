@@ -28,6 +28,16 @@ Dockerfile).
 
 ```bash
 # from the repo root (submodules initialized: paperclip/, pixel-agents/)
+# 1. Build the bridge plugin first — the host image vendors the plugin's
+#    pre-built dist/ (worker + manifest + UI bundle). `pnpm run build` compiles
+#    the worker/manifest with tsc then bundles the UI with scripts/build-ui.mjs,
+#    producing dist/worker.js, dist/manifest.js, and dist/ui/index.js (the UI
+#    bundle the host mounts from manifest.entrypoints.ui).
+( cd packages/paperclip-plugin && pnpm install && pnpm run build )
+# 2. Build the images. The host image reuses the published Paperclip base
+#    (ghcr.io/paperclipai/paperclip:latest) and only adds the vendored bridge
+#    plugin + a bootstrap entrypoint. The pixel-agents image builds the
+#    standalone CLI from the submodule (it ships no Dockerfile).
 docker build -t paperclip-pixel-host:local -f deploy/docker/Dockerfile.paperclip-pixel-host .
 docker build -t pixel-agents:local         -f deploy/docker/Dockerfile.pixel-agents .
 ```

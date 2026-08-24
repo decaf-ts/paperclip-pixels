@@ -2,6 +2,21 @@ export const PLUGIN_ID = "paperclip-pixel.paperclip-plugin";
 export const PLUGIN_VERSION = "0.1.0";
 export const PLUGIN_API_VERSION = 1 as const;
 
+/** UI slot identifiers used by the plugin to register UI slots with the host. */
+export const UI_SLOT_IDS = {
+  page: "pixel-office-page",
+  sidebar: "pixel-office-sidebar",
+} as const;
+
+/** Export names that correspond to each UI slot's React component. */
+export const UI_EXPORT_NAMES = {
+  page: "PixelOfficePage",
+  sidebar: "PixelOfficeSidebar",
+} as const;
+
+/** Route segment under which the Pixel Office page is mounted in the host UI. */
+export const PIXEL_OFFICE_PAGE_ROUTE = "pixel-office";
+
 export const JOB_KEYS = {
   reconciliation: "bridge-reconcile",
 } as const;
@@ -22,6 +37,11 @@ export const STREAM_CHANNELS = {
   bridge: "bridge",
   behavior: "behavior",
 } as const;
+
+/** Returns the company‑scoped behavior stream channel name. */
+export function behaviorChannel(companyId: string): string {
+  return `behavior:${companyId}`;
+}
 
 export const STATE_KEYS = {
   compactBuckets: "compact-buckets",
@@ -75,6 +95,7 @@ export const MANIFEST_CAPABILITIES = [
   "agent.sessions.send",
   "agent.sessions.close",
   "ui.page.register",
+  "ui.sidebar.register",
   // Required by the host's plugin-capability-validator: any non-empty
   // manifest.jobs requires the `jobs.schedule` capability to be declared.
   // The bridge schedules the `bridge-reconcile` job (see manifest.ts).

@@ -2,7 +2,7 @@
  * UI-side view of the canonical bridge contract (spec PAPERCLIP_PIXELS-1,
  * §9, §15, §16, §26, §29.3).
  *
- * The worker's `bridge.snapshot` data handler (spec §15) serves
+ * The worker's `bridge-snapshot` data handler (spec §15) serves
  * `BridgeCompanySnapshot`; the worker pushes `BridgeStreamEvent` envelopes on
  * the company-scoped `behavior:<companyId>` stream channel (spec §16). Every
  * payload carries `schemaVersion: 1` (NFR-6).
@@ -37,7 +37,7 @@ export interface BridgeAgentView {
 }
 
 /**
- * Full company snapshot served by the worker's `bridge.snapshot` data handler.
+ * Full company snapshot served by the worker's `bridge-snapshot` data handler.
  *
  * The UI fetches a full snapshot on mount, company switch, reconnect,
  * detected sequence gap, and explicit refresh (NFR-3, §29.3, FR-13) and
@@ -111,9 +111,12 @@ export function isBridgeStreamEvent(
  */
 export const PIXEL_OFFICE_PLUGIN_ID = "paperclip-pixel-agents";
 
+/** The route segment for the Pixel Office page (mirrors constant in plugin core). */
+export const PIXEL_OFFICE_PAGE_ROUTE = "pixel-office";
+
 /** Worker data keys consumed by this UI (spec §15). */
 export const BRIDGE_DATA_KEYS = {
-  snapshot: "bridge.snapshot",
+  snapshot: "bridge-snapshot",
 } as const;
 
 /** Worker action keys consumed by this UI (spec §15, §17, §18). */
@@ -123,6 +126,7 @@ export const BRIDGE_ACTION_KEYS = {
 } as const;
 
 /** Company-scoped stream channel (spec §16). */
+/** Returns the company‑scoped behavior stream channel name. */
 export function behaviorChannel(companyId: string): string {
   return `behavior:${companyId}`;
 }

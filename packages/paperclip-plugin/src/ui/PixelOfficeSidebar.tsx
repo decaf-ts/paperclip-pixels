@@ -9,10 +9,14 @@
 
 import { useHostNavigation } from "@paperclipai/plugin-sdk/ui";
 import type { PluginSidebarProps } from "@paperclipai/plugin-sdk/ui";
-import { PIXEL_OFFICE_PLUGIN_ID } from "./bridge-contract";
+import { PIXEL_OFFICE_PAGE_ROUTE } from "./bridge-contract";
 import { formatTimestamp } from "./format";
 import { useBridge } from "./use-bridge";
 
+/**
+ * Sidebar component for the Pixel Office UI.
+ * Provides navigation link to the page slot and renders live status.
+ */
 export function PixelOfficeSidebar({ context }: PluginSidebarProps) {
   if (!context.companyId) {
     return null;
@@ -60,7 +64,7 @@ function PixelOfficeSidebarInner({ companyId }: { companyId: string }) {
 
       <a
         data-testid="pixel-office-sidebar-link"
-        {...navigation.linkProps(`/plugins/${PIXEL_OFFICE_PLUGIN_ID}`)}
+        {...navigation.linkProps(`/${PIXEL_OFFICE_PAGE_ROUTE}`)}
       >
         Open Pixel Office
       </a>

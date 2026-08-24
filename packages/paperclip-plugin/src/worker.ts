@@ -12,6 +12,7 @@ import {
   JOB_KEYS,
   STREAM_CHANNELS,
   SUBSCRIBED_EVENT_TYPES,
+  behaviorChannel,
 } from "./constants.js";
 import { bootstrapAllCompanies, bootstrapSnapshot } from "./snapshot.js";
 import { mapPluginEvent } from "./subscriptions.js";
@@ -100,7 +101,7 @@ class BridgeRuntime {
       occurredAt: change.occurredAt,
       payload: change.payload,
     };
-    this.ctx.streams.emit(STREAM_CHANNELS.behavior, uiEvent);
+    this.ctx.streams.emit(behaviorChannel(change.companyId), uiEvent);
   }
 }
 
@@ -113,6 +114,8 @@ async function setupCompany(ctx: PluginContext, runtime: BridgeRuntime, companyI
 
   const result = await bootstrapSnapshot(ctx, companyId);
   rt.store.replaceAuthoritativeSnapshot(result.snapshot);
+
+  ctx.streams.open(behaviorChannel(companyId), companyId);
 
   rt.store.on("agentBehaviorChanged", (change) => {
     runtime.emitBehaviorChange(change);
