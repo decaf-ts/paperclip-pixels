@@ -2,41 +2,100 @@
 #
 # Paperclip Pixel Agents bridge host.
 #
-# Derived from the published Paperclip host image so we reuse the (heavy)
-# upstream build instead of rebuilding the host from source. The only things
-# added on top are:
-#   1. The built Paperclip-Pixel bridge plugin at /opt/paperclip-pixel-plugin
+# This image is built FROM a Paperclip host image. There are two supported base
+# modes (CEO-authorized deploy-model decision, SAA-315 / SAA-316):
+#
+#   A) Custom host image built from the pinned `paperclip/` submodule (the
+#      documented exact-submodule-commit fidelity path). The submodule's own
+#      Dockerfile is built unmodified (the pinned submodule in the repo is
+#      off-limits to edit), then THIS Dockerfile layers the stream-bus wiring
+#      as a build-time patch + rebuilds the server, so the submodule pin stays
+#      untouched:
+#        docker build -t paperclip:local ./paperclip
+#        docker tag  paperclip:local ghcr.io/paperclipai/paperclip:latest
+#        docker build -t paperclip-pixel-host:local -f deploy/docker/Dockerfile.paperclip-pixel-host .
+#      (For a leaner build that skips the upstream global-CLI-tools layer, build
+#      the submodule with `--target build` as `paperclip-build:local` and pass
+#      `--build-arg PAPERCLIP_BASE=paperclip-build:local`; this Dockerfile sets
+#      the production runtime env explicitly so it works with either base.)
+#
+#   B) Published upstream base (revert target only — does NOT wire the stream
+#      bus, so the stream route stays 501). Used once upstream ships a release
+#      that wires `bridgeDeps.streamBus` natively:
+#        docker build -t paperclip-pixel-host:local -f deploy/docker/Dockerfile.paperclip-pixel-host .
+#
+# On top of the base this image adds:
+#   1. The SAA-316 build-time patch that wires `createPluginStreamBus()` into
+#      `server/src/app.ts` (instantiate the bus at boot, pass it to
+#      `pluginRoutes(...)` as `bridgeDeps.streamBus`, forward worker JSON-RPC
+#      stream notifications to `bus.publish`) and rebuilds the server so
+#      `GET /api/plugins/:id/bridge/stream/:channel` returns 200 (SSE) instead
+#      of 501. The patch lives at deploy/docker/patches/saa316-stream-bus.patch;
+#      the pinned `paperclip/` submodule in the repo is NOT modified.
+#   2. The built Paperclip-Pixel bridge plugin at /opt/paperclip-pixel-plugin
 #      (installed into the running instance at first boot by the entrypoint).
-#   2. A custom entrypoint (docker/bridge-stack-entrypoint.sh) that performs a
+#   3. A custom entrypoint (docker/bridge-stack-entrypoint.sh) that performs a
 #      one-shot loopback `local_trusted` bootstrap to install the local plugin
 #      with no auth, then `exec`s the real authenticated/lan server.
-#
-# Build:
-#   docker build -t paperclip-pixel-host:local -f docker/Dockerfile.paperclip-pixel-host .
-#
-# For exact-submodule-commit fidelity, replace the base image with one built
-# from the paperclip submodule:
-#   docker build -t paperclip:local ./paperclip
-#   docker tag paperclip:local ghcr.io/paperclipai/paperclip:latest
-# (then rebuild this Dockerfile).
 
 ARG PAPERCLIP_BASE=ghcr.io/paperclipai/paperclip:latest
 FROM ${PAPERCLIP_BASE}
 
+# The base image WORKDIR is /app (the Paperclip monorepo root: server/, ui/,
+# packages/, ...). Both the published production image and the submodule
+# `--target build` stage share this layout.
+WORKDIR /app
+
 USER root
 
-# Assemble a self-contained copy of the bridge plugin. The committed plugin
-# uses bare `tsc` (no bundling) and does not vendor its runtime deps, so the
-# forked worker cannot resolve @paperclip-pixel/core / @paperclipai/plugin-sdk
-# / zod from its install location. We vendor them here as real files so the
-# install + manifest load at least succeed. See deploy/README.md "Known
-# limitations" for the residual worker-runtime defects that still block the
-# worker from staying up.
+# ── SAA-316: apply the stream-bus wiring as a build-time patch ───────────────
+# createPluginStreamBus() had zero production callers upstream, so the SSE route
+# guard `if (!bridgeDeps?.streamBus) -> 501` always fired. The patch instantiates
+# the bus at host boot, passes it into pluginRoutes() as bridgeDeps.streamBus,
+# and forwards worker streams.open/emit/close notifications to bus.publish. The
+# pinned submodule in the repo is NOT modified — the patch is applied here, in
+# the image build, then the server is recompiled so server/dist carries the
+# wiring. Revert (drop this block + the patch file) once upstream wires
+# bridgeDeps.streamBus natively and the base is rebuilt from that release.
+COPY deploy/docker/patches/saa316-stream-bus.patch /tmp/saa316-stream-bus.patch
+RUN git apply -p1 /tmp/saa316-stream-bus.patch \
+    && pnpm --filter @paperclipai/server build \
+    && rm -f /tmp/saa316-stream-bus.patch \
+    && test -f server/dist/index.js \
+    && grep -Rq "createPluginStreamBus" server/dist \
+    && echo "SAA-316: plugin stream bus wired into server/dist"
+
+# ── Production runtime env (set explicitly so a `--target build` base works) ──
+# These mirror the upstream production stage. The deploy compose/k8s env
+# overrides the deployment-mode/public-url/home values at runtime.
+ENV NODE_ENV=production \
+  HOME=/paperclip \
+  HOST=0.0.0.0 \
+  PORT=3100 \
+  SERVE_UI=true \
+  PAPERCLIP_HOME=/paperclip \
+  PAPERCLIP_INSTANCE_ID=default \
+  PAPERCLIP_CONFIG=/paperclip/instances/default/config.json \
+  PAPERCLIP_DEPLOYMENT_MODE=authenticated \
+  PAPERCLIP_DEPLOYMENT_EXPOSURE=private \
+  OPENCODE_ALLOW_ALL_MODELS=true \
+  GEMINI_SANDBOX=false
+
+# Upstream UID/GID-remap + gosu drop entrypoint. Present in the published
+# production image; copied here so a lean `--target build` base has it too.
+COPY paperclip/scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# ── Bridge plugin (vendored, installed at first boot by the entrypoint) ───────
+# The plugin worker + manifest are bundled by esbuild into self-contained
+# single files (packages/paperclip-plugin/scripts/build.mjs) that inline
+# @paperclip-pixel/core, @paperclipai/plugin-sdk, @paperclipai/shared, zod,
+# and @paperclip-pixel/pixel-agents-provider, externalizing only node
+# built-ins. So the install location only needs package.json + dist/. The
+# bundle is built in the CI/release step before this image is assembled; here
+# we only copy the already-built dist.
 COPY deploy/docker/build-plugin-bundle.sh /tmp/build-plugin-bundle.sh
 COPY packages/paperclip-plugin  /tmp/src/paperclip-plugin
-COPY packages/core              /tmp/src/core
-COPY paperclip/packages/plugins/sdk   /tmp/src/plugin-sdk
-COPY paperclip/packages/shared        /tmp/src/shared
 
 RUN /tmp/build-plugin-bundle.sh /opt/paperclip-pixel-plugin \
     && rm -rf /tmp/src /tmp/build-plugin-bundle.sh
