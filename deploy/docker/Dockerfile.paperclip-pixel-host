@@ -32,9 +32,16 @@
 #      `GET /api/plugins/:id/bridge/stream/:channel` returns 200 (SSE) instead
 #      of 501. The patch lives at deploy/docker/patches/saa316-stream-bus.patch;
 #      the pinned `paperclip/` submodule in the repo is NOT modified.
-#   2. The built Paperclip-Pixel bridge plugin at /opt/paperclip-pixel-plugin
+#   2. The SAA-320 build-time patch that seeds the bridge plugin's proactive
+#      company scopes from the companies it serves at worker start
+#      (`server/src/services/plugin-loader.ts`), so background `streams.emit`
+#      notifications from the bridge worker pass the worker-manager
+#      invocation-scope guard and reach `bus.publish` (SAA-316 AC#2). Patch:
+#      deploy/docker/patches/saa320-proactive-scopes.patch; the pinned
+#      `paperclip/` submodule in the repo is NOT modified.
+#   3. The built Paperclip-Pixel bridge plugin at /opt/paperclip-pixel-plugin
 #      (installed into the running instance at first boot by the entrypoint).
-#   3. A custom entrypoint (docker/bridge-stack-entrypoint.sh) that performs a
+#   4. A custom entrypoint (docker/bridge-stack-entrypoint.sh) that performs a
 #      one-shot loopback `local_trusted` bootstrap to install the local plugin
 #      with no auth, then `exec`s the real authenticated/lan server.
 
@@ -58,12 +65,17 @@ USER root
 # wiring. Revert (drop this block + the patch file) once upstream wires
 # bridgeDeps.streamBus natively and the base is rebuilt from that release.
 COPY deploy/docker/patches/saa316-stream-bus.patch /tmp/saa316-stream-bus.patch
+COPY deploy/docker/patches/saa320-proactive-scopes.patch /tmp/saa320-proactive-scopes.patch
 RUN git apply -p1 /tmp/saa316-stream-bus.patch \
+    && git apply -p1 /tmp/saa320-proactive-scopes.patch \
     && pnpm --filter @paperclipai/server build \
-    && rm -f /tmp/saa316-stream-bus.patch \
+    && rm -f /tmp/saa316-stream-bus.patch /tmp/saa320-proactive-scopes.patch \
     && test -f server/dist/index.js \
     && grep -Rq "createPluginStreamBus" server/dist \
-    && echo "SAA-316: plugin stream bus wired into server/dist"
+    && test -f server/dist/services/plugin-loader.js \
+    && grep -Rq "paperclip-pixel.paperclip-plugin" server/dist \
+    && echo "SAA-316: plugin stream bus wired into server/dist" \
+    && echo "SAA-320: bridge plugin proactive company scopes seeded at worker start"
 
 # ── Production runtime env (set explicitly so a `--target build` base works) ──
 # These mirror the upstream production stage. The deploy compose/k8s env

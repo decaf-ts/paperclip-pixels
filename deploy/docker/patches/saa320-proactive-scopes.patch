@@ -1,0 +1,77 @@
+--- a/server/src/services/plugin-loader.ts	2026-08-22 09:43:40.714726518 +0000
++++ b/server/src/services/plugin-loader.ts	2026-08-25 08:28:29.484055587 +0000
+@@ -32,6 +32,7 @@
+ import { fileURLToPath, pathToFileURL } from "node:url";
+ import { promisify } from "node:util";
+ import type { Db } from "@paperclipai/db";
++import { companies } from "@paperclipai/db";
+ import { PLUGIN_RPC_ERROR_CODES } from "@paperclipai/plugin-sdk";
+ import type {
+   PaperclipPluginManifestV1,
+@@ -2262,6 +2263,57 @@
+       }
+ 
+       // ------------------------------------------------------------------
++      // 4c. Seed bridge plugin proactive company scopes from served companies
++      // ------------------------------------------------------------------
++      // The Paperclip-Pixel bridge plugin auto-serves every company in the
++      // instance and carries no per-company operator config, so its
++      // proactiveCompanyScopes would come out empty (configRows above is only
++      // filled by operator config saves). The worker-manager invocation-scope
++      // guard then drops every background streams.emit from the bridge worker
++      // before it reaches bus.publish — live stream deltas never flow to the
++      // Pixel Office UI (SAA-316 AC#2). Seed the bridge's proactive scopes from
++      // all companies at worker start so background behavior/bridge emissions
++      // pass the guard.
++      //
++      // Applied as a build-time host image patch (deploy/docker/patches/
++      // saa320-proactive-scopes.patch); the pinned paperclip submodule in the
++      // repo is NOT modified. Revert once upstream ships a plugin-driven scopes
++      // mechanism.
++      const BRIDGE_PLUGIN_MANIFEST_ID = "paperclip-pixel.paperclip-plugin";
++      let proactiveCompanyScopeIds: string[] = configRows.map((row) => row.companyId);
++      if (pluginKey === BRIDGE_PLUGIN_MANIFEST_ID) {
++        try {
++          const servedCompanyRows = await db
++            .select({ id: companies.id })
++            .from(companies);
++          proactiveCompanyScopeIds = Array.from(
++            new Set([
++              ...proactiveCompanyScopeIds,
++              ...servedCompanyRows.map((row) => row.id),
++            ]),
++          );
++          log.info(
++            {
++              pluginId,
++              pluginKey,
++              servedCompanyCount: servedCompanyRows.length,
++              proactiveScopeCount: proactiveCompanyScopeIds.length,
++            },
++            "plugin-loader: seeded bridge plugin proactive company scopes from served companies at worker start",
++          );
++        } catch (scopeErr) {
++          log.warn(
++            {
++              pluginId,
++              pluginKey,
++              err: scopeErr instanceof Error ? scopeErr.message : String(scopeErr),
++            },
++            "plugin-loader: could not seed bridge plugin proactive company scopes",
++          );
++        }
++      }
++
++      // ------------------------------------------------------------------
+       // 5. Spawn worker process
+       // ------------------------------------------------------------------
+       const workerOptions: WorkerStartOptions = {
+@@ -2284,7 +2336,7 @@
+         // before any setup()-time worker→host call (LOOA-695). The authorized
+         // set is exactly the plugin's configured companies — proactive access
+         // never reaches an unconfigured company.
+-        proactiveCompanyScopes: configRows.map((row) => row.companyId),
++        proactiveCompanyScopes: proactiveCompanyScopeIds,
+       };
+ 
+       // Repo-local plugin installs can resolve workspace TS sources at runtime

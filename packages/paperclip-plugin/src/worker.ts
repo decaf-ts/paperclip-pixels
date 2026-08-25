@@ -4,6 +4,7 @@ import {
   BridgeStore,
   type BehaviorChangedEvent,
   type BridgeUiEvent,
+  type CompanySummary,
   BRIDGE_SCHEMA_VERSION,
   TIME_WINDOWS,
   type TimeWindow,
@@ -151,6 +152,33 @@ class BridgeRuntime {
     this.ctx.streams.emit(STREAM_CHANNELS.bridge, event);
   }
 
+  // The UI subscribes to the company-scoped behavior channel (use-bridge.ts:
+  // usePluginStream(behaviorChannel(companyId))) and live-applies deltas whose
+  // type is in BRIDGE_STREAM_EVENT_TYPES (bridge-contract.ts). Reconstruction /
+  // event-driven store mutations must be pushed as `company.summary.changed`
+  // (or `bridge.snapshot` / `feedback.changed`) on that channel — the shared
+  // `bridge` channel events (emitBridgeEvent) are NOT consumed by the Pixel
+  // Office UI, so without this the summary only updates on manual refresh.
+  /**
+   * Emit a **company.summary.changed** `BridgeUiEvent` on the company-specific
+   * behavior channel. This is used by UI live gauges to react to a new
+   * summary for the given company.
+   *
+   * @param companyId - The unique identifier of the company whose summary changed.
+   * @param summary - The new `CompanySummary` payload to broadcast.
+   */
+  emitCompanySummaryChanged(companyId: string, summary: CompanySummary): void {
+    const uiEvent: BridgeUiEvent = {
+      schemaVersion: BRIDGE_SCHEMA_VERSION,
+      eventId: `bridge-summary-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type: "company.summary.changed",
+      companyId,
+      occurredAt: new Date().toISOString(),
+      payload: summary,
+    };
+    this.ctx.streams.emit(behaviorChannel(companyId), uiEvent);
+  }
+
   emitBehaviorChange(change: BehaviorChangedEvent): void {
     const uiEvent: BridgeUiEvent = {
       schemaVersion: BRIDGE_SCHEMA_VERSION,
@@ -164,6 +192,17 @@ class BridgeRuntime {
   }
 }
 
+/**
+ * Initialise runtime support for a company.
+ * Opens both the per-company **behaviorChannel(companyId)** and the shared
+ * **STREAM_CHANNELS.bridge** so that subsequent `BridgeUiEvent`s contain a
+ * non-empty `companyId` (fulfilling AC#2 from SAA-316).
+ *
+ * @param ctx - The plugin execution context.
+ * @param runtime - The `BridgeRuntime` instance managing UI events.
+ * @param companyId - Identifier of the company being set-up.
+ * @param relay - The bridge relay used for event emission.
+ */
 async function setupCompany(ctx: PluginContext, runtime: BridgeRuntime, companyId: string, relay: BridgeRelay): Promise<CompanyRuntime> {
   const restoredBuckets = await loadCompactBuckets(ctx, companyId);
   const rt = runtime.getOrCreateCompany(companyId);
@@ -174,9 +213,13 @@ async function setupCompany(ctx: PluginContext, runtime: BridgeRuntime, companyI
   const result = await bootstrapSnapshot(ctx, companyId);
   rt.store.replaceAuthoritativeSnapshot(result.snapshot);
 
-  // Open the company-scoped behavior stream channel so the SDK's
+  // Open every channel the worker emits on so the SDK's per-process
   // channelCompanyMap is populated for subsequent emit() calls (spec §16).
+  // The shared `bridge` channel also carries company-scoped events
+  // (emitBridgeEvent), so opening it per company keeps its notifications'
+  // companyId populated for the host invocation-scope guard (SAA-316 AC#2).
   ctx.streams.open(behaviorChannel(companyId), companyId);
+  ctx.streams.open(STREAM_CHANNELS.bridge, companyId);
 
   rt.store.on("agentBehaviorChanged", (change) => {
     runtime.emitBehaviorChange(change);
@@ -200,6 +243,16 @@ async function setupCompany(ctx: PluginContext, runtime: BridgeRuntime, companyI
   return rt;
 }
 
+/**
+ * Reconcile the stored state of a company and push any required updates.
+ * If the computed summary differs from the persisted one, this routine
+ * invokes `emitCompanySummaryChanged` to inform UI listeners.
+ *
+ * @param ctx - The plugin execution context.
+ * @param runtime - The `BridgeRuntime` handling UI events.
+ * @param companyId - Identifier of the company being reconciled.
+ * @param relay - The bridge relay used for event emission.
+ */
 async function reconcileCompany(ctx: PluginContext, runtime: BridgeRuntime, companyId: string, relay: BridgeRelay): Promise<void> {
   const rt = runtime.getCompany(companyId);
   if (!rt) return;
@@ -211,6 +264,10 @@ async function reconcileCompany(ctx: PluginContext, runtime: BridgeRuntime, comp
       runtime.emitBridgeEvent(companyId, "bridge.reconciliation.changed", {
         changedEntities: recon.changedEntities,
       });
+      // Push the fresh summary on the UI's behavior channel so live gauges
+      // (open-issue count, active-run count, ...) update without a manual
+      // refresh (SAA-320 AC#2 / spec §16 contract in bridge-contract.ts).
+      runtime.emitCompanySummaryChanged(companyId, rt.store.getCompanySummary());
     }
     // Re-feed the authoritative snapshot so the relay sidecar resyncs and
     // re-spawns any agents that appeared since the last reconciliation.
@@ -250,6 +307,15 @@ const plugin = definePlugin({
     }
 
     for (const eventType of SUBSCRIBED_EVENT_TYPES) {
+      /**
+       * Event-driven handler for incoming Paperclip events within the bridge
+       * plugin. Performs a before/after summary comparison and, when a summary
+       * actually changes, calls `emitCompanySummaryChanged` to broadcast the
+       * update.
+       *
+       * @param event - The raw Paperclip event payload received by the plugin.
+       * @returns A promise that resolves when the event has been fully processed.
+       */
       ctx.events.on(eventType, async (event: PluginEvent) => {
         const companyId = event.companyId;
         const rt = localRuntime.getCompany(companyId);
@@ -268,7 +334,16 @@ const plugin = definePlugin({
         const bridgeEvent = mapPluginEvent(event);
         if (!bridgeEvent) return;
 
+        const before = rt2.store.getCompanySummary();
         await rt2.store.applyPaperclipEvent(bridgeEvent);
+        // A summary-affecting event (issue created/updated, run started /
+        // finished / failed, ...) must live-update the UI's gauges on the
+        // behavior channel without a manual refresh (SAA-320 AC#2). Emit only
+        // when the summary actually changed to avoid delta spam.
+        const after = rt2.store.getCompanySummary();
+        if (JSON.stringify(before) !== JSON.stringify(after)) {
+          localRuntime.emitCompanySummaryChanged(companyId, after);
+        }
         // Forward the canonical event to the Pixel Agents relay (no-op when
         // the company has no relay configured).
         localRelay.ingestEvent(companyId, bridgeEvent);
