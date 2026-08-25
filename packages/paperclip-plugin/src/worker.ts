@@ -294,16 +294,38 @@ const plugin = definePlugin({
     // ("company-not-found") for any company the worker did not bootstrap, so a
     // caller cannot read another company's bridge state. This server-side
     // scoping assumption is the accepted V1 resolution for data handlers.
+    //
+    // Lazy bootstrap: if setup() could not bootstrap the company (because
+    // proactiveCompanyScopes was not yet populated at worker start time),
+    // attempt the bootstrap now. The getData call carries a host-issued
+    // invocation scope for this company, so company-scoped host calls inside
+    // setupCompany (companies.get, agents.list, etc.) will succeed.
+    const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime | null> => {
+      let rt = localRuntime.getCompany(companyId);
+      if (rt) return rt;
+      try {
+        ctx.logger.info("Lazy-bootstrapping company on demand", { companyId });
+        await setupCompany(ctx, localRuntime, companyId, localRelay);
+      } catch (err) {
+        ctx.logger.warn("Lazy bootstrap failed for getData", {
+          companyId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+      }
+      return localRuntime.getCompany(companyId) ?? null;
+    };
+
     ctx.data.register(DATA_KEYS.bridgeSnapshot, async (params) => {
       const companyId = String(params.companyId ?? "");
-      const rt = localRuntime.getCompany(companyId);
+      const rt = await getOrBootstrapCompany(companyId);
       if (!rt) return { schemaVersion: BRIDGE_SCHEMA_VERSION, error: "company-not-found" };
       return buildCompanySnapshot(rt);
     });
 
     ctx.data.register(DATA_KEYS.companySummary, async (params) => {
       const companyId = String(params.companyId ?? "");
-      const rt = localRuntime.getCompany(companyId);
+      const rt = await getOrBootstrapCompany(companyId);
       if (!rt) return { schemaVersion: BRIDGE_SCHEMA_VERSION, error: "company-not-found" };
       return rt.store.getCompanySummary();
     });
@@ -311,14 +333,14 @@ const plugin = definePlugin({
     ctx.data.register(DATA_KEYS.agentBehavior, async (params) => {
       const companyId = String(params.companyId ?? "");
       const agentId = String(params.agentId ?? "");
-      const rt = localRuntime.getCompany(companyId);
+      const rt = await getOrBootstrapCompany(companyId);
       if (!rt) return { schemaVersion: BRIDGE_SCHEMA_VERSION, error: "company-not-found" };
       return rt.store.getBehaviorVector(agentId);
     });
 
     ctx.data.register(DATA_KEYS.outstandingFeedback, async (params) => {
       const companyId = String(params.companyId ?? "");
-      const rt = localRuntime.getCompany(companyId);
+      const rt = await getOrBootstrapCompany(companyId);
       if (!rt) return { schemaVersion: BRIDGE_SCHEMA_VERSION, error: "company-not-found" };
       return rt.store.getOutstandingFeedback(companyId);
     });
