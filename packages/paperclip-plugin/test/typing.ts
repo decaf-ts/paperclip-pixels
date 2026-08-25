@@ -3,6 +3,14 @@ import type { PluginContext } from "@paperclipai/plugin-sdk";
 export interface PluginDefinitionSurface {
   setup: (ctx: PluginContext) => Promise<void>;
   onHealth: () => Promise<Record<string, unknown>>;
+  onConfigChanged?: (
+    newConfig: unknown,
+    context?: { companyId?: string },
+  ) => Promise<void>;
+  onValidateConfig?: (
+    config: Record<string, unknown>,
+  ) => Promise<{ ok: boolean; errors?: string[] }>;
+  onShutdown?: () => Promise<void>;
 }
 
 /**

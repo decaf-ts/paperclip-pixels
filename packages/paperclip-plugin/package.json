@@ -5,20 +5,27 @@
   "private": true,
   "type": "module",
   "main": "dist/worker.js",
-  "types": "dist/worker.d.ts",
+  "types": "src/worker.ts",
   "exports": {
     ".": {
       "import": "./dist/worker.js",
-      "types": "./dist/worker.d.ts"
+      "types": "./src/worker.ts"
     },
     "./manifest": {
       "import": "./dist/manifest.js",
-      "types": "./dist/manifest.d.ts"
+      "types": "./src/manifest.ts"
     }
   },
+  "paperclipPlugin": {
+    "manifest": "./dist/manifest.js",
+    "worker": "./dist/worker.js"
+  },
   "scripts": {
-    "build": "rimraf ./dist && tsc -p tsconfig.json && node scripts/build-ui.mjs",
+    "prebuild": "rimraf ./dist",
+    "build": "node scripts/build.mjs && node scripts/build-ui.mjs",
+    "build:worker": "node scripts/build.mjs",
     "build:ui": "node scripts/build-ui.mjs",
+    "build:types": "tsc -p tsconfig.json --emitDeclarationOnly",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:ui": "tsc -p tsconfig.test.json --noEmit",
     "lint": "eslint .",
@@ -37,11 +44,13 @@
   "license": "MIT",
   "dependencies": {
     "@paperclip-pixel/core": "^0.1.0",
+    "@paperclip-pixel/pixel-agents-provider": "^0.1.0",
     "@paperclipai/plugin-sdk": "workspace:*",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@paperclipai/plugin-sdk": "workspace:*",
+    "@types/node": "^24.0.0",
     "esbuild": "^0.28.1",
     "rimraf": "^6.0.1",
     "typescript": "^5.6.3",

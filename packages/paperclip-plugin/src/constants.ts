@@ -1,5 +1,8 @@
+/** Unique identifier for this Paperclip plugin. */
 export const PLUGIN_ID = "paperclip-pixel.paperclip-plugin";
+/** Semantic version of the plugin package. */
 export const PLUGIN_VERSION = "0.1.0";
+/** Version of the Paperclip Plugin API this manifest conforms to. */
 export const PLUGIN_API_VERSION = 1 as const;
 
 /** UI slot identifiers used by the plugin to register UI slots with the host. */
@@ -17,15 +20,18 @@ export const UI_EXPORT_NAMES = {
 /** Route segment under which the Pixel Office page is mounted in the host UI. */
 export const PIXEL_OFFICE_PAGE_ROUTE = "pixel-office";
 
+/** Job identifiers used by the plugin's scheduled tasks. */
 export const JOB_KEYS = {
   reconciliation: "bridge-reconcile",
 } as const;
 
+/** Action identifiers for UI interactions and plugin commands. */
 export const ACTION_KEYS = {
   companySendMessage: "company.send-message",
   agentReplyToFeedback: "agent.reply-to-feedback",
 } as const;
 
+/** Data endpoint keys exposed by the plugin for external consumption. */
 export const DATA_KEYS = {
   bridgeSnapshot: "bridge-snapshot",
   companySummary: "company-summary",
@@ -33,6 +39,7 @@ export const DATA_KEYS = {
   outstandingFeedback: "outstanding-feedback",
 } as const;
 
+/** Stream channel names used for emitting plugin events. */
 export const STREAM_CHANNELS = {
   bridge: "bridge",
   behavior: "behavior",
@@ -43,6 +50,7 @@ export function behaviorChannel(companyId: string): string {
   return `behavior:${companyId}`;
 }
 
+/** Keys for plugin persisted state entries. */
 export const STATE_KEYS = {
   compactBuckets: "compact-buckets",
   lastReconciledAt: "last-reconciled-at",
@@ -50,12 +58,15 @@ export const STATE_KEYS = {
   leadershipAgentId: "leadership-agent-id",
 } as const;
 
+/** Namespaces used for grouping plugin persisted state. */
 export const STATE_NAMESPACES = {
   bridge: "bridge",
 } as const;
 
+/** Default interval (in ms) for the bridge reconciliation job. */
 export const RECONCILIATION_DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
 
+/** List of Paperclip event types this plugin subscribes to. */
 export const SUBSCRIBED_EVENT_TYPES = [
   "agent.status_changed",
   "agent.run.started",
@@ -71,6 +82,7 @@ export const SUBSCRIBED_EVENT_TYPES = [
   "cost_event.created",
 ] as const;
 
+/** Capability identifiers required by the plugin manifest. */
 export const MANIFEST_CAPABILITIES = [
   "companies.read",
   "projects.read",
@@ -94,6 +106,15 @@ export const MANIFEST_CAPABILITIES = [
   "agent.sessions.list",
   "agent.sessions.send",
   "agent.sessions.close",
+  // Required to resolve the operator-bound `pixelAgentsTokenRef` secret
+  // reference into the bearer token used by the relay's HttpPushSink. The raw
+  // token is never persisted in plugin config; only the secret_ref binding is.
+  "secrets.read-ref",
+  // The relay's outbound push to the Pixel Agents hook endpoint is routed
+  // through the SDK-gated `ctx.http.fetch` (never the Node global fetch), so
+  // the host's capability validator and audit tracing cover it like any other
+  // outbound request. Push is operator-gated per company (see relay.ts).
+  "http.outbound",
   "ui.page.register",
   "ui.sidebar.register",
   // Required by the host's plugin-capability-validator: any non-empty

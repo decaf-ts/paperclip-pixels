@@ -64,13 +64,17 @@ describe("constants", () => {
     for (const cap of readonlyNegative) {
       expect(MANIFEST_CAPABILITIES).not.toContain(cap);
     }
-    expect(MANIFEST_CAPABILITIES).not.toContain("http.outbound");
+    // The relay's outbound push is SDK-gated (`ctx.http.fetch`, declared
+    // `http.outbound`), and its bearer token is resolved from a secret reference
+    // (`ctx.secrets.resolve`, declared `secrets.read-ref`).
+    expect(MANIFEST_CAPABILITIES).toContain("http.outbound");
+    expect(MANIFEST_CAPABILITIES).toContain("secrets.read-ref");
     expect(MANIFEST_CAPABILITIES).not.toContain("events.emit");
     expect(MANIFEST_CAPABILITIES).toContain("issue.comments.create");
     expect(MANIFEST_CAPABILITIES).toContain("issue.comments.create_human_attributed");
   });
 
-  it("grants the required read/state/session capability surface", () => {
+  it("grants the required read/state/session/replay/relay capability surface", () => {
     const required = [
       "companies.read",
       "projects.read",
@@ -83,6 +87,8 @@ describe("constants", () => {
       "plugin.state.write",
       "agent.sessions.create",
       "agent.sessions.send",
+      "secrets.read-ref",
+      "http.outbound",
       "ui.page.register",
     ] as const;
     for (const cap of required) {

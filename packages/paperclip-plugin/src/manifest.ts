@@ -1,4 +1,4 @@
-import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
+import type { JsonSchema, PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
 import {
   JOB_KEYS,
   MANIFEST_CAPABILITIES,
@@ -10,6 +10,55 @@ import {
   UI_SLOT_IDS,
 } from "./constants.js";
 
+/**
+ * Operator-editable, company-scoped configuration for the bridge relay that
+ * pushes mapped AgentEvents to a Pixel Agents server's hook endpoint. The
+ * relay is enabled by default once `pixelAgentsUrl` is set.
+ */
+/**
+ * JSON schema defining the operator‑editable, company‑scoped configuration for
+ * the bridge relay. The schema is used by the plugin SDK to render a UI for
+ * configuring the Pixel Agents connection and to validate the stored config.
+ */
+const relayConfigSchema: JsonSchema = {
+  type: "object",
+  properties: {
+    pixelAgentsUrl: {
+      type: "string",
+      title: "Pixel Agents server URL",
+      description:
+        "Base URL of the Pixel Agents server to push mapped bridge events to (e.g. https://pixel-agents:8080). Must be https: when a token is configured. The relay enables itself when this is set.",
+      format: "uri",
+    },
+    pixelAgentsTokenRef: {
+      type: "string",
+      format: "secret-ref",
+      title: "Pixel Agents bearer token",
+      description:
+        "Optional secret reference resolved to the bearer token sent on each push to POST /api/hooks/<providerId>. Stored as a secret_ref binding, never as a plaintext value. Requires an https: pixelAgentsUrl.",
+      "x-paperclip-advanced": true,
+    },
+    pixelAgentsProviderId: {
+      type: "string",
+      pattern: "^[a-z0-9-]+$",
+      title: "Provider id",
+      description: "Provider id used in the hook path. Defaults to 'paperclip-bridge'.",
+      default: "paperclip-bridge",
+      "x-paperclip-advanced": true,
+    },
+    pixelAgentsRelayEnabled: {
+      type: "boolean",
+      title: "Relay enabled",
+      description: "Explicit on/off. Defaults to on when pixelAgentsUrl is set.",
+      "x-paperclip-advanced": true,
+    },
+  },
+};
+
+/**
+ * Plugin manifest describing the Paperclip Pixel Bridge plugin.
+ * Includes metadata, entrypoints, UI slot configuration, and job definitions.
+ */
 const manifest: PaperclipPluginManifestV1 = {
   id: PLUGIN_ID,
   apiVersion: PLUGIN_API_VERSION,
@@ -25,6 +74,7 @@ const manifest: PaperclipPluginManifestV1 = {
     worker: "./dist/worker.js",
     ui: "./dist/ui",
   },
+  instanceConfigSchema: relayConfigSchema,
   /** UI slot configuration exposed to the host. */
   ui: {
     slots: [

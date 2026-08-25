@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createTestHarness } from "@paperclipai/plugin-sdk/testing";
 import { JOB_KEYS, MANIFEST_CAPABILITIES, PLUGIN_API_VERSION, PLUGIN_ID, PLUGIN_VERSION } from "../src/constants.js";
 import manifest from "../src/manifest.js";
@@ -36,8 +36,8 @@ describe("manifest", () => {
     expect(manifest.capabilities).not.toContain("issues.update");
   });
 
-  it("declares no outbound HTTP capability (trust boundary)", () => {
-    expect(manifest.capabilities).not.toContain("http.outbound");
+  it("declares the http.outbound capability for the relay push (trust boundary)", () => {
+    expect(manifest.capabilities).toContain("http.outbound");
   });
 
   it("refuses issues.create through the harness at default capabilities", async () => {
@@ -51,10 +51,68 @@ describe("manifest", () => {
     ).rejects.toThrow(/missing required capability 'issues\.create'/);
   });
 
-  it("refuses outbound HTTP through the harness at default capabilities", async () => {
-    const harness = createTestHarness({ manifest });
+  it("routes outbound HTTP through the declared http.outbound capability gate", async () => {
+    const call = vi.fn(async (_url: string, _init?: RequestInit) => new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", call);
+    try {
+      const harness = createTestHarness({ manifest });
+      const res = await harness.ctx.http.fetch("https://pixel-agents.example/api/hooks/x", { method: "POST" });
+      expect(res.ok).toBe(true);
+      expect(call).toHaveBeenCalledWith("https://pixel-agents.example/api/hooks/x", { method: "POST" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("refuses outbound HTTP through the harness when http.outbound is not declared", async () => {
+    const capabilities = manifest.capabilities.filter((c) => c !== "http.outbound");
+    const harness = createTestHarness({ manifest, capabilities });
     await expect(
       harness.ctx.http.fetch("https://paperclip.example/api/companies"),
     ).rejects.toThrow(/missing required capability 'http\.outbound'/);
+  });
+
+  describe("relay instance config schema", () => {
+    // NOTE: the SAA-229 staged manifest declared a plaintext `pixelAgentsToken`
+    // field; the current implementation declares exactly four relay fields with
+    // `pixelAgentsTokenRef` (a `secret-ref` binding, never a plaintext value).
+    // These assertions lock in the current schema.
+    const properties = (manifest.instanceConfigSchema as {
+      type?: string;
+      properties?: Record<string, Record<string, unknown>>;
+    }).properties ?? {};
+
+    it("declares an object instanceConfigSchema with exactly the four relay fields", () => {
+      expect(manifest.instanceConfigSchema).toBeDefined();
+      expect((manifest.instanceConfigSchema as { type?: string }).type).toBe("object");
+      expect(Object.keys(properties).sort()).toEqual([
+        "pixelAgentsProviderId",
+        "pixelAgentsRelayEnabled",
+        "pixelAgentsTokenRef",
+        "pixelAgentsUrl",
+      ]);
+      expect(properties.pixelAgentsToken).toBeUndefined();
+    });
+
+    it("declares pixelAgentsUrl as a uri-format string", () => {
+      expect(properties.pixelAgentsUrl).toMatchObject({ type: "string", format: "uri" });
+    });
+
+    it("declares pixelAgentsTokenRef as a secret-ref string (never a plaintext value)", () => {
+      expect(properties.pixelAgentsTokenRef).toMatchObject({ type: "string", format: "secret-ref" });
+      expect((properties.pixelAgentsTokenRef as { "x-paperclip-advanced"?: unknown })["x-paperclip-advanced"]).toBe(true);
+    });
+
+    it("declares pixelAgentsProviderId with the ^[a-z0-9-]+$ pattern and paperclip-bridge default", () => {
+      expect(properties.pixelAgentsProviderId).toMatchObject({
+        type: "string",
+        pattern: "^[a-z0-9-]+$",
+        default: "paperclip-bridge",
+      });
+    });
+
+    it("declares pixelAgentsRelayEnabled as a boolean", () => {
+      expect(properties.pixelAgentsRelayEnabled).toMatchObject({ type: "boolean" });
+    });
   });
 });
