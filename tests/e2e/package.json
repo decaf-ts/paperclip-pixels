@@ -1,0 +1,20 @@
+{
+  "name": "@paperclip-pixel/e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Pixel Office Playwright e2e suite (PAPERCLIP_PIXELS-1 / SAA-231) driving the deployed bridge stack.",
+  "type": "module",
+  "scripts": {
+    "test": "node_modules/.bin/playwright test --config playwright.config.ts",
+    "test:headed": "node_modules/.bin/playwright test --config playwright.config.ts --headed",
+    "install-browsers": "node_modules/.bin/playwright install chromium",
+    "typecheck": "node_modules/.bin/tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.23.1",
+    "pg": "^8.13.0",
+    "typescript": "^5.9.3"
+  }
+}

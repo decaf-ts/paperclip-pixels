@@ -89,11 +89,11 @@ Dockerfile).
 ```bash
 # from the repo root (submodules initialized: paperclip/, pixel-agents/)
 # 1. Build the bridge plugin first — the host image vendors the plugin's
-#    pre-built dist/ (worker + manifest + UI bundle). `pnpm run build` compiles
-#    the worker/manifest with tsc then bundles the UI with scripts/build-ui.mjs,
+#    pre-built dist/ (worker + manifest + UI bundle). `npm run build` bundles
+#    the worker/manifest with esbuild then the UI with scripts/build-ui.mjs,
 #    producing dist/worker.js, dist/manifest.js, and dist/ui/index.js (the UI
 #    bundle the host mounts from manifest.entrypoints.ui).
-( pnpm install && pnpm run build )
+( npm install && npm run build )
 # 2. Build the images. The host image reuses the published Paperclip base
 #    (ghcr.io/paperclipai/paperclip:latest) and only adds the vendored bridge
 #    plugin + a bootstrap entrypoint. The pixel-agents image builds the
