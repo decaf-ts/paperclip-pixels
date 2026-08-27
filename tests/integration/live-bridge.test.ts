@@ -40,7 +40,7 @@
  *    replay the same `eventId` and deliver envelopes out-of-order / duplicated.
  *    They flow real bus -> real bridge subscriber handlers via the real
  *    `PluginContext` (worker process). The bridge `EventDeduper`
- *    (`packages/core/src/reducer/idempotency.ts`) dedups, and
+ *    (`src/core/reducer/idempotency.ts`) dedups, and
  *    `bridge-reconcile` converges out-of-order drift to the authoritative
  *    snapshot. Security Engineer sign-off on the guard is tracked in a
  *    blocking subtask before the seam is merged upstream.
@@ -602,7 +602,7 @@ describe("Pixel bridge live integration (real Paperclip host, not mocks)", () =>
       // Inject an agent.run.failed envelope with a fixed eventId for the real
       // agent. The reducer records one "failure" feedback entry + one
       // recentEvent per delivery. Replaying the SAME eventId must be dropped
-      // by the bridge EventDeduper (packages/core/src/reducer/idempotency.ts)
+      // by the bridge EventDeduper (src/core/reducer/idempotency.ts)
       // -> exactly one feedback entry and one recentEvent, not two.
       const eventId = `idem-${Date.now()}`;
       const runId = `idem-run-${Date.now()}`;

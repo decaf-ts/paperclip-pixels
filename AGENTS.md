@@ -28,37 +28,61 @@ Final architectural principle (§42): _A faithful observer and policy-aware
 translator of Paperclip organizational reality, not an alternative orchestration
 engine and not a renderer._
 
-### Three-package monorepo
+### One package, at the repo root
 
-- **`packages/core` (`@paperclip-pixel/core`)** — domain logic + behavioral
-  proxies: snapshot loader, event normalizer + idempotent reducer, entity/run/
-  concurrency projection, temporal windows, behavioral proxy calculator,
-  feedback classifier, action policy / new-work gate, reconciliation. **Must
-  not import React, the Pixel Agents renderer, or Paperclip UI code.** No
-  rendering decisions.
-- **`packages/paperclip-plugin`** — Paperclip host integration: manifest /
-  capabilities, event subscriptions, authoritative snapshot bootstrap, SDK
-  client calls, `ctx.state` persistence, `ctx.data` / `ctx.actions` /
-  `ctx.streams` handlers, embedded Pixel UI surface.
-- **`packages/pixel-agents-provider`** — Pixel Agents adapter: consumes the
-  bridge contract, maps only semantically valid current events to current
+This project ships as a single npm package, `@decaf-ts/paperclip-pixels`,
+living directly at the repository root (not nested under `packages/*` — an
+earlier revision split it into three sub-packages with their own
+`package.json`s; that added real friction, `workspace:*` references plain npm
+can't resolve, for no benefit, since only one of the three was ever published.
+`paperclip/` and `pixel-agents/` remain **git submodules only**, kept purely
+for reference/future upstream contributions — never modified, never a build
+dependency beyond that).
+
+- **`src/core/`** — domain logic + behavioral proxies: snapshot loader, event
+  normalizer + idempotent reducer, entity/run/concurrency projection, temporal
+  windows, behavioral proxy calculator, feedback classifier, action policy /
+  new-work gate, reconciliation. **Must not import React, the Pixel Agents
+  renderer, or Paperclip UI code.** No rendering decisions.
+- **`src/{worker,manifest,actions,relay,snapshot,subscriptions,persistence}.ts`,
+  `src/ui/`** — Paperclip host integration: manifest / capabilities, event
+  subscriptions, authoritative snapshot bootstrap, SDK client calls,
+  `ctx.state` persistence, `ctx.data` / `ctx.actions` / `ctx.streams` handlers,
+  embedded Pixel UI surface (renders inside Paperclip's own UI).
+- **`src/pixel-agents-provider/`** — Pixel Agents adapter: consumes the bridge
+  contract, maps only semantically valid current events to current
   `AgentEvent` semantics, retains richer behavior in a sidecar, integrates at
   the smallest possible source-level adapter, never fakes tool-hook semantics
   where no correspondence exists.
+- **`bin/paperclip-pixel-relay.js`** — the companion CLI a user runs alongside
+  Pixel Agents (published as this package's `bin`; Pixel Agents has no
+  plugin-loading mechanism of its own, so there's nothing to "install into"
+  it).
 
-Data flow (§7, §8): Paperclip (authoritative) → public Plugin SDK only → `core`
-(raw + metrics + semantics) → canonical bridge contract → { Paperclip plugin
-package (worker + embedded UI), Pixel Agents adapter } → { Paperclip UI plugin
-page, Pixel Agents runtime/UI }.
+Data flow (§7, §8): Paperclip (authoritative) → public Plugin SDK only →
+`src/core` (raw + metrics + semantics) → canonical bridge contract →
+`src/pixel-agents-provider` maps it to Pixel Agents' real wire format → the
+`paperclip-pixel-relay` CLI (reads Pixel Agents' locally-generated bearer
+token, forwards with correct auth) → Pixel Agents' real, unmodified
+`/api/hooks/claude` endpoint; UI-facing state also flows to the embedded
+Paperclip UI plugin page.
 
 ## Stack And Conventions
 
 - **Language:** TypeScript.
-- **Template:** decaf-ts `ts-workspace` template (this repository). Reuse the
-  existing `tsconfig.json`, `package.json` scripts, ESLint, Prettier, Jest, and
-  `gulpfile.js` rather than introducing a competing toolchain.
-- **Workspaces:** pnpm/npm workspaces per the repository configuration. The
-  three packages live under `packages/` and are consumed as workspace packages.
+- **Template:** bootstrapped from decaf-ts's `ts-workspace` template, but its
+  `gulpfile.js`-based dual CJS/ESM build was replaced with an esbuild bundle
+  (`scripts/build.mjs`/`scripts/build-ui.mjs`) suited to a Paperclip plugin
+  (self-contained worker bundle + a separate UI bundle), and its single-Jest
+  test setup was split into three runners for the same reason — see
+  `workdocs/tutorials/DeveloperGuide.md`'s "Building and testing" section.
+  Reuse `tsconfig.json`, ESLint, and Prettier as-is.
+- **Dependency resolution:** real npm `dependencies`/`devDependencies` for
+  everything publishable. `@paperclipai/plugin-sdk`/`@paperclipai/shared`
+  (inside the `paperclip/` submodule) are the one exception — plain npm can't
+  resolve them (`plugin-sdk`'s own `package.json` depends on `shared` via the
+  pnpm/yarn-only `workspace:*` protocol) — `npm install`'s `postinstall` hook
+  (`scripts/link-paperclip-sdk.mjs`) symlinks them in instead.
 - **Normative integration surface:** compile against the installed
   `@paperclipai/plugin-sdk` types — **not** future-looking prose. Do not depend
   on unreleased Paperclip roadmap features or unreleased Pixel Agents provider

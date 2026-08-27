@@ -10,14 +10,74 @@ without k8s). Specification: PAPERCLIP_PIXELS-1.
 |-----------|-------|------|------|
 | Postgres  | `postgres:17-alpine`            | 5432 | Paperclip metadata DB |
 | Paperclip host | `paperclip-pixel-host:local` | 3100 | Paperclip API + UI, with the bridge plugin loaded |
-| Pixel Agents | `pixel-agents:local`         | 8080 | Pixel Agents standalone server (SPA + WS + hook ingest) |
+| Pixel Agents | `pixel-agents:local`         | 8080 | Pixel Agents standalone server (SPA + WS + hook ingest) — **unmodified upstream** |
+| Relay | `pixel-agents:local` (same image, `command` override) | 8081 | `paperclip-pixel-relay` CLI, same pod as Pixel Agents — see below |
 
-The bridge plugin (`packages/paperclip-plugin`) runs as a **forked worker child
-process of the Paperclip host** (loaded via `installPlugin({ localPath })`),
+The bridge plugin is published as [`@decaf-ts/paperclip-pixels`](..) (source: repo root — `src/`, `bin/`) and runs as a **forked worker child
+process of the Paperclip host** (loaded via `installPlugin({ localPath })`
+in this reference deployment; a real install uses `installPlugin({ packageName: "@decaf-ts/paperclip-pixels" })` instead — see the [package README](../README.md#install)),
 not as its own pod. The host image vendors the built plugin at
 `/opt/paperclip-pixel-plugin` and installs it at first boot via a loopback
 `local_trusted` bootstrap (no-auth admin), then restarts in `authenticated`/lan
 mode for reachability.
+
+### How the bridge reaches Pixel Agents (zero source changes, either side)
+
+Pixel Agents ships exactly one hook provider (`claudeProvider`, id `claude`)
+and its `POST /api/hooks/:id` route only forwards Claude-shaped bodies. Rather
+than requiring an upstream change to add a second provider, the relay
+(`@paperclip-pixel/pixel-agents-provider`'s `HttpPushSink`, an internal
+dependency inlined into the published package's bundle) serializes every
+mapped bridge event into the **real Claude hook JSON body**
+`claudeProvider.normalizeHookEvent` already accepts, and never sends a
+`transcript_path` — which routes every synthetic session onto Pixel Agents'
+own existing "hooks-only external provider" adoption path (built for
+non-Claude CLIs like OpenCode/Copilot; see `fileWatcher.ts`'s
+`adoptExternalSessionFromHook`). Confirmed live: pushing this shape produces
+`[Pixel Agents] Hook: Agent N - detected hooks-only external session (...)`
+in the pod logs and a real, animated character — no Pixel Agents source
+touched.
+
+The one thing that genuinely cannot be worked around without touching source
+is Pixel Agents' bearer token: it's a fresh `crypto.randomUUID()` minted on
+every boot with no env/CLI override, so nothing outside the pod can know it
+in advance. `paperclip-pixel-relay` (published as this package's `bin`,
+source: `bin/paperclip-pixel-relay.js`, zero
+deps) runs as a second container in the **same pod**, sharing an
+`emptyDir` `~/.pixel-agents` volume with the main container so it can read
+the token straight off disk, and forwards the plugin's already-correctly-shaped
+push to the real `/api/hooks/claude` endpoint with the right
+`Authorization: Bearer` header. `deploy/k8s/pixel-agents.yaml` also seeds
+`~/.pixel-agents/config.json` with `watchAllSessions: true` via an
+initContainer (data, not code — `configPersistence.ts` already reads this
+exact file/shape) since a synthetic Paperclip `cwd` is never a "tracked"
+project directory.
+
+The Paperclip-side plugin config (`pixelAgentsUrl`) defaults to
+`http://127.0.0.1:8081` — right for the common single-machine "try it out"
+case, but **wrong for this k8s topology**, where the relay runs in the Pixel
+Agents pod, not the Paperclip one. **After creating your first company**, set
+`pixelAgentsUrl` to `http://pixel-agents:8081` (the relay's cluster address)
+on the plugin's instance config — Paperclip UI: Plugins → this plugin →
+Configure, or `POST /api/plugins/:id/config`; see the [package
+README](../README.md#configure-the-plugin). There
+is currently no automated way to set this before a company exists (Paperclip
+plugin config is company-scoped), so this is a one-time manual step per
+deployment, not something the entrypoint script can do for you.
+
+Only "controlling Paperclip from inside Pixel Agents" was not attempted: the
+standalone Pixel Agents web UI has no free-text/chat mechanism anywhere in
+its protocol (confirmed by reading the full `ClientMessage` union and the
+webview source — no `<textarea>`, no chat/reply code path) and no terminal
+concept at all (`cli.ts` never constructs a `TerminalAdapter` — that's
+VS-Code-adapter-only). Building one would require an actual Pixel Agents
+source change, so per this project's own new-work rule ("all new tickets go
+through the CEO; other agent interaction is purely conversational, and can be
+skipped where no such concept already exists") this stays out of scope.
+Company intake and agent-reply control **do** work today, through the
+existing Paperclip-embedded "Pixel Office" plugin page (`packages/
+paperclip-plugin/src/ui/PixelOfficePage.tsx`) — it just renders inside
+Paperclip's own UI, not inside the separate sprite-based office canvas.
 
 ## Build
 
@@ -33,7 +93,7 @@ Dockerfile).
 #    the worker/manifest with tsc then bundles the UI with scripts/build-ui.mjs,
 #    producing dist/worker.js, dist/manifest.js, and dist/ui/index.js (the UI
 #    bundle the host mounts from manifest.entrypoints.ui).
-( cd packages/paperclip-plugin && pnpm install && pnpm run build )
+( pnpm install && pnpm run build )
 # 2. Build the images. The host image reuses the published Paperclip base
 #    (ghcr.io/paperclipai/paperclip:latest) and only adds the vendored bridge
 #    plugin + a bootstrap entrypoint. The pixel-agents image builds the
@@ -113,13 +173,15 @@ This mirrors the upstream `bootstrap-company.sh` company-import pattern.
 
 ## Verified state (minikube, single-node)
 
-All three services deployed and verified healthy on minikube:
+All three services deployed and verified healthy on minikube, including a
+live end-to-end bridge push:
 
 | Service | Status | Evidence |
 |---------|--------|----------|
 | Postgres | 1/1 Running | `pg_isready` passes; Paperclip migrations applied |
 | Paperclip | 1/1 Running | `GET /api/health` → `{"status":"ok"}`; bridge plugin activated (worker running, 12 event subscriptions, `bridge-reconcile` job dispatched + completed) |
-| Pixel Agents | 1/1 Running | `GET /api/health` → `{"status":"ok"}`; UI `GET /` → 200 `<title>webview-ui</title>` |
+| Pixel Agents | 2/2 Running (main + `paperclip-pixel-relay`) | `GET /api/health` → `{"status":"ok"}`; UI `GET /` → 200 `<title>webview-ui</title>` |
+| Bridge (Paperclip → Pixel Agents) | Live-verified against a pristine (`git diff origin/main` empty) `pixel-agents/` checkout | A SessionStart/PreToolUse/PostToolUse/Stop/PermissionRequest sequence pushed through the relay produced `[Pixel Agents] Hook: Agent 1 - detected hooks-only external session (...)` and the full animation lifecycle in the real pod logs — zero Pixel Agents source changes. Network path confirmed from inside the actual Paperclip pod (`curl http://pixel-agents:8081/...` → `200 ok`). |
 
 ### Probe note
 
@@ -130,27 +192,27 @@ passes readiness/liveness without auth.
 
 ## Known limitations / follow-ups
 
-1. **Provider → Pixel Agents transport is not wired.** `pixel-agents-provider`
-   is a **library** (`BridgeTransport` + `HttpPushSink`), not a runnable
-   service. No glue process exists that consumes the plugin's bridge stream
-   and pushes mapped `AgentEvent`s to Pixel Agents' `POST /api/hooks/paperclip-bridge`.
-   Additionally, Pixel Agents' runtime is currently single-provider
-   (`hookProviders: [claudeProvider]`); the per-`providerId` dispatch the
-   `HttpPushSink` targets is not fully wired upstream. Wiring this end-to-end
-   is bridge-author feature work (a follow-up issue tracks it).
+1. **RESOLVED — Provider → Pixel Agents transport is now wired.** `HttpPushSink`
+   (`src/pixel-agents-provider/transport.ts`) serializes every mapped
+   event into the real Claude hook JSON body and pushes it through the
+   same-pod `paperclip-pixel-relay` CLI (published as this package's `bin` —
+   see `README.md`) to Pixel Agents' real,
+   unmodified `/api/hooks/claude` endpoint — see "How the bridge reaches
+   Pixel Agents" above. Live-verified: a pushed event produces a real
+   character (`[Pixel Agents] Hook: Agent N - detected hooks-only external session`)
+   and the full tool/turn/permission animation lifecycle, with zero Pixel
+   Agents source changes.
 
-2. **Bridge plugin packaging.** The committed plugin uses bare `tsc` (no
-   bundling) and does not vendor its runtime deps, so the forked worker cannot
-   resolve `@paperclip-pixel/core` / `@paperclipai/plugin-sdk` / `zod` from its
-   install location, and `@paperclipai/shared` is consumed as TS source (which
-   needs the tsx loader, absent in production). The host image works around
-   this by vendoring the deps as real files and patching `exports` maps
-   (`deploy/docker/build-plugin-bundle.sh`). The SDK-blessed fix is to build
-   the worker with `@paperclipai/plugin-sdk/bundlers` (`createPluginBundlerPresets`,
-   esbuild) into a self-contained bundle — recommended for the bridge authors.
+2. **RESOLVED — Bridge plugin packaging.** The worker now builds as a
+   self-contained esbuild bundle (`scripts/build.mjs`)
+   with `@paperclip-pixel/core`, `@paperclipai/plugin-sdk`, `@paperclipai/shared`,
+   and `zod` inlined; only Node built-ins/react/react-dom stay external.
+   `deploy/docker/build-plugin-bundle.sh` now just copies `package.json` +
+   the already-self-contained `dist/` into the image — no more vendoring
+   dependency files or patching `exports` maps.
 
 3. **Two deployment-enabling defects were fixed in this work:**
-   - `packages/paperclip-plugin/src/constants.ts` — added the `jobs.schedule`
+   - `src/constants.ts` — added the `jobs.schedule`
      capability (the host rejects install with "Capability 'jobs.schedule' is
      required when jobs are declared" because the manifest declares the
      `bridge-reconcile` job).

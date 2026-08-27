@@ -11,10 +11,43 @@ spec:
     metadata:
       labels: { app: pixel-agents }
     spec:
+      # Same uid/gid across every container (init + main + sidecar) sharing
+      # the emptyDir volume below, so none of them hit permission errors
+      # reading/writing files another container created.
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      # Seeds ~/.pixel-agents/config.json with watchAllSessions: true BEFORE
+      # the main server starts. Required for the bridge's synthetic
+      # (non-filesystem-tracked) sessions to be adopted at all — see
+      # agentRuntime.ts's `isTrackedProjectDir(...) || watchAllSessions.current`
+      # gate. This is DATA the deployment writes, not a Pixel Agents source
+      # change: configPersistence.ts already reads this exact file/shape as
+      # its own supported config format.
+      initContainers:
+        - name: seed-config
+          image: pixel-agents:local
+          command:
+            - node
+            - -e
+            - |
+              const fs = require('fs');
+              const dir = '/home/node/.pixel-agents';
+              fs.mkdirSync(dir, { recursive: true });
+              const path = dir + '/config.json';
+              if (!fs.existsSync(path)) {
+                fs.writeFileSync(path, JSON.stringify({ standalone: { watchAllSessions: true } }));
+              }
+          volumeMounts:
+            - name: pixel-agents-home
+              mountPath: /home/node/.pixel-agents
       containers:
         - name: pixel-agents
           # Built locally from docker/Dockerfile.pixel-agents and loaded into
           # minikube with `minikube image load`. Never pulled from a registry.
+          # UNMODIFIED upstream source (deploy/README.md) — only this image's
+          # extra vendored paperclip-pixel-relay.js is ours; the CLI itself is stock.
           image: pixel-agents:local
           imagePullPolicy: Never
           ports:
@@ -24,6 +57,12 @@ spec:
           # Bind 0.0.0.0 so it is reachable via the pod IP / port-forward
           # (the CLI default 127.0.0.1 is unreachable in k8s).
           args: ["--host", "0.0.0.0", "--port", "8080"]
+          env:
+            - name: HOME
+              value: /home/node
+          volumeMounts:
+            - name: pixel-agents-home
+              mountPath: /home/node/.pixel-agents
           readinessProbe:
             httpGet: { path: /api/health, port: 8080 }
             initialDelaySeconds: 5
@@ -36,6 +75,43 @@ spec:
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { cpu: "1", memory: 1Gi }
+        # Same-pod relay (bin/paperclip-pixel-relay.js
+        # — our own code, published as the plugin package's `paperclip-pixel-relay`
+        # bin; not Pixel Agents source). Shares ~/.pixel-agents with the main
+        # container so it can read the server's locally-generated bearer token
+        # and forward Paperclip's bridge pushes to the real /api/hooks/claude
+        # endpoint with correct auth. Cluster-internal only (no external
+        # Service exposure). --host 0.0.0.0 because THIS traffic is genuinely
+        # cross-pod (arrives via the Service ClusterIP from the Paperclip
+        # pod) — the CLI's own default (127.0.0.1) is meant for the common
+        # same-machine local-dev case, not this one.
+        - name: relay-sidecar
+          image: pixel-agents:local
+          imagePullPolicy: Never
+          command: ["node", "/opt/relay/paperclip-pixel-relay.js", "--host", "0.0.0.0"]
+          env:
+            - name: HOME
+              value: /home/node
+            - name: PIXEL_AGENTS_URL
+              value: http://127.0.0.1:8080
+            - name: RELAY_PORT
+              value: "8081"
+          ports:
+            - containerPort: 8081
+              name: relay
+          volumeMounts:
+            - name: pixel-agents-home
+              mountPath: /home/node/.pixel-agents
+          readinessProbe:
+            tcpSocket: { port: 8081 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits: { cpu: 250m, memory: 128Mi }
+      volumes:
+        - name: pixel-agents-home
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -48,3 +124,6 @@ spec:
     - port: 8080
       targetPort: 8080
       name: http
+    - port: 8081
+      targetPort: 8081
+      name: relay

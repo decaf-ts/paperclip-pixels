@@ -18,9 +18,15 @@ referenced here, not duplicated:
 - **PAPERCLIP_PIXELS-2** (bridge plugin esbuild bundling + in-plugin
   `BridgeRelay`) has no separate specification domain record of its own; it
   is delivered as the SAA-229 gate-reviewed commit and is documented here at
-  the architecture level. Its in-plugin relay is provider-agnostic and
-  depends on the upstream `pixel-agents` per-`providerId` dispatch change
-  (spike SAA-175 §5/§6, CTO-reviewed) to reach the live Pixel Agents runtime.
+  the architecture level. **Superseded (this revision):** the relay no longer
+  waits on an upstream `pixel-agents` per-`providerId` dispatch change (spike
+  SAA-175 §5/§6) — it reaches the live, unmodified Pixel Agents runtime today
+  by serializing into the real Claude hook JSON body `claudeProvider`
+  (Pixel Agents' one shipped provider) already accepts, landing on Pixel
+  Agents' own pre-existing "hooks-only external provider" adoption path. Live-
+  verified: a pushed event produces `[Pixel Agents] Hook: Agent N - detected
+  hooks-only external session (...)` and a real, animated character. See
+  §"Bridge Relay subsystem" below for the wire contract.
 - **Delivery plan:** [`workdocs/ai/project/plan.md`](./plan.md).
 - **Project constitution / locked invariants:** project-root [`AGENTS.md`](../../../AGENTS.md).
 
@@ -114,6 +120,8 @@ all business state; the bridge owns only a derived, restart-safe cache.
 | Bridge contract | The canonical, versioned (`schemaVersion: 1`) data/action/stream shapes the worker serves and the UI/adapter consume (spec §9) |
 | `ctx.data` / `ctx.actions` / `ctx.streams` / `ctx.events` / `ctx.state` | Public Plugin SDK surfaces the worker exposes to the UI; the only permitted path across the trust boundary (FR-9) |
 | Behavior channel | The company-scoped stream channel `behavior:<companyId>` over which the worker pushes `BridgeStreamEvent` deltas |
+| Invocation-scope guard | The host worker-manager resolves every worker→host message to an invocation scope before acting on it; a stream notification that does not resolve to a valid company scope is dropped before it reaches the stream bus |
+| `proactiveCompanyScopes` | The set of companies a worker is authorized to act on outside a host-issued invocation; seeded at worker start so background `streams.emit` notifications pass the invocation-scope guard |
 | Host | The Paperclip application that loads the plugin worker and mounts the UI bundle |
 | Slot | A host UI extension point (`page` or `sidebar`) declared in the manifest and bound to a named export of the UI bundle |
 | Bridge relay | The optional in-plugin subsystem (`BridgeRelay`, `PAPERCLIP_PIXELS-2`) that pushes mapped canonical bridge events to a Pixel Agents server hook endpoint, one `BridgeTransport` + `HttpPushSink` per company |
@@ -163,14 +171,15 @@ graph LR
   minimal source-level adapter; owns all visual/spatial state. The bridge
   supplies business context only.
 - **Pixel Agents server (relay target, `PAPERCLIP_PIXELS-2`).** An
-  operator-configured outbound HTTP target. When the relay is enabled for a
-  company, the worker's `BridgeRelay` POSTs mapped event envelopes to
-  `<pixelAgentsUrl>/api/hooks/<providerId>` (default provider id
-  `paperclip-bridge`). The relay is provider-agnostic and additive; reaching
-  the live Pixel Agents runtime additionally requires the upstream
-  per-`providerId` dispatch change (spike SAA-175 §5/§6) so the
-  `paperclip-bridge` provider is normalized instead of the single injected
-  `claudeProvider`.
+  operator-configured outbound HTTP target (default: the same-machine/same-pod
+  `paperclip-pixel-relay` companion CLI, not Pixel Agents directly — see
+  below). When the relay is enabled for a company, the worker's `BridgeRelay`
+  POSTs mapped events, serialized as the **real Claude hook JSON body**
+  (`hook_event_name`, `session_id`, etc.) to `<pixelAgentsUrl>/api/hooks/claude`
+  — reaching the live, **unmodified** Pixel Agents runtime today via its own
+  pre-existing "hooks-only external provider" adoption path (built for
+  non-Claude CLIs like OpenCode/Copilot). No upstream Pixel Agents change is
+  required or waited on.
 
 **Trust boundaries.** There are two trust boundaries: (1) all Paperclip
 domain access routes through the worker bridge; UI components never call
@@ -220,27 +229,33 @@ spec §2; not relaxed without CTO approval):
 
 ## 05. Logical Architecture
 
-Three workspace packages (spec §7, §8):
+One published npm package, `@decaf-ts/paperclip-pixels`, at the repo root
+(spec §7, §8 recommended a three-workspace-package split; superseded — three
+packages with `workspace:*` references plain npm couldn't resolve, for no
+benefit, since only one was ever published. `paperclip/`/`pixel-agents/` are
+git submodules only — reference/future-upstream-PR material, never modified,
+never a build dependency). Internally, three logical subsystems:
 
-1. **`packages/core` (`@paperclip-pixel/core`)** — snapshot loader, event
-   normalizer + idempotent reducer, entity/run/concurrency projection,
-   temporal windows, behavioral proxy calculator, feedback classifier,
-   action policy / new-work gate, reconciliation. **Must not import React,
-   the Pixel Agents renderer, or Paperclip UI code.**
-2. **`packages/paperclip-plugin`** — manifest/capabilities, event
-   subscriptions, authoritative snapshot bootstrap, SDK client calls,
-   `ctx.state` persistence, `ctx.data`/`ctx.actions`/`ctx.streams` handlers,
-   the embedded Pixel Office UI surface (worker + UI bundle), and — as of
-   `PAPERCLIP_PIXELS-2` — the in-plugin `BridgeRelay` (`src/relay.ts`) that
-   forwards the same canonical events/snapshots to an optional Pixel Agents
-   server hook endpoint.
-3. **`packages/pixel-agents-provider`** — consumes the bridge contract, maps
-   only semantically valid current events to current `AgentEvent` semantics,
-   retains richer behavior in a sidecar, integrates at the smallest possible
-   source-level adapter. As of `PAPERCLIP_PIXELS-2` it is also a **runtime
-   dependency of the plugin** and exports the relay primitives
-   (`BridgeTransport`, `HttpPushSink`, `PAPERCLIP_BRIDGE_PROVIDER_ID`,
-   `FetchLike`) consumed by `BridgeRelay`.
+1. **`src/core/`** — snapshot loader, event normalizer + idempotent reducer,
+   entity/run/concurrency projection, temporal windows, behavioral proxy
+   calculator, feedback classifier, action policy / new-work gate,
+   reconciliation. **Must not import React, the Pixel Agents renderer, or
+   Paperclip UI code.**
+2. **`src/{worker,manifest,actions,relay,snapshot,subscriptions,persistence}.ts`,
+   `src/ui/`** — manifest/capabilities, event subscriptions, authoritative
+   snapshot bootstrap, SDK client calls, `ctx.state` persistence,
+   `ctx.data`/`ctx.actions`/`ctx.streams` handlers, the embedded Pixel Office
+   UI surface (worker + UI bundle), and — as of `PAPERCLIP_PIXELS-2` — the
+   in-plugin `BridgeRelay` (`src/relay.ts`) that forwards the same canonical
+   events/snapshots to the `paperclip-pixel-relay` companion CLI.
+3. **`src/pixel-agents-provider/`** — consumes the bridge contract, maps
+   only semantically valid current events to current `AgentEvent` semantics
+   **and serializes them into the real Claude hook JSON body** Pixel Agents'
+   one shipped provider (`claudeProvider`) already accepts, retains richer
+   behavior in a sidecar. As of `PAPERCLIP_PIXELS-2` it also exports the relay
+   primitives (`BridgeTransport`, `HttpPushSink`, `CLAUDE_WIRE_PROVIDER_ID`,
+   `FetchLike`) consumed by `BridgeRelay` — no longer a separate package
+   dependency, a plain relative import within the same `src/` tree.
 
 ```mermaid
 graph TD
@@ -249,29 +264,31 @@ graph TD
     UIB[UI bundle<br/>entrypoints.ui]
     RL[BridgeRelay<br/>src/relay.ts]
   end
-  CORE[packages/core<br/>reducer + proxies]
-  PA[packages/pixel-agents-provider<br/>BridgeTransport + HttpPushSink]
-  PAS[Pixel Agents server<br/>POST /api/hooks/&lt;providerId&gt;]
+  CORE[src/core<br/>reducer + proxies]
+  PA[src/pixel-agents-provider<br/>BridgeTransport + HttpPushSink]
+  RELAY[paperclip-pixel-relay CLI<br/>bin/paperclip-pixel-relay.js<br/>same pod/host as Pixel Agents]
+  PAS["Pixel Agents (unmodified)<br/>POST /api/hooks/claude"]
   WK --> CORE
   WK -->|"ctx.data/actions/streams"| UIB
   WK -->|"canonical bridge contract"| PA
   WK -->|"same canonical events/snapshots"| RL
   RL --> PA
-  PA -->|"HTTP push (operator-gated)"| PAS
+  PA -->|"real Claude hook JSON (operator-gated)"| RELAY
+  RELAY -->|"+ correct bearer token, read locally"| PAS
 ```
 
 **UI wiring subsystem (this layer's focus).** The plugin UI is built and
-exposed as two artifacts from `packages/paperclip-plugin`:
+exposed as two artifacts from this package's `src/`:
 
 - **Worker** — bundled by esbuild (`scripts/build.mjs` using
   `createPluginBundlerPresets` from `@paperclipai/plugin-sdk/bundlers`) into
   a self-contained `dist/worker.js` (+ `dist/manifest.js`). It inlines
-  `@paperclip-pixel/core`, `@paperclipai/plugin-sdk`, `@paperclipai/shared`,
-  `zod`, and `@paperclip-pixel/pixel-agents-provider`, externalizing only
-  `node:*` built-ins, so the forked worker process never has to resolve them
-  from an install location at runtime. It implements the bridge handlers, the
-  company-scoped stream, and — as of `PAPERCLIP_PIXELS-2` — owns the
-  `BridgeRelay` (see "Bridge Relay subsystem" below).
+  `src/core`, `src/pixel-agents-provider`, `@paperclipai/plugin-sdk`,
+  `@paperclipai/shared`, and `zod`, externalizing only `node:*` built-ins, so
+  the forked worker process never has to resolve them from an install
+  location at runtime. It implements the bridge handlers, the company-scoped
+  stream, and — as of `PAPERCLIP_PIXELS-2` — owns the `BridgeRelay` (see
+  "Bridge Relay subsystem" below).
 - **UI bundle** — bundled by esbuild (`scripts/build-ui.mjs`) from
   `src/ui/index.tsx` to `dist/ui/index.js`. Re-exports the two slot
   components: `PixelOfficePage` (page slot) and `PixelOfficeSidebar`
@@ -286,10 +303,98 @@ The bridge contract the UI consumes is defined UI-side in
 `behavior:<companyId>` channel, `BRIDGE_DATA_KEYS.snapshot = "bridge-snapshot"`,
 `BRIDGE_ACTION_KEYS`, and `behaviorChannel(companyId)` → `` `behavior:${companyId}` ``.
 
-The worker side of that contract (this layer): `worker.ts` opens the
-company-scoped channel on company setup — `ctx.streams.open(behaviorChannel(companyId), companyId)` — and emits deltas via
-`ctx.streams.emit(behaviorChannel(change.companyId), uiEvent)`. Stream
-channels are therefore **company-scoped**, not a single global channel.
+The worker side of that contract (this layer): `worker.ts` opens **both**
+channels per company on company setup — the company-scoped behavior channel
+(`ctx.streams.open(behaviorChannel(companyId), companyId)`) and the shared
+`bridge` channel (`ctx.streams.open(STREAM_CHANNELS.bridge, companyId)`) —
+so the SDK's per-process channel→company map is populated for every channel
+the worker emits on. That map is what stamps a non-empty `companyId` onto
+each outgoing stream notification, which the host invocation-scope guard
+requires (see "Host-side stream delivery path" below). The worker then
+emits deltas on the behavior channel via
+`ctx.streams.emit(behaviorChannel(change.companyId), uiEvent)`, and pushes
+a `company.summary.changed` event on that same channel whenever an applied
+event or an authoritative reconciliation actually changes the company
+summary — so live gauges (open-issue count, active-run count, …) update
+without a manual refresh. Stream channels are therefore **company-scoped**,
+not a single global channel.
+
+### Host-side stream delivery path
+
+The stream is not a direct worker→UI pipe. Between the worker's
+`ctx.streams.emit` and the UI's `usePluginStream` subscription sits the
+**host plugin worker-manager**, an in-memory **plugin stream bus**, and an
+**SSE route**. The full chain is:
+
+```mermaid
+sequenceDiagram
+    participant W as Bridge worker
+    participant M as Host worker-manager
+    participant B as Plugin stream bus
+    participant SSE as SSE route
+    participant UI as Pixel Office UI
+    Note over W: ctx.streams.emit(channel, companyId, event)
+    W->>M: streams.emit notification
+    Note over M: invocation-scope guard
+    alt no invocation id and companyId not in proactiveCompanyScopes
+        M-->>M: drop (warn)
+    else invocation id matches scope or companyId in proactiveCompanyScopes
+        M->>B: onStreamNotification -> bus.publish
+        B->>SSE: fan out to channel+company subscribers
+        SSE->>UI: SSE data event
+    end
+    Note over W,M: worker crash/exit with open channels
+    M->>B: synthetic streams.close per orphaned channel
+    B->>SSE: close event
+    SSE->>UI: close (client may re-fetch snapshot)
+```
+
+**Invocation-scope guard.** Every worker→host message is resolved to an
+invocation scope before the host acts on it; stream notifications
+(`streams.open`/`streams.emit`/`streams.close`) are no exception. A
+notification resolves to a valid company scope when it either echoes a
+host-issued invocation id (bound to that invocation's single company) **or**
+is a *proactive* (background) notification whose `companyId` is in the
+worker's `proactiveCompanyScopes` set. A proactive notification with an
+empty `companyId`, or one referencing a company outside that set, is dropped
+with a warning before it ever reaches the stream bus — so it never fans out
+to SSE. The guard never widens access beyond the plugin's configured
+companies; it only decides whether a given background emit is admitted.
+
+**Proactive company scopes.** `proactiveCompanyScopes` is the set of
+companies a worker may act on outside a host-issued invocation (timers,
+reconcile passes, event-driven emits). The host seeds it at worker start
+from the plugin's configured companies, before any `setup()`-time
+worker→host call can fire, so background stream emits reference an
+authorized company and pass the guard. The bridge plugin auto-serves every
+company in the instance and carries **no per-company operator config**, so
+its configured-companies set would otherwise come out empty and every
+background behavior/bridge emit would be dropped at the guard — live deltas
+would never flow and the UI would only update on manual refresh. The host
+image therefore seeds the bridge plugin's proactive scopes from **all
+served companies** at worker start (see §06). A plugin that emits on a
+stream channel from a background loop must, in general, (a) pass a
+non-empty `companyId` on the channel and (b) be configured (or seeded) for
+that company, or the emit is dropped at the guard.
+
+**Stream bus and SSE delivery.** Admitted notifications are forwarded to an
+in-memory pub/sub bus (`PluginStreamBus`) keyed by `(pluginId, channel,
+companyId)`. The UI subscribes with `usePluginStream(channel)` from
+`@paperclipai/plugin-sdk/ui`, which opens an `EventSource` on
+`GET /api/plugins/:pluginId/bridge/stream/:channel?companyId=<companyId>`;
+the route enforces board-org and company access and fans bus events out as
+SSE with event types `message`, `open`, and `close`. Multiple UI clients may
+subscribe to the same `(pluginId, channel, companyId)` tuple concurrently,
+and a client never receives events for another company.
+
+**Crash cleanup.** The worker-manager tracks open channels per worker. If
+the worker process exits or crashes with channels still open, the host emits
+a synthetic `streams.close` for each orphaned channel so connected SSE
+clients are notified instead of hanging; the UI then re-fetches a full
+snapshot on reconnect (NFR-3, FR-13). This host-side path is the connective
+tissue the spec's §16 stream contract depends on; the contract itself
+(envelope shapes, `behaviorChannel`, `BRIDGE_STREAM_EVENT_TYPES`) lives in
+the spec record and `src/ui/bridge-contract.ts`.
 
 ### Bridge Relay subsystem (PAPERCLIP_PIXELS-2)
 
@@ -353,13 +458,14 @@ company (fail-securely).
   (active relay count) in `details`.
 - **`onShutdown()`** — `relay.disposeAll()` disposes every company transport.
 
-**Upstream dependency.** The relay is provider-agnostic: it pushes
-correctly shaped envelopes and the Pixel Agents HTTP route accepts and
-acknowledges them today. Reaching the *current* Pixel Agents runtime (events
-appearing in the office UI) additionally requires the upstream
-per-`providerId` dispatch change so the `paperclip-bridge` provider is
-normalized instead of the single injected `claudeProvider` (spike SAA-175
-§5/§6, CTO-reviewed, tracked separately — not part of this diff).
+**Upstream dependency: none.** The relay pushes events serialized as the real
+Claude hook JSON body (`hook_event_name`, `session_id`, `tool_name`, etc.),
+targeting Pixel Agents' one shipped provider (`claudeProvider`) directly at
+`/api/hooks/claude`. No upstream Pixel Agents change, past or pending, is
+required — confirmed live: a pushed event produces
+`[Pixel Agents] Hook: Agent N - detected hooks-only external session (...)`
+and a real, animated character, against a pristine (`git diff origin/main`
+empty) Pixel Agents checkout.
 
 ---
 
@@ -367,9 +473,8 @@ normalized instead of the single injected `claudeProvider` (spike SAA-175
 
 ### Build pipeline
 
-The plugin is built from `packages/paperclip-plugin` with a single
-`pnpm run build`, which orders two stages (`prebuild` runs `rimraf ./dist`
-first):
+The plugin is built from the repo root with a single `npm run build`, which
+orders two stages (`prebuild` runs `rimraf ./dist` first):
 
 ```text
 node scripts/build.mjs && node scripts/build-ui.mjs
@@ -380,11 +485,11 @@ node scripts/build.mjs && node scripts/build-ui.mjs
    `@paperclipai/plugin-sdk/bundlers` (`createPluginBundlerPresets`):
    - Entries: `src/worker.ts` → `dist/worker.js`, `src/manifest.ts` →
      `dist/manifest.js` (ESM, sourcemap on, `minify: false`).
-   - **Inlined** into each bundle: `@paperclip-pixel/core`,
+   - **Inlined** into each bundle: `src/core`, `src/pixel-agents-provider`,
      `@paperclipai/plugin-sdk`, `@paperclipai/shared` (consumed as TS
-     source), `zod`, and `@paperclip-pixel/pixel-agents-provider`. The
-     forked worker process therefore never has to resolve these from an
-     install location at runtime — the bundle is self-contained.
+     source), and `zod`. The forked worker process therefore never has to
+     resolve these from an install location at runtime — the bundle is
+     self-contained.
    - **Externalized:** `node:*` built-ins only (per the plugin loader
      contract). The worker loads in plain Node with no `tsx` loader.
    - `tsc -p tsconfig.json` is no longer the worker build step. It is kept
@@ -406,14 +511,15 @@ node scripts/build.mjs && node scripts/build-ui.mjs
      worker bridge (FR-9, §28.2). This mirrors the SDK reference pattern in
      `paperclip/packages/plugins/examples/plugin-kitchen-sink-example/scripts/build-ui.mjs`.
 
-The plugin `package.json` exposes a `paperclipPlugin` field
+The plugin `package.json` (the repo-root `package.json` — there is no other)
+exposes a `paperclipPlugin` field
 (`{ "manifest": "./dist/manifest.js", "worker": "./dist/worker.js" }`) so the
 host loader can locate the built artifacts, and points `exports`/`types` at
-`src/*.ts` (types resolve from source). `pnpm run build:worker` rebuilds only
-the worker/manifest bundles, `pnpm run build:ui` rebuilds only the UI bundle,
-and `pnpm run typecheck:ui` (`tsc -p tsconfig.test.json --noEmit`)
-type-checks the UI sources against the test tsconfig. `esbuild` is a
-devDependency of `packages/paperclip-plugin`.
+`src/*.ts` (types resolve from source). `npm run build:worker` rebuilds only
+the worker/manifest bundles, `npm run build:ui` rebuilds only the UI bundle,
+and `npm run typecheck:ui` (`tsc -p tsconfig.test.json --noEmit`)
+type-checks the UI sources against the test tsconfig. `esbuild` is a root
+devDependency.
 
 ### Deploy bundle flow
 
@@ -421,35 +527,50 @@ Deployment builds two Docker images from the repo root after the plugin is
 built (per `deploy/README.md`):
 
 ```bash
-( cd packages/paperclip-plugin && pnpm install && pnpm run build )
+npm run build
 docker build -t paperclip-pixel-host:local -f deploy/docker/Dockerfile.paperclip-pixel-host .
 docker build -t pixel-agents:local         -f deploy/docker/Dockerfile.pixel-agents .
 ```
 
-- **Host image** (`Dockerfile.paperclip-pixel-host`) reuses the published
-  Paperclip base (`ghcr.io/paperclipai/paperclip:latest`) and only adds the
-  **self-contained bridge plugin** plus a bootstrap entrypoint. It does not
-  rebuild the plugin — it consumes the already-built `dist/`.
+- **Host image** (`Dockerfile.paperclip-pixel-host`) is built FROM the
+  **published, completely unpatched** Paperclip base
+  (`ghcr.io/paperclipai/paperclip:latest`) and only adds the self-contained
+  bridge plugin plus a bootstrap entrypoint. It does not rebuild the plugin —
+  it consumes the already-built `dist/`.
+
+  **(Historical — no longer applies.)** An earlier revision of this image
+  applied two build-time patches (`saa316-stream-bus.patch`,
+  `saa320-proactive-scopes.patch`, both now deleted) to wire Paperclip's
+  `createPluginStreamBus()` and seed proactive plugin-worker scopes — purely
+  so the plugin's *own* embedded dashboard page could get live SSE push
+  updates from its worker instead of polling. That machinery was unrelated to
+  the Paperclip↔Pixel Agents bridge itself (which pushes over plain
+  `ctx.http.fetch`, never touches the stream bus) and added a real, if
+  disclosed, Paperclip source patch for a cosmetic UI feature. Removed in
+  favor of the plugin's own polling-based `useBridge` refresh (§29.3), which
+  was always the fallback path anyway. `GET /api/plugins/:id/bridge/stream/:channel`
+  now returns 501 on this image, same as any stock Paperclip install. If the
+  live-push UX is wanted back, the right fix is a genuine small upstream PR to
+  Paperclip wiring `bridgeDeps.streamBus` natively — not a build-time patch.
+
 - **Plugin bundling** is performed by `deploy/docker/build-plugin-bundle.sh`,
   which assembles a self-contained copy of the plugin at a target directory.
-  Because the worker/manifest bundles are now esbuild-bundled (inlining
-  `core`/`sdk`/`shared`/`zod`/`pixel-agents-provider`), the script is
-  simplified to copying only `packages/paperclip-plugin/package.json` and the
-  **whole `dist/` tree** (`cp -R .../dist`). There is no more vendoring of
-  `core`/`sdk`/`shared` as real files under `node_modules/`, no `zod`
-  install, and no `@paperclipai/shared` exports-rewriting step. The layout
-  produced is just:
+  Because the worker/manifest bundles are esbuild-bundled (inlining
+  `core`/`pixel-agents-provider`/`sdk`/`shared`/`zod`), the script just copies
+  the root `package.json` and the **whole `dist/` tree** (`cp -R .../dist`).
+  No vendoring of dependency files under `node_modules/`, no separate `zod`
+  install, no exports-rewriting step. The layout produced is just:
   ```text
   <target>/
-    package.json   (from packages/paperclip-plugin)
+    package.json   (the @decaf-ts/paperclip-pixels root package.json)
     dist/          (worker.js, manifest.js, ui/index.js -- all self-contained)
   ```
   Because `dist/` contains `worker.js`, `manifest.js`, and `ui/index.js`,
   the UI bundle ships inside the same `dist/` as the worker — the host finds
   it via the manifest's `entrypoints.ui` (`"./dist/ui"`). No separate UI
-  shipping step is needed. The Dockerfile correspondingly only `COPY`s
-  `packages/paperclip-plugin` (no longer `packages/core`,
-  `paperclip/.../sdk`, or `paperclip/.../shared`).
+  shipping step is needed. The Dockerfile correspondingly only `COPY`s the
+  root `package.json` + `dist/` (nothing from `paperclip/` or `pixel-agents/`
+  beyond their own Dockerfile stages).
 - **Pixel Agents image** (`Dockerfile.pixel-agents`) builds the standalone
   CLI from the `pixel-agents` submodule; it ships no Dockerfile of its own
   beyond this one.
@@ -690,6 +811,63 @@ without a worker restart.
 is operator-gated per company, and is provider-agnostic until the upstream
 dispatch change lands.
 
+### ADR-06 — Background stream emits and the host invocation-scope guard
+
+**Context & problem.** Live UI deltas flow as worker `ctx.streams.emit`
+notifications, but the host worker-manager does not blindly forward them: it
+resolves every worker→host message to an *invocation scope* first, and drops
+any stream notification that does not resolve to a valid company scope. A
+notification is admitted when it echoes a host-issued invocation id (bound to
+that invocation's company) **or** when it is a proactive background emit whose
+`companyId` is in the worker's `proactiveCompanyScopes`. The bridge plugin
+does its real work outside any host-issued invocation — event-driven
+`onEvent` processing and periodic reconciliation both emit on the behavior
+channel in the background — so its live deltas depend entirely on the
+proactive path. Two failure modes follow: (1) an emit with an empty
+`companyId` on the channel is dropped (the SDK stamps `companyId` from a
+per-process channel→company map, which is only populated for channels the
+worker explicitly opened with a `companyId`); and (2) the worker's
+`proactiveCompanyScopes` is seeded from the plugin's *configured* companies,
+and the bridge plugin auto-serves every company with no per-company operator
+config, so that set is empty and every background emit is dropped at the
+guard. With both, live gauges only update on manual refresh.
+
+**Alternatives considered**
+
+| Option | Description |
+| --- | --- |
+| Emit on a single global `behavior` channel with no `companyId` | Rejected: drops at the guard (empty `companyId`), and leaks across companies (ADR-02) |
+| Drive all emits from inside a host-issued invocation only | Rejected: background reconcile/event work is the whole point of live updates; the UI would go stale between invocations |
+| Open only the behavior channel per company | Rejected: the shared `bridge` channel also carries company-scoped events; without opening it per company its notifications carry an empty `companyId` and drop at the guard |
+| **Open both channels per company + seed proactive scopes from served companies** | Chosen |
+
+**Decision.** (a) The worker opens **both** the company-scoped
+`behavior:<companyId>` channel and the shared `bridge` channel per company on
+company setup, so the SDK's channel→company map stamps a non-empty
+`companyId` on every notification. (b) The host image seeds the bridge
+plugin's `proactiveCompanyScopes` from **all served companies** at worker
+start (a build-time patch, §06), since the plugin has no per-company operator
+config to seed it from. Background behavior/bridge emits then carry a valid
+`companyId` that is in the proactive set, so they pass the guard and reach
+`bus.publish` → SSE. (c) The worker emits `company.summary.changed` on the
+behavior channel only when a summary actually changes (reconcile or
+event), avoiding delta spam.
+
+**Pros / Cons**
+
+| Pros | Cons |
+| --- | --- |
+| Background emits reach the UI; live gauges update without a manual refresh | Proactive scopes are seeded by a build-time host-image patch, not a plugin-declared mechanism — temporary coupling to the upstream host image |
+| Both channels are company-scoped at the guard; no cross-company bleed (ADR-02) | Revert/replace logic is needed once upstream ships a plugin-driven scopes mechanism |
+| Emit-on-change avoids redundant SSE traffic | The guard's drop is silent (warn-logged); a misconfigured scope surfaces as "UI not updating", not an error |
+
+**Summary.** Live background deltas require both a non-empty `companyId` on
+the channel and a seeded proactive scope; opening both channels per company
+and seeding scopes from served companies makes the bridge's background emits
+survive the host invocation-scope guard. The host-side seeding is a
+temporary build-time patch pending an upstream plugin-driven scopes
+mechanism.
+
 **Risk register**
 
 | ID | Risk | Impact | Likelihood | Mitigation | Owner | Status |
@@ -700,6 +878,7 @@ dispatch change lands.
 | R4 | Worker bundle accidentally externalizes an inlined dep → runtime resolution failure in the forked worker | High | Low | SDK-blessed `createPluginBundlerPresets` owns the inline/externalize rules; build logs the inlined/externalized lists | Engineering | Mitigated by SDK presets (PAPERCLIP_PIXELS-2) |
 | R5 | Relay push failure or misconfiguration crashes the worker / breaks the UI bridge | High | Low | `setup()`/`onConfigChanged` catch+log relay errors; relay is no-op when disabled; UI bridge is independent of relay | Engineering | Mitigated by failure isolation (PAPERCLIP_PIXELS-2) |
 | R6 | Relay enabled for the wrong company / cross-company event bleed | High | Low | Per-company `Map<companyId, CompanyRelay>`; `onConfigChanged` is per-company; `multiCompanyConfig: true` | Engineering | Mitigated (PAPERCLIP_PIXELS-2) |
+| R7 | Background `streams.emit` dropped by the host invocation-scope guard → UI gauges only update on manual refresh | High | Medium | Worker opens both channels per company so `companyId` is stamped on every notification; host image seeds the bridge plugin's `proactiveCompanyScopes` from served companies at worker start (ADR-06, §06) | Engineering | Mitigated by dual-channel open + proactive-scope seeding |
 
 ---
 
@@ -754,7 +933,11 @@ sequenceDiagram
   and explicit refresh (NFR-3, FR-13).
 - **Stream (deltas):** worker pushes `BridgeStreamEvent` envelopes on the
   company-scoped `behavior:<companyId>` channel, opened per company. Every
-  payload carries `schemaVersion: 1` (NFR-6).
+  payload carries `schemaVersion: 1` (NFR-6). Delivery is not a direct
+  worker→UI pipe — the host worker-manager invocation-scope guard, the
+  plugin stream bus, and the SSE route sit between them; see §05
+  "Host-side stream delivery path" and ADR-06 for that path and the
+  proactive-scope seeding that lets background emits survive the guard.
 - **Actions:** UI invokes worker actions by `BRIDGE_ACTION_KEYS`
   (spec §15/§17/§18), e.g. `company.send-message` (the sole new-work intake
   path) and `agent.reply-to-feedback` (bound to existing work; cannot create
@@ -766,7 +949,7 @@ sequenceDiagram
 
 The full canonical contract shapes (`RawAgentProjection`, `WindowedMetrics`,
 `AgentBehaviorVector`, `AgentFeedback`, etc.) are defined in the spec domain
-record (§9) and the `packages/core` contract; this handbook references them
+record (§9) and the `src/core` contract; this handbook references them
 rather than restating field lists.
 
 ### IF003 — Relay operator config (`instanceConfigSchema`, PAPERCLIP_PIXELS-2)

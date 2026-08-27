@@ -10,14 +10,14 @@
 # install the Pixel bridge plugin from its built `dist/` via the real
 # `POST /api/plugins/install` route (local-path install).
 #
-# Why not Docker quickstart: the plugin lives in the outer `paperclip-pixels`
-# workspace and imports `@paperclip-pixel/core` + `@paperclipai/plugin-sdk`,
-# whose deps resolve on the host filesystem (outer node_modules) where they are
-# already built. Running from source keeps the plugin worker's dependency
-# graph intact. The host's plugin-loader adds the tsx loader for any
-# local-path install (plugin-loader.ts: `activePlugin.packagePath && tsx
-# exists`), so the worker can resolve the workspace `@paperclipai/shared`
-# TS-source exports at runtime.
+# Why not Docker quickstart: the plugin is this repo's own root package
+# (`@decaf-ts/paperclip-pixels`) and its built dist/worker.js is fully
+# self-contained (core + pixel-agents-provider + the plugin SDK + zod all
+# inlined by esbuild — see scripts/build.mjs), so it resolves on the host
+# filesystem with nothing to vendor. The host's plugin-loader adds the tsx
+# loader for any local-path install (plugin-loader.ts: `activePlugin.packagePath
+# && tsx exists`), which is only needed for the Paperclip *server* itself
+# (run from source here, not the published image).
 #
 # Usage:
 #   scripts/integration-host/up.sh                 # defaults: port 13100
@@ -36,7 +36,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PAPERCLIP_SRC="$ROOT/paperclip"
-PLUGIN_DIR="$ROOT/packages/paperclip-plugin"
+PLUGIN_DIR="$ROOT"
 SCRIPT_DIR="$ROOT/scripts/integration-host"
 STATE_FILE="${STATE_FILE:-$SCRIPT_DIR/.run-state}"
 
@@ -107,38 +107,24 @@ if [[ "${SKIP_SERVER_INSTALL:-0}" != "1" ]]; then
 fi
 [[ -f "$TSX_LOADER" ]] || fail "tsx loader still missing at $TSX_LOADER after install attempt"
 
-# 2. Plugin built? (dist/worker.js + dist/manifest.js). The loader resolves the
-#    manifest via the dist/manifest.js fallback convention (no
-#    `paperclipPlugin.manifest` key in package.json is required).
+# 2. Plugin built? (dist/worker.js + dist/manifest.js).
 if [[ ! -f "$PLUGIN_DIR/dist/worker.js" || ! -f "$PLUGIN_DIR/dist/manifest.js" ]]; then
-  log "Plugin dist missing; building @paperclip-pixel/paperclip-plugin..."
-  ( cd "$PLUGIN_DIR" && pnpm run build ) || fail "Plugin build failed. Run: (cd packages/paperclip-plugin && pnpm run build)"
+  log "Plugin dist missing; building @decaf-ts/paperclip-pixels..."
+  ( cd "$PLUGIN_DIR" && npm run build ) || fail "Plugin build failed. Run: (npm run build)"
 fi
 [[ -f "$PLUGIN_DIR/dist/worker.js" ]] || fail "plugin dist/worker.js missing"
 [[ -f "$PLUGIN_DIR/dist/manifest.js" ]] || fail "plugin dist/manifest.js missing"
 
-# 3. Wire the plugin's workspace dependencies into its node_modules.
-#    The plugin declares `@paperclipai/plugin-sdk: workspace:*` and
-#    `@paperclip-pixel/core: ^0.1.0`, but those packages live across a
-#    submodule boundary (sdk in paperclip/packages/plugins/sdk) / in the
-#    sibling packages/core, and this outer repo has no pnpm-workspace.yaml to
-#    resolve `workspace:*`. The pre-existing environment already symlinks
-#    `@paperclipai/shared` and `zod` into the plugin's node_modules the same
-#    way; we complete the set idempotently so the worker (ESM) can resolve
-#    `import "@paperclipai/plugin-sdk"` and `import "@paperclip-pixel/core"`.
-ensure_plugin_dep() {
-  local scope_dir="$1" name="$2" target="$3"
-  mkdir -p "$scope_dir"
-  if [[ ! -e "$scope_dir/$name" || "$(readlink -f "$scope_dir/$name" 2>/dev/null || true)" != "$target" ]]; then
-    ln -sfn "$target" "$scope_dir/$name"
-    log "Linked plugin dep $(basename "$scope_dir")/$name -> $target"
-  fi
-}
-PLUGIN_NM="$PLUGIN_DIR/node_modules"
-[[ -d "$PAPERCLIP_SRC/packages/plugins/sdk/dist" ]] || fail "@paperclipai/plugin-sdk dist missing at $PAPERCLIP_SRC/packages/plugins/sdk (build the submodule sdk)"
-[[ -d "$ROOT/packages/core/dist" ]] || fail "@paperclip-pixel/core dist missing at $ROOT/packages/core (run: pnpm --filter @paperclip-pixel/core build)"
-ensure_plugin_dep "$PLUGIN_NM/@paperclipai" "plugin-sdk" "$PAPERCLIP_SRC/packages/plugins/sdk"
-ensure_plugin_dep "$PLUGIN_NM/@paperclip-pixel" "core" "$ROOT/packages/core"
+# 3. @paperclipai/plugin-sdk + @paperclipai/shared symlinks. These can't be
+#    real npm deps (plugin-sdk's own package.json depends on shared via the
+#    pnpm/yarn-only `workspace:*` protocol, which plain npm can't resolve even
+#    via `file:` — see scripts/link-paperclip-sdk.mjs's own doc comment).
+#    `npm install` at the root already sets these up via its `postinstall`
+#    hook; this is just a defensive re-run in case dist/ was built without a
+#    fresh install (core/pixel-agents-provider need no such linking — they're
+#    plain src/ subdirectories of this same package, resolved by relative
+#    import, not module resolution).
+node "$ROOT/scripts/link-paperclip-sdk.mjs" || fail "Failed to link @paperclipai/plugin-sdk + shared (see scripts/link-paperclip-sdk.mjs)"
 
 # ---------------------------------------------------------------------------
 # Boot the server (background)

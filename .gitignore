@@ -12,3 +12,6 @@
 /.npmtoken
 /node_modules
 /.env
+workdocs/locks/*
+!workdocs/locks/.gitkeep
+.saa*

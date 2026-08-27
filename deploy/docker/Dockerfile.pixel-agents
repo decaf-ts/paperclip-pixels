@@ -2,14 +2,25 @@
 #
 # Pixel Agents standalone server (SPA + WebSocket + hook ingest endpoint).
 # The upstream submodule ships no Dockerfile, so this builds the standalone
-# CLI from source. Runtime serves the React webview + /ws + /api/hooks/:id +
-# /api/health.
+# CLI from source, UNMODIFIED (see deploy/README.md — this is a build
+# artifact, not a source patch). Runtime serves the React webview + /ws +
+# /api/hooks/:id + /api/health.
+#
+# Also vendors the bridge's relay CLI (bin/
+# paperclip-pixel-relay.js — our own code, zero deps, published as the
+# package's `paperclip-pixel-relay` bin) into the same image. The k8s pod
+# runs it as a SECOND container from this image with its command overridden,
+# sharing an emptyDir ~/.pixel-agents volume with the main container so it
+# can read the server's locally-generated bearer token (see the script's own
+# doc comment for why this exists).
 #
 # Build (from the repo root, with the pixel-agents submodule initialized):
 #   docker build -t pixel-agents:local -f deploy/docker/Dockerfile.pixel-agents .
 #
-# Run:  docker run --rm -p 8080:8080 pixel-agents:local --host 0.0.0.0 --port 8080
+# Run (main server):  docker run --rm -p 8080:8080 pixel-agents:local --host 0.0.0.0 --port 8080
 # (the CLI takes --host/--port flags; there is no env override.)
+# Run (relay):         docker run --rm -p 8081:8081 --entrypoint node pixel-agents:local \
+#                         /opt/relay/paperclip-pixel-relay.js --host 0.0.0.0
 
 FROM node:22-bookworm-slim AS builder
 WORKDIR /build
@@ -40,6 +51,10 @@ WORKDIR /app
 COPY --from=builder /build/dist ./dist
 COPY --from=builder /build/package.json ./package.json
 COPY --from=builder /build/node_modules ./node_modules
+
+# Bridge relay CLI (our own code — see bin/paperclip-pixel-relay.js).
+# Zero external deps, Node built-ins only.
+COPY bin/paperclip-pixel-relay.js /opt/relay/paperclip-pixel-relay.js
 
 # Pixel Agents persists server registry + layout under ~/.pixel-agents/.
 RUN mkdir -p /home/node/.pixel-agents && chown -R node:node /home/node /app
