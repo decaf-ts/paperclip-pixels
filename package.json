@@ -47,6 +47,7 @@
     "test:domain": "jest --config jest.config.domain.ts",
     "test:worker": "vitest run",
     "test:all": "npm run test:domain && npm run test:worker && npm run test",
+    "version": "node scripts/sync-plugin-version.mjs",
     "prepare-release": "npm run lint && npm run typecheck && npm run build && npm run test:all",
     "prepublishOnly": "npm run build"
   },
