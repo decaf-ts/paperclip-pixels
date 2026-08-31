@@ -25,11 +25,22 @@ import {
  * whitespace-only string ref is trimmed away by `extractTokenRef`, so no auth
  * header is ever sent for it.
  *
- * `BridgeRelay` constructs an `HttpPushSink` whose outbound push is routed
- * through the SDK-gated `ctx.http.fetch` surface (never the Node global
- * `fetch`). The fake context therefore wires a controllable `http.fetch`
- * mock; each test spies/inspects it and asserts against the captured calls
- * (URL, method, headers, JSON body).
+ * TRANSPORT NOTE (reversed 2026-08-31, deliberately — see src/relay.ts's
+ * "DELIBERATE ctx.http.fetch BYPASS" comment block): `BridgeRelay` used to
+ * construct an `HttpPushSink` routed through the SDK-gated `ctx.http.fetch`
+ * surface. It now uses the Node global `fetch` directly instead, because
+ * Paperclip's host `ctx.http.fetch` unconditionally rejects any
+ * private/reserved-range destination (including `127.0.0.1`, this package's
+ * own advertised default) with no override of any kind. The fake context's
+ * `http.fetch` field below is kept only because `BridgeRelay` still holds a
+ * `PluginContext` and other code paths may reference `ctx.http` — the actual
+ * push tests in this file mock the Node global `fetch` (see `makeCtx`'s
+ * `httpFetch` param, which now backs a `globalThis.fetch` spy, not
+ * `ctx.http.fetch`). The fake context's `manifest.capabilities` includes
+ * `http.outbound` by default so `BridgeRelay.configure()`'s own
+ * capability re-check (its replacement for the host's per-call enforcement
+ * that the bypass skips) passes; tests exercising the fail-closed path pass
+ * a context built with that capability removed instead.
  */
 
 const COMPANY_ID = "company-acme";
@@ -70,9 +81,18 @@ interface ResolveOptions {
   configPath?: string;
 }
 
+/**
+ * Fake context's manifest capabilities. `BridgeRelay.configure()` checks
+ * `ctx.manifest.capabilities.includes("http.outbound")` before ever
+ * constructing the sink (its replacement for the host's per-call enforcement
+ * that the rawFetch bypass skips — see src/relay.ts). Defaults to including
+ * it so existing push-path tests are unaffected; pass `capabilities` to
+ * exercise the fail-closed path (see "fails closed when the fake manifest
+ * omits http.outbound" below).
+ */
 function makeCtx(
   resolve: (ref: unknown) => Promise<string> | string = async () => "",
-  httpFetch?: typeof fetchMock,
+  capabilities: string[] = ["http.outbound"],
 ): {
   ctx: PluginContext;
   resolve: ReturnType<typeof vi.fn>;
@@ -82,11 +102,14 @@ function makeCtx(
   const resolveFn = vi.fn(
     async (ref: unknown, _opts?: ResolveOptions): Promise<string> => resolve(ref),
   );
-  const gatedFetch: typeof fetchMock = httpFetch ?? fetchMock;
   const ctx = {
     logger,
     secrets: { resolve: resolveFn },
-    http: { fetch: gatedFetch },
+    // Vestigial: BridgeRelay's rawFetch() now calls the Node global `fetch`
+    // directly (see beforeEach's globalThis.fetch spy), never ctx.http.fetch.
+    // Kept only so code that types against a full PluginContext still compiles.
+    http: { fetch: fetchMock },
+    manifest: { capabilities },
   } as unknown as PluginContext;
   return { ctx, resolve: resolveFn, logger };
 }
@@ -169,6 +192,11 @@ beforeEach(() => {
       return { ok: true, status: 200, statusText: "OK" };
     },
   );
+  // BridgeRelay's rawFetch() calls the Node global `fetch` directly (see
+  // src/relay.ts's "DELIBERATE ctx.http.fetch BYPASS" comment) — spy on it
+  // with the same fetchMock so every existing calls/responses-based
+  // assertion below keeps working unchanged.
+  vi.spyOn(globalThis, "fetch").mockImplementation(fetchMock as unknown as typeof fetch);
 });
 
 afterEach(() => {
@@ -284,6 +312,27 @@ describe("BridgeRelay", () => {
     await relay.configure(COMPANY_ID, { pixelAgentsUrl: "https://pa.example" });
     expect(relay.isConfigured(COMPANY_ID)).toBe(true);
     expect(relay.activeCompanyCount).toBe(1);
+  });
+
+  it("fails closed when the host-validated manifest does not declare http.outbound", async () => {
+    // rawFetch() bypasses ctx.http.fetch, so the host's own per-call
+    // capability gate never runs for this push. configure() re-checks
+    // ctx.manifest.capabilities itself as the replacement enforcement (see
+    // src/relay.ts's "DELIBERATE ctx.http.fetch BYPASS" comment) — this
+    // proves that re-check actually refuses to configure the relay, never
+    // touches fetch, and warns instead of silently proceeding.
+    const { ctx, logger } = makeCtx(async () => "", []);
+    const relay = new BridgeRelay(ctx);
+    await relay.configure(COMPANY_ID, { pixelAgentsUrl: "https://pa.example" });
+
+    expect(relay.isConfigured(COMPANY_ID)).toBe(false);
+    expect(relay.activeCompanyCount).toBe(0);
+    expect(calls).toHaveLength(0);
+    expect(
+      logger.calls.some(
+        (l) => l.level === "warn" && l.message === "Bridge relay disabled for company: host-validated manifest does not declare http.outbound",
+      ),
+    ).toBe(true);
   });
 
   it("ingestEvent (canonical agent.run.started) pushes sessionStart + toolStart as real Claude hook bodies", async () => {
@@ -438,25 +487,52 @@ describe("BridgeRelay", () => {
     expect(calls).toHaveLength(2);
   });
 
-  it("ingestSnapshot with two agents pushes one sessionStart per agent", async () => {
+  it("ingestSnapshot with two agents pushes sessionStart + an idle confirmation per agent", async () => {
+    // Each newly-seen agent gets a SessionStart AND an immediate confirming
+    // event (Stop/turnEnd here, since snapshot()'s fixture agents are idle —
+    // no activeRuns). Without the second event Pixel Agents never promotes
+    // the session past "pending", so it never renders as a character at all
+    // (confirmed live 2026-08-31: this was silently true for every idle
+    // agent, which is most agents most of the time).
     const relay = new BridgeRelay(makeCtx().ctx);
     await relay.configure(COMPANY_ID, { pixelAgentsUrl: "https://pa.example" });
 
     relay.ingestSnapshot(COMPANY_ID, snapshot(COMPANY_ID, [AGENT_A, AGENT_B]));
     await flush();
 
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(4);
     for (const call of calls) {
       expect(call.url).toBe("https://pa.example/api/hooks/claude");
       const body = JSON.parse(call.body);
-      expect(body.hook_event_name).toBe("SessionStart");
+      expect(["SessionStart", "Stop"]).toContain(body.hook_event_name);
       expect(typeof body.session_id).toBe("string");
       expect(body.session_id.length).toBeGreaterThan(0);
     }
-    expect(calls.map((c) => JSON.parse(c.body).session_id).sort()).toEqual(
+    const bySession = new Map<string, string[]>();
+    for (const call of calls) {
+      const body = JSON.parse(call.body);
+      const list = bySession.get(body.session_id) ?? [];
+      list.push(body.hook_event_name);
+      bySession.set(body.session_id, list);
+    }
+    expect([...bySession.keys()].sort()).toEqual(
       [
         "paperclip-bridge:company-acme:agent-a",
         "paperclip-bridge:company-acme:agent-b",
+      ].sort(),
+    );
+    for (const events of bySession.values()) {
+      expect(events).toEqual(["SessionStart", "Stop"]);
+    }
+    // The friendly display name (snapshot()'s fixture sets name: id) shows up
+    // as cwd's basename, which is what Pixel Agents uses as its label.
+    const sessionStartBodies = calls
+      .map((c) => JSON.parse(c.body))
+      .filter((b) => b.hook_event_name === "SessionStart");
+    expect(sessionStartBodies.map((b) => b.cwd).sort()).toEqual(
+      [
+        "/paperclip/company-acme/agent-a",
+        "/paperclip/company-acme/agent-b",
       ].sort(),
     );
   });

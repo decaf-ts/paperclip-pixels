@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
-import { createTestHarness, type TestHarness } from "@paperclipai/plugin-sdk/testing";
+import { createTestHarness } from "@paperclipai/plugin-sdk/testing";
 import { BRIDGE_SCHEMA_VERSION } from "../src/core/index.js";
 import { DATA_KEYS, JOB_KEYS, STATE_KEYS, STATE_NAMESPACES } from "../src/constants.js";
 import manifest from "../src/manifest.js";
@@ -283,15 +283,26 @@ describe("worker actions wiring", () => {
 });
 
 describe("worker trust boundary (criterion 8)", () => {
-  it("routes the relay's outbound push through the SDK-gated ctx.http.fetch surface (not a bare global fetch)", async () => {
+  // REVERSED 2026-08-31 (deliberately — see src/relay.ts's "DELIBERATE
+  // ctx.http.fetch BYPASS" comment block): this suite originally asserted the
+  // relay's push went through the SDK-gated `ctx.http.fetch` surface, never a
+  // bare global fetch. That is no longer true by design. Paperclip's host
+  // `ctx.http.fetch` unconditionally rejects any private/reserved-range
+  // destination with no override of any kind, which makes it categorically
+  // unable to reach `paperclip-pixel-relay` in any topology this package
+  // documents, including its own advertised `127.0.0.1` default. The relay
+  // now uses the Node global `fetch` directly for this one, fixed,
+  // operator-configured destination, and re-implements the one part of the
+  // host's enforcement that still applies (see the next test).
+  it("routes the relay's outbound push through the Node global fetch, bypassing ctx.http.fetch's private-IP block", async () => {
     const { harness } = seedStandardWorld();
     harness.setConfig({ pixelAgentsUrl: "https://pa.example" });
-    const httpFetch = spyRelayFetch(harness);
+    const rawFetch = spyRelayFetch();
     await setupWorker(harness);
     await flushRelay();
 
-    expect(httpFetch).toHaveBeenCalled();
-    for (const [url, init] of httpFetch.mock.calls as Array<[string, RequestInit?]>) {
+    expect(rawFetch).toHaveBeenCalled();
+    for (const [url, init] of rawFetch.mock.calls as Array<[string, RequestInit?]>) {
       expect(url).toBe("https://pa.example/api/hooks/claude");
       expect(init?.method).toBe("POST");
     }
@@ -304,16 +315,30 @@ describe("worker trust boundary (criterion 8)", () => {
       harness.ctx.http.fetch("https://example.com"),
     ).rejects.toThrow(/missing required capability 'http\.outbound'/);
   });
+
+  // NOTE: BridgeRelay.configure()'s own ctx.manifest.capabilities re-check
+  // (the replacement enforcement for what rawFetch's bypass skips — see
+  // src/relay.ts) is unit-tested directly in relay.test.ts ("fails closed
+  // when the host-validated manifest does not declare http.outbound"), not
+  // here: `createTestHarness`'s `capabilities` param only gates its own fake
+  // RPC clients (as the test above shows for ctx.http.fetch); it does not
+  // also strip entries from `ctx.manifest`, which always echoes the real,
+  // imported manifest. That's actually accurate to production — Paperclip
+  // has no mechanism to dynamically revoke one capability from an installed
+  // plugin's manifest independent of the manifest itself, so this scenario
+  // isn't reachable through the integration harness at all; relay.test.ts's
+  // hand-built fake context is the right (and only) place to exercise it.
 });
 
 // ---------------------------------------------------------------------------
 // Relay wiring (SAA-229 coverage gap). The relay mirrors bridge state to a
-// Pixel Agents hook endpoint through the capability-gated `ctx.http.fetch`
-// surface (never the Node global fetch). These tests spy on
-// `harness.ctx.http.fetch` (the same object the worker holds as `ctx.http`),
-// configure the harness's `ctx.config`, and assert on the captured push
-// envelopes end-to-end through `setup`, the event handler, the config
-// lifecycle, health, and shutdown hooks.
+// Pixel Agents hook endpoint. As of 2026-08-31 this goes through the Node
+// global `fetch` directly, not the capability-gated `ctx.http.fetch` surface
+// — see src/relay.ts's "DELIBERATE ctx.http.fetch BYPASS" comment and the
+// "worker trust boundary" suite above for why. These tests spy on
+// `globalThis.fetch`, configure the harness's `ctx.config`, and assert on the
+// captured push envelopes end-to-end through `setup`, the event handler, the
+// config lifecycle, health, and shutdown hooks.
 // ---------------------------------------------------------------------------
 
 let relayFetchCalls: Array<{ url: string; method: string; headers: Record<string, string>; body: string }>;
@@ -323,15 +348,13 @@ async function flushRelay(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-/** Spy on the harness's gated `ctx.http.fetch` and capture the relay's push calls. */
-function spyRelayFetch(
-  harness: TestHarness,
-): MockInstance<(url: string, init?: RequestInit) => Promise<Response>> {
+/** Spy on the Node global `fetch` (what the relay's rawFetch() now calls directly, bypassing ctx.http.fetch) and capture the relay's push calls. */
+function spyRelayFetch(): MockInstance<typeof fetch> {
   relayFetchCalls = [];
-  return vi.spyOn(harness.ctx.http, "fetch").mockImplementation(
-    async (url: string, init?: RequestInit) => {
+  return vi.spyOn(globalThis, "fetch").mockImplementation(
+    async (url: string | URL | Request, init?: RequestInit) => {
       relayFetchCalls.push({
-        url,
+        url: String(url),
         method: String(init?.method ?? "GET"),
         headers: (init?.headers as Record<string, string>) ?? {},
         body: typeof init?.body === "string" ? init.body : String(init?.body ?? ""),
@@ -348,29 +371,55 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
     return (health as { details?: Record<string, unknown> }).details ?? {};
   }
 
-  it("setupCompany configures the relay from ctx.config and spawns a session per agent via ingestSnapshot", async () => {
+  it("setupCompany configures the relay from ctx.config and spawns sessionStart + an idle confirmation per agent via ingestSnapshot", async () => {
+    // Both seedStandardWorld() agents are idle (no activeRuns), so each gets
+    // a SessionStart plus an immediate Stop/turnEnd confirmation — without
+    // the second event Pixel Agents never promotes the session past
+    // "pending" and it never renders as a character (see event-mapper.ts's
+    // mapSnapshot doc comment).
     const { harness } = seedStandardWorld();
     harness.setConfig({ pixelAgentsUrl: "https://pa.example" });
-    spyRelayFetch(harness);
+    spyRelayFetch();
     await setupWorker(harness);
     await flushRelay();
 
     expect(harness.logs.some((l) => l.level === "info" && l.message === "Bridge relay configured for company")).toBe(true);
-    expect(relayFetchCalls).toHaveLength(2);
+    expect(relayFetchCalls).toHaveLength(4);
     for (const call of relayFetchCalls) {
       expect(call.url).toBe("https://pa.example/api/hooks/claude");
       expect(call.method).toBe("POST");
       expect(call.headers["content-type"]).toBe("application/json");
       expect(call.headers.authorization).toBeUndefined();
       const body = JSON.parse(call.body);
-      expect(body.hook_event_name).toBe("SessionStart");
+      expect(["SessionStart", "Stop"]).toContain(body.hook_event_name);
       expect(typeof body.session_id).toBe("string");
       expect(body.session_id.length).toBeGreaterThan(0);
     }
-    expect(relayFetchCalls.map((c) => JSON.parse(c.body).session_id).sort()).toEqual([
+    const bySession = new Map<string, string[]>();
+    for (const call of relayFetchCalls) {
+      const body = JSON.parse(call.body);
+      const list = bySession.get(body.session_id) ?? [];
+      list.push(body.hook_event_name);
+      bySession.set(body.session_id, list);
+    }
+    expect([...bySession.keys()].sort()).toEqual([
       "paperclip-bridge:company-acme:agent-ceo",
       "paperclip-bridge:company-acme:agent-dev",
     ]);
+    for (const events of bySession.values()) {
+      expect(events).toEqual(["SessionStart", "Stop"]);
+    }
+    // The friendly display name (fixtures.ts's makeCeoAgent/makeAgent set
+    // real names) shows up as cwd's basename, Pixel Agents' own label source.
+    const sessionStartBodies = relayFetchCalls
+      .map((c) => JSON.parse(c.body))
+      .filter((b) => b.hook_event_name === "SessionStart");
+    expect(sessionStartBodies.map((b) => b.cwd).sort()).toEqual(
+      [
+        "/paperclip/company-acme/CEO Agent",
+        "/paperclip/company-acme/Dev Agent",
+      ].sort(),
+    );
   });
 
   it("boots with the relay enabled by default (this deployment's bundled sidecar) when no relay config is present", async () => {
@@ -402,7 +451,7 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
   it("the event handler forwards the canonical event to the relay after store.applyPaperclipEvent", async () => {
     const { harness } = seedStandardWorld();
     harness.setConfig({ pixelAgentsUrl: "https://pa.example" });
-    spyRelayFetch(harness);
+    spyRelayFetch();
     await setupWorker(harness);
     await flushRelay();
     const baseline = relayFetchCalls.length;
@@ -446,7 +495,7 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
   it("onConfigChanged reconfigures the relay on enable and disable and never throws on malformed config", async () => {
     const { harness } = seedStandardWorld();
     harness.setConfig({ pixelAgentsUrl: "https://pa.example" });
-    spyRelayFetch(harness);
+    spyRelayFetch();
     await setupWorker(harness);
     const def = pluginDefinition(plugin);
 
@@ -470,7 +519,7 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
   it("onHealth details reports companies and relayCompanies counts", async () => {
     const { harness } = seedStandardWorld();
     harness.setConfig({ pixelAgentsUrl: "https://pa.example" });
-    spyRelayFetch(harness);
+    spyRelayFetch();
     await setupWorker(harness);
 
     const health = (await pluginDefinition(plugin).onHealth()) as { status: string; details: Record<string, unknown> };
@@ -482,7 +531,7 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
   it("onShutdown disposes all relays (relayCompanies drops to 0)", async () => {
     const { harness } = seedStandardWorld();
     harness.setConfig({ pixelAgentsUrl: "https://pa.example" });
-    spyRelayFetch(harness);
+    spyRelayFetch();
     await setupWorker(harness);
     const def = pluginDefinition(plugin);
 

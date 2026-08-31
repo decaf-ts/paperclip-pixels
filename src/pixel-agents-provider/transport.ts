@@ -68,19 +68,6 @@ export type FetchLike = (
 export const CLAUDE_WIRE_PROVIDER_ID = "claude";
 
 /**
- * Deterministic synthetic `cwd` for a session (never a real filesystem path;
- * `normalizeHookEvent` never touches disk on this path, and omitting
- * `transcript_path` keeps it off the real-transcript path entirely). It only
- * matters as an opaque grouping key for Pixel Agents' tracked-project gate —
- * a synthetic path is never "tracked", so the deployment must enable
- * "Watch All Sessions" (`~/.pixel-agents/config.json`, data not code) for
- * these sessions to be adopted at all.
- */
-function syntheticCwd(sessionId: string): string {
-  return `/paperclip/${sessionId}`;
-}
-
-/**
  * Serialize one mapped `AgentEvent` into the real Claude hook JSON body
  * `claudeProvider.normalizeHookEvent` accepts unmodified. Returns null for
  * event kinds with no Claude hook correspondence (subagent kinds, progress —
@@ -90,16 +77,20 @@ export function toClaudeHookBody(
   event: SessionAgentEvent,
 ): Record<string, unknown> | null {
   const sessionId = event.sessionId;
-  const cwd = syntheticCwd(sessionId);
   switch (event.event.kind) {
     case "sessionStart":
       // No transcript_path: routes onto Pixel Agents' own hooks-only
-      // external-provider adoption path (built for non-Claude CLIs).
+      // external-provider adoption path (built for non-Claude CLIs). `cwd`
+      // is set by EventMapper.sessionStartFor()/syntheticCwd() — its
+      // basename becomes Pixel Agents' own display label for this session,
+      // so it's the agent's real name whenever the mapper knows it. The
+      // plain session-id fallback only covers a directly hand-built event
+      // (e.g. a test double) that skipped the mapper entirely.
       return {
         hook_event_name: "SessionStart",
         session_id: sessionId,
         source: event.event.source ?? "startup",
-        cwd,
+        cwd: event.event.cwd ?? `/paperclip/${sessionId}`,
       };
     case "sessionEnd":
       return {

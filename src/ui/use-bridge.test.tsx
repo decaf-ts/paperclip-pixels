@@ -9,8 +9,8 @@
  * delta application with channel isolation, and stale-state computation.
  */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useBridge } from "./use-bridge";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { REFRESH_INTERVAL_MS, useBridge } from "./use-bridge";
 import { BRIDGE_DATA_KEYS, behaviorChannel } from "./bridge-contract";
 import {
   makeDataResult,
@@ -155,6 +155,47 @@ describe("useBridge — stale computation (§30.1)", () => {
       expect(screen.getByTestId("bp-snap").textContent).toBe("none"),
     );
     expect(screen.getByTestId("bp-stale").textContent).toBe("false");
+  });
+});
+
+describe("useBridge — polling fallback for hosts where the stream never connects", () => {
+  // See use-bridge.ts's HOST GAP doc comment: on a Paperclip host that never
+  // wires up bridgeDeps.streamBus, stream.connected is permanently false, so
+  // this polling loop is the only thing keeping data moving at all.
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("calls refresh() again after REFRESH_INTERVAL_MS even though the stream never connects", async () => {
+    const dataResult = makeDataResult({ data: snapshotWithAgent() });
+    usePluginDataImpl.mockReturnValue(dataResult);
+    render(<BridgeProbe companyId="c1" />);
+    await waitFor(loaded);
+    expect(screen.getByTestId("bp-conn").textContent).toBe("false");
+
+    const callsBefore = (dataResult.refresh as jest.Mock).mock.calls.length;
+    await act(async () => {
+      jest.advanceTimersByTime(REFRESH_INTERVAL_MS);
+    });
+    expect((dataResult.refresh as jest.Mock).mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+
+  it("stops polling on unmount", async () => {
+    const dataResult = makeDataResult({ data: snapshotWithAgent() });
+    usePluginDataImpl.mockReturnValue(dataResult);
+    const { unmount } = render(<BridgeProbe companyId="c1" />);
+    await waitFor(loaded);
+    unmount();
+
+    const callsAtUnmount = (dataResult.refresh as jest.Mock).mock.calls.length;
+    await act(async () => {
+      jest.advanceTimersByTime(REFRESH_INTERVAL_MS * 3);
+    });
+    expect((dataResult.refresh as jest.Mock).mock.calls.length).toBe(callsAtUnmount);
   });
 });
 

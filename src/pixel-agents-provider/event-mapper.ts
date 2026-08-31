@@ -72,6 +72,26 @@ export function syntheticSessionId(companyId: string, agentId: string): string {
   return `${ID_NAMESPACE}:${companyId}:${agentId}`;
 }
 
+/**
+ * Synthetic `cwd` for a session, never a real filesystem path (§ transport.ts
+ * doc comment). Its ONLY consumer-visible effect is Pixel Agents' own display
+ * label, which it derives as `path.basename(cwd)` when adopting a hooks-only
+ * external session — so the basename here is deliberately the agent's real,
+ * human-readable name (falling back to the opaque agentId only when the name
+ * is genuinely unknown yet), not the full synthetic session id. Slashes in a
+ * name would otherwise split across path segments and only the last one
+ * would show, so they're replaced; there is no other path-safety concern
+ * since this string never touches a real filesystem.
+ */
+export function syntheticCwd(
+  companyId: string,
+  agentId: string,
+  agentName?: string,
+): string {
+  const label = (agentName ?? agentId).replace(/[/\\]/g, "-").trim() || agentId;
+  return `/paperclip/${companyId}/${label}`;
+}
+
 /** Paperclip agent statuses that mean the agent has left / despawned. */
 const OFFLINE_STATUSES = new Set([
   "offline",
@@ -205,6 +225,16 @@ interface AgentSessionState {
    * fabricates a `toolEnd` for a tool that was never opened.
    */
   toolActive: boolean;
+  /**
+   * The agent's real display name (`AgentInput.name`), learned the first time
+   * this agent is seen in an authoritative snapshot. Used to build a
+   * human-readable synthetic `cwd` (see `sessionStartFor`) instead of the raw
+   * `paperclip-bridge:<companyId>:<agentId>` session id, which is what Pixel
+   * Agents falls back to displaying (`path.basename(cwd)`) when this is
+   * unset. Undefined only for the edge case where an agent's very first
+   * bridge signal is a live event rather than a snapshot.
+   */
+  agentName?: string;
 }
 
 /**
@@ -229,6 +259,22 @@ export class EventMapper {
    * Map an authoritative snapshot into `sessionStart` events for every agent
    * (character spawn) plus per-agent concurrency sidecar entries. Agents
    * already seen are not re-spawned (re-snapshot after reconnect is idempotent).
+   *
+   * Every newly-seen agent also gets an immediate confirming event
+   * (`toolStart` when it already has an active run, `turnEnd` — idle —
+   * otherwise). Pixel Agents only promotes a session from "pending" to a
+   * real, visible character once a SECOND, non-`SessionStart`/`SessionEnd`
+   * hook event arrives for the same session id (confirmed by reading its own
+   * session-router: any other `hook_event_name` confirms a pending session,
+   * not specifically a tool call). Without this, a `sessionStart` alone
+   * leaves the agent "pending" forever — invisible — which is what most
+   * agents are most of the time (idle), so the office only ever showed
+   * whichever agents happened to have a run in flight when they were spawned
+   * (and even then, only if a live `agent.run.started` event and its
+   * `toolStart` still fired later — a snapshot alone never confirmed
+   * anything). Confirmed 2026-08-31 against a live company: this is why "not
+   * all agents show up" and why idle-vs-working state never reflected
+   * anything.
    */
   mapSnapshot(snapshot: AuthoritativeSnapshotInput): SnapshotMappingResult {
     const agentEvents: SessionAgentEvent[] = [];
@@ -236,9 +282,17 @@ export class EventMapper {
 
     for (const agent of snapshot.agents) {
       const state = this.ensureSession(snapshot.company.id, agent.id);
+      const activeRunCount = agent.activeRuns?.length ?? 0;
       if (!state.seen) {
         state.seen = true;
-        agentEvents.push(this.sessionStartFor(snapshot.company.id, agent.id));
+        state.agentName = agent.name;
+        agentEvents.push(this.sessionStartFor(snapshot.company.id, agent.id, agent.name));
+        if (activeRunCount > 0) {
+          agentEvents.push(this.toolStartFor(snapshot.company.id, agent.id));
+          state.toolActive = true;
+        } else {
+          agentEvents.push(this.turnEndFor(snapshot.company.id, agent.id, false));
+        }
         sidecarEntries.push({
           kind: "lifecycle",
           companyId: snapshot.company.id,
@@ -248,7 +302,6 @@ export class EventMapper {
           occurredAt: snapshot.observedAt,
         });
       }
-      const activeRunCount = agent.activeRuns?.length ?? 0;
       state.activeRunCount = activeRunCount;
       state.lastEventAt = snapshot.observedAt;
       for (const run of agent.activeRuns ?? []) {
@@ -568,14 +621,27 @@ export class EventMapper {
   ): void {
     if (!state.seen) {
       state.seen = true;
-      out.push(this.sessionStartFor(companyId, agentId));
+      // This path only ever has an agentId (event payloads don't carry
+      // denormalized names) — reuse the name learned from a prior snapshot,
+      // if any. Genuinely unknown only when an agent's very first bridge
+      // signal is a live event rather than a snapshot; sessionStartFor falls
+      // back to the raw id in that case.
+      out.push(this.sessionStartFor(companyId, agentId, state.agentName));
     }
   }
 
-  private sessionStartFor(companyId: string, agentId: string): SessionAgentEvent {
+  private sessionStartFor(
+    companyId: string,
+    agentId: string,
+    agentName?: string,
+  ): SessionAgentEvent {
     return {
       sessionId: syntheticSessionId(companyId, agentId),
-      event: { kind: "sessionStart", source: ID_NAMESPACE },
+      event: {
+        kind: "sessionStart",
+        source: ID_NAMESPACE,
+        cwd: syntheticCwd(companyId, agentId, agentName),
+      },
     };
   }
 

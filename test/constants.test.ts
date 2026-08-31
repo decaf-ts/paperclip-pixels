@@ -18,7 +18,10 @@ import {
 describe("constants", () => {
   it("identifies the plugin", () => {
     expect(PLUGIN_ID).toBe("paperclip-pixel.paperclip-plugin");
-    expect(PLUGIN_VERSION).toBe("0.1.0");
+    // Bumped 2026-08-31 alongside package.json's own version (was drifted at
+    // "0.1.0" while package.json had already moved to 0.2.0) as part of the
+    // x-paperclip-advanced schema fix + ctx.http.fetch bypass release.
+    expect(PLUGIN_VERSION).toBe("0.2.1");
     expect(PLUGIN_API_VERSION).toBe(1);
   });
 

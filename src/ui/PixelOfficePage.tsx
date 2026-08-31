@@ -86,8 +86,8 @@ function PixelOfficePageInner({ companyId }: { companyId: string }) {
         <div>
           <h1 style={{ margin: 0 }}>{snapshot.company.name}</h1>
           <div style={{ opacity: 0.75, fontSize: "0.9em" }}>
-            {connected ? "Live" : "Disconnected — state may be stale"} · last
-            synchronized {formatTimestamp(state.lastSyncedAt)}
+            {connected ? "Live" : stale ? "Reconnecting — state may be stale" : "Polling"} ·
+            last synchronized {formatTimestamp(state.lastSyncedAt)}
           </div>
         </div>
         <button type="button" data-testid="pixel-office-refresh" onClick={refresh}>

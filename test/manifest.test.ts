@@ -100,7 +100,20 @@ describe("manifest", () => {
 
     it("declares pixelAgentsTokenRef as a secret-ref string (never a plaintext value)", () => {
       expect(properties.pixelAgentsTokenRef).toMatchObject({ type: "string", format: "secret-ref" });
-      expect((properties.pixelAgentsTokenRef as { "x-paperclip-advanced"?: unknown })["x-paperclip-advanced"]).toBe(true);
+    });
+
+    // Removed 2026-08-31: `x-paperclip-advanced` was a UI-grouping hint with
+    // no functional purpose, but Paperclip's host validates instanceConfigSchema
+    // with ajv in strict mode, which rejects any unrecognized keyword at
+    // schema-compile time — so ANY POST /api/plugins/:id/config call for this
+    // plugin 500'd with `strict mode: unknown keyword: "x-paperclip-advanced"`,
+    // even an empty configJson (ajv compiles the whole schema before touching
+    // the data). Confirmed live against a real Paperclip host. Assert it never
+    // comes back on any property.
+    it("never declares the ajv-strict-mode-incompatible x-paperclip-advanced keyword on any property", () => {
+      for (const [name, schema] of Object.entries(properties)) {
+        expect(schema, `${name} must not declare x-paperclip-advanced`).not.toHaveProperty("x-paperclip-advanced");
+      }
     });
 
     it("declares pixelAgentsProviderId with the ^[a-z0-9-]+$ pattern and claude default", () => {

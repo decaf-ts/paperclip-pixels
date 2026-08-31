@@ -36,7 +36,6 @@ const relayConfigSchema: JsonSchema = {
       title: "Pixel Agents bearer token",
       description:
         "Optional secret reference resolved to the bearer token sent on each push to POST /api/hooks/<providerId>. Stored as a secret_ref binding, never as a plaintext value. Requires an https: pixelAgentsUrl. Not needed for the bundled sidecar default.",
-      "x-paperclip-advanced": true,
     },
     pixelAgentsProviderId: {
       type: "string",
@@ -44,13 +43,11 @@ const relayConfigSchema: JsonSchema = {
       title: "Provider id",
       description: "Provider id used in the hook path. Defaults to 'claude' — the only id Pixel Agents' unmodified route currently dispatches on.",
       default: "claude",
-      "x-paperclip-advanced": true,
     },
     pixelAgentsRelayEnabled: {
       type: "boolean",
       title: "Relay enabled",
       description: "Explicit on/off. Defaults to on when pixelAgentsUrl is set.",
-      "x-paperclip-advanced": true,
     },
   },
 };

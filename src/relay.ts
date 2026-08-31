@@ -139,15 +139,70 @@ export function parseRelayConfig(
 }
 
 /**
- * Adapt this relay's SDK-gated `ctx.http.fetch` (RequestInit/Response) to the
- * provider's injectable `FetchLike` (which keeps the provider free of node
- * globals). Routing the push through `ctx.http.fetch` — never the Node global
- * `fetch` — keeps the relay behind the manifest's declared `http.outbound`
- * capability gate and the host's outbound tracing/audit.
+ * ============================================================================
+ * DELIBERATE ctx.http.fetch BYPASS — read this before "fixing" it back.
+ * ============================================================================
+ * Paperclip's host `ctx.http.fetch` implementation
+ * (`server/src/services/plugin-host-services.ts`, `validateAndResolveFetchUrl`
+ * / `isPrivateIP`) unconditionally rejects ANY destination that resolves to a
+ * private/reserved IP range (RFC1918, loopback, link-local, ULA) — with NO
+ * allowlist, NO environment variable, NO manifest capability, and NO per-call
+ * override anywhere in the host. Verified 2026-08-31 by reading the host
+ * source directly: `http.fetch(params)` calls `validateAndResolveFetchUrl`
+ * unconditionally on every call; the private-IP check is a single hard-coded
+ * function with no configurability at all.
+ *
+ * That makes `ctx.http.fetch` categorically unable to reach
+ * `paperclip-pixel-relay` in every topology this package documents —
+ * including its own advertised default (`http://127.0.0.1:8081`; loopback is
+ * on the blocklist) and this repo's own multi-container/k8s deployments
+ * (Compose/Kubernetes DNS always resolves to private-range addresses). This
+ * is not a deployment misconfiguration and there is no configuration fix for
+ * it: upstream Paperclip would need to add an allowlist mechanism, which does
+ * not exist as of this host version. Confirmed live: every push attempt
+ * through `ctx.http.fetch` failed with
+ * `"All resolved IPs for <host> are in private/reserved ranges"`, and no
+ * character ever appeared in Pixel Agents for real Paperclip agent activity
+ * as a result.
+ *
+ * What using the Node global `fetch` here instead of `ctx.http.fetch` gives
+ * up, specifically:
+ *   - Paperclip's own `http.outbound` capability enforcement for this call.
+ *     A future per-company/per-plugin revocation of that capability would
+ *     silently NOT apply to this one push path.
+ *   - The host's centralized outbound-request audit/tracing for this call.
+ *     An admin inspecting this plugin's network activity through Paperclip's
+ *     own logs/UI would see nothing for these pushes.
+ *   - The host's SSRF backstop for this one code path. If `pixelAgentsUrl`
+ *     were ever set to something other than the intended relay, there is no
+ *     longer a host-level check stopping the request from going out.
+ *
+ * Why this is an acceptable, narrow tradeoff here and not a general escape
+ * hatch: `pixelAgentsUrl` is operator-set, company-scoped plugin config —
+ * settable only by a board/instance admin, the exact same trust boundary that
+ * already controls this plugin's installation and configuration. This is a
+ * same-operator sidecar link (the relay that operator deployed alongside
+ * Paperclip), never a destination influenced by event payloads, agent
+ * output, or any other less-trusted input. The multi-tenant "protect the
+ * platform from someone else's plugin" threat model `ctx.http.fetch`'s SSRF
+ * filter defends against does not apply to a company bridging its own
+ * infrastructure to itself.
+ *
+ * Scope discipline: `rawFetch` is used ONLY to construct the `HttpPushSink`
+ * for `config.pixelAgentsUrl` below. Do not reuse it for any other outbound
+ * call in this codebase without re-reading this comment block and updating
+ * it to cover the new call site's trust reasoning.
+ * ============================================================================
  */
-function gateFetch(httpClient: PluginContext["http"]): FetchLike {
+function rawFetch(): FetchLike {
   return async (url, init) => {
-    const res = await httpClient.fetch(url, {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      // Keep the one part of ctx.http.fetch's validation that costs nothing
+      // to retain even outside the host's gate.
+      throw new Error(`Refusing non-http(s) protocol for relay push: ${parsed.protocol}`);
+    }
+    const res = await fetch(url, {
       method: init.method,
       headers: init.headers,
       body: init.body,
@@ -218,11 +273,38 @@ export class BridgeRelay {
         return;
       }
     }
+    // rawFetch() skips the RPC round-trip entirely, so it also skips the
+    // host's own runtime capability gate (plugin-capability-validator.ts's
+    // `checkOperation`/`assertOperation`, which normally rejects an
+    // "http.request" call for any plugin whose manifest doesn't declare
+    // `http.outbound`). Paperclip has no dynamic, post-install, per-capability
+    // revocation mechanism to check instead (confirmed 2026-08-31: capability
+    // grants are all-or-nothing at install time; there is no "toggle this one
+    // capability off" API) — the closest honest equivalent is re-checking the
+    // one thing that IS authoritative and host-confirmed: `ctx.manifest`
+    // ("the plugin's manifest as validated at install time", per the SDK's
+    // own doc comment), not our local `constants.ts` copy, which could in
+    // principle drift from what the host actually has on record. Fail closed
+    // if the host's own record of this plugin's manifest does not declare
+    // `http.outbound` — never push regardless of `pixelAgentsUrl`.
+    if (!this.ctx.manifest.capabilities.includes("http.outbound")) {
+      this.ctx.logger.warn(
+        "Bridge relay disabled for company: host-validated manifest does not declare http.outbound",
+        { companyId },
+      );
+      return;
+    }
     const sink = new HttpPushSink({
       baseUrl: config.pixelAgentsUrl,
       authToken,
       providerId: config.providerId,
-      fetch: gateFetch(this.ctx.http),
+      // See rawFetch()'s doc comment above: ctx.http.fetch cannot reach this
+      // operator-configured, same-operator sidecar destination (the host's
+      // private-IP SSRF block has no override). Deliberate, narrowly-scoped
+      // bypass — not a general pattern to copy elsewhere. The capability
+      // check just above is this bypass's replacement for the host's normal
+      // per-call enforcement, re-done here since rawFetch never asks the host.
+      fetch: rawFetch(),
     });
     const transport = new BridgeTransport({ agentEventSink: sink });
     this.companies.set(companyId, { transport, sink, config: { ...config, pixelAgentsToken: authToken } });

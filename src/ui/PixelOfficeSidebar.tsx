@@ -43,7 +43,7 @@ function PixelOfficeSidebarInner({ companyId }: { companyId: string }) {
               ? "live"
               : stale
                 ? "stale"
-                : "offline"}
+                : "polling"}
         </span>
       </div>
 

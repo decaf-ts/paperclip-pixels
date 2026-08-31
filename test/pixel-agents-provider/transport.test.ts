@@ -34,7 +34,12 @@ const sessionId = (agentId: string): string =>
   syntheticSessionId(COMPANY_ID, agentId);
 
 describe("BridgeTransport (§31.4, §30)", () => {
-  it("ingests a snapshot while connected and spawns every agent exactly once", () => {
+  it("ingests a snapshot while connected and spawns every agent exactly once, confirmed idle", () => {
+    // Both fixture agents are idle (agentInput sets no activeRuns), so each
+    // gets sessionStart PLUS an immediate turnEnd confirmation — without the
+    // second event Pixel Agents never promotes the session past "pending"
+    // and it never renders as a character (see event-mapper.ts's
+    // mapSnapshot doc comment).
     const sink = new RecordingSink();
     const t = new BridgeTransport({ agentEventSink: sink });
 
@@ -42,15 +47,23 @@ describe("BridgeTransport (§31.4, §30)", () => {
     expect(t.connectionState).toBe("connected");
     expect(t.isStale()).toBe(false);
 
-    expect(sink.events).toHaveLength(2);
+    expect(sink.events).toHaveLength(4);
     expect(sink.events).toEqual([
-      { sessionId: sessionId(AGENT_A), event: { kind: "sessionStart", source: "paperclip-bridge" } },
-      { sessionId: sessionId(AGENT_B), event: { kind: "sessionStart", source: "paperclip-bridge" } },
+      {
+        sessionId: sessionId(AGENT_A),
+        event: { kind: "sessionStart", source: "paperclip-bridge", cwd: `/paperclip/${COMPANY_ID}/${AGENT_A}` },
+      },
+      { sessionId: sessionId(AGENT_A), event: { kind: "turnEnd", awaitingInput: false } },
+      {
+        sessionId: sessionId(AGENT_B),
+        event: { kind: "sessionStart", source: "paperclip-bridge", cwd: `/paperclip/${COMPANY_ID}/${AGENT_B}` },
+      },
+      { sessionId: sessionId(AGENT_B), event: { kind: "turnEnd", awaitingInput: false } },
     ]);
 
     // Re-ingesting the same snapshot is idempotent (no re-spawn).
     t.ingestSnapshot(snapshot({ agents: [agentInput(AGENT_A), agentInput(AGENT_B)] }));
-    expect(sink.events).toHaveLength(2);
+    expect(sink.events).toHaveLength(4);
   });
 
   it("marks state stale on disconnect and stops event flow while still updating the sidecar", () => {
@@ -177,14 +190,14 @@ describe("BridgeTransport (§31.4, §30)", () => {
     const sink = new RecordingSink();
     const t = new BridgeTransport({ agentEventSink: sink });
     t.ingestSnapshot(snapshot({ agents: [agentInput(AGENT_A)] }));
-    expect(sink.events).toHaveLength(1);
+    expect(sink.events).toHaveLength(2); // sessionStart + idle turnEnd confirmation
 
     t.reset();
     expect(t.sidecarSnapshot().agents).toHaveLength(0);
     expect(t.isStale()).toBe(false);
 
     t.ingestSnapshot(snapshot({ agents: [agentInput(AGENT_A)] }));
-    expect(sink.events).toHaveLength(2);
+    expect(sink.events).toHaveLength(4);
     const starts = sink.events.filter(
       (e) => e.event.kind === "sessionStart" && e.sessionId === sessionId(AGENT_A),
     );
