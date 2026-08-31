@@ -3,6 +3,7 @@ import * as http from "node:http";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 
@@ -33,12 +34,44 @@ const catalogPath = opts.characterCatalog || path.join(packageRoot, "assets", "c
 const catalogDir = path.dirname(catalogPath);
 const serverJsonPath = path.join(opts.pixelAgentsHome, "server.json");
 const assignmentsPath = path.join(opts.pixelAgentsHome, "paperclip-appearance.json");
+const sessionsDir = path.join(opts.pixelAgentsHome, "paperclip-sessions");
 const readJson = (file, fallback) => { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return fallback; } };
 function writeJson(file, value) { fs.mkdirSync(path.dirname(file), { recursive: true }); const temp = `${file}.${process.pid}.tmp`; fs.writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 }); fs.renameSync(temp, file); }
 const readToken = () => { const value = readJson(serverJsonPath, null); return typeof value?.token === "string" ? value.token : null; };
 function readBody(req) { return new Promise((resolve, reject) => { let data = ""; req.on("data", (chunk) => { data += chunk; if (data.length > 1_000_000) { reject(new Error("body too large")); req.destroy(); } }); req.on("end", () => resolve(data)); req.on("error", reject); }); }
 function authorized(req) { return req.headers.authorization === `Bearer ${opts.sharedSecret}` || req.headers["x-relay-secret"] === opts.sharedSecret; }
 function sendJson(res, status, payload) { res.writeHead(status, { "content-type": "application/json", "x-content-type-options": "nosniff" }); res.end(JSON.stringify(payload)); }
+
+// Pixel Agents' blue label is populated from provider team metadata, not the
+// hooks-only cwd/folderName label. Its unchanged SessionStart hook already
+// supports transcript_path, and its Claude provider reads teamName/agentName
+// metadata from JSONL records. Materialize one tiny, stable transcript per
+// Paperclip session on the volume shared with Pixel Agents and add that path
+// only at this local companion boundary. A unique team name avoids grouping
+// unrelated Paperclip agents into a synthetic Claude team or lead hierarchy.
+function attachPaperclipTranscript(body) {
+  if (
+    body?.hook_event_name !== "SessionStart"
+    || typeof body.session_id !== "string"
+    || body.session_id.length === 0
+    || typeof body.cwd !== "string"
+    || body.cwd.length === 0
+  ) return body;
+
+  const digest = createHash("sha256").update(body.session_id).digest("hex");
+  const transcriptPath = path.join(sessionsDir, `${digest}.jsonl`);
+  const agentName = path.basename(body.cwd).slice(0, 200);
+  fs.mkdirSync(sessionsDir, { recursive: true });
+  const metadata = JSON.stringify({
+    type: "paperclip-session",
+    teamName: `paperclip-${digest.slice(0, 24)}`,
+    agentName,
+  });
+  const temp = `${transcriptPath}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, `${metadata}\n`, { mode: 0o600 });
+  fs.renameSync(temp, transcriptPath);
+  return { ...body, transcript_path: transcriptPath };
+}
 
 const catalog = readJson(catalogPath, { characters: [] });
 const characters = (catalog.characters ?? []).map((item) => ({ ...item, previewDataUrl: `data:image/png;base64,${fs.readFileSync(path.join(catalogDir, item.file)).toString("base64")}` }));
@@ -65,6 +98,13 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method !== "POST" || !/^\/api\/hooks\/[a-z0-9-]+$/.test(req.url ?? "")) return sendJson(res, 405, { error: "method not allowed" });
   const token = readToken(); if (!token) return sendJson(res, 503, { error: "pixel-agents not ready" });
-  try { const body = await readBody(req); const upstream = await fetch(`${opts.pixelAgentsUrl}${req.url}`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body }); res.writeHead(upstream.status, { "content-type": "application/json" }); res.end(await upstream.text()); } catch (err) { sendJson(res, 502, { error: err instanceof Error ? err.message : String(err) }); }
+  try {
+    const rawBody = await readBody(req);
+    const parsedBody = JSON.parse(rawBody);
+    const body = JSON.stringify(attachPaperclipTranscript(parsedBody));
+    const upstream = await fetch(`${opts.pixelAgentsUrl}${req.url}`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body });
+    res.writeHead(upstream.status, { "content-type": "application/json" });
+    res.end(await upstream.text());
+  } catch (err) { sendJson(res, 502, { error: err instanceof Error ? err.message : String(err) }); }
 });
 server.listen(opts.port, opts.host, () => console.log(`[paperclip-pixel-relay] ${opts.host}:${opts.port}; ${characters.length} complete characters`));
