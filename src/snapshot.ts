@@ -95,6 +95,46 @@ function mapApproval(a: Approval): ApprovalInput {
   };
 }
 
+/** Page size for {@link listAllIssues}'s offset-based pagination. */
+const ISSUE_PAGE_SIZE = 1000;
+
+/**
+ * Fetch every issue for a company via offset-based pagination, rather than a
+ * single capped `limit` call.
+ *
+ * Confirmed live 2026-08-31 against a mature company (400+ issues, deep
+ * nested "corrective re-do" chains, e.g. an issue several levels under a
+ * root spawned to redo an earlier defect's fix): a single `limit: 1000` fetch
+ * can silently exclude an issue's actual root ancestor once total issue count
+ * grows past the cap. `bootstrapSnapshot` only walks subtrees rooted at
+ * issues present in this list (see its `rootIssues` filter below), so an
+ * excluded root's entire subtree — including any genuinely active run inside
+ * it — never gets visited. The affected agent then renders permanently idle
+ * in Pixel Agents regardless of what Paperclip itself reports, with no error
+ * anywhere (this is a silent data-completeness gap, not a thrown exception).
+ *
+ * `issues.list` has no cursor/hasMore field (see the SDK's `WorkerToHostMethods`
+ * protocol), so a page shorter than `ISSUE_PAGE_SIZE` is the exhaustion signal.
+ *
+ * @param ctx - The plugin execution context.
+ * @param companyId - Identifier of the company whose issues to fetch.
+ * @returns Every issue belonging to the company.
+ */
+async function listAllIssues(
+  ctx: PluginContext,
+  companyId: string,
+): Promise<Issue[]> {
+  const all: Issue[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await ctx.issues.list({ companyId, limit: ISSUE_PAGE_SIZE, offset });
+    all.push(...page);
+    if (page.length < ISSUE_PAGE_SIZE) break;
+    offset += ISSUE_PAGE_SIZE;
+  }
+  return all;
+}
+
 export interface SnapshotBootstrapResult {
   snapshot: AuthoritativeSnapshotInput;
   companyId: string;
@@ -126,7 +166,7 @@ export async function bootstrapSnapshot(
     ctx.approvals.list({ companyId, status: null }),
   ]);
 
-  const issues = await ctx.issues.list({ companyId, limit: 1000 });
+  const issues = await listAllIssues(ctx, companyId);
   const issuesById = new Map(issues.map((issue) => [issue.id, issue]));
   const rootIssues = issues.filter(
     (issue) => issue.parentId == null || !issuesById.has(issue.parentId),

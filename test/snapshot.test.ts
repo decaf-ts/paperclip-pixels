@@ -141,6 +141,98 @@ describe("bootstrapSnapshot", () => {
   });
 });
 
+describe("bootstrapSnapshot issue pagination (SAA gap: mature companies)", () => {
+  it("pages past a single 1000-issue cap so a later root issue's active run is still discovered", async () => {
+    // Regression for a live gap confirmed 2026-08-31 against a mature company
+    // (400+ issues, deep nested "corrective re-do" chains): a single capped
+    // `issues.list` call could silently exclude an issue's actual root
+    // ancestor once total issue count grew past the cap, so bootstrapSnapshot
+    // never walked that subtree at all -- a genuinely active run inside it
+    // rendered permanently idle in Pixel Agents with no error anywhere.
+    // listAllIssues (snapshot.ts) now pages with `offset` until a short page
+    // signals exhaustion (the SDK's issues.list has no cursor/hasMore field).
+    const { harness } = seedStandardWorld();
+    const lateRootId = "issue-late-root";
+    // Only filler[0] is a root (parentId: null); filler[1..999] are its
+    // children, so bootstrapSnapshot's rootIssues filter excludes them and
+    // this test only pays for 2 getSubtree calls, not 1000.
+    const fillerRootId = "issue-filler-root";
+    const filler = Array.from({ length: 1000 }, (_, i) =>
+      makeIssue({
+        id: i === 0 ? fillerRootId : `issue-filler-${i}`,
+        parentId: i === 0 ? null : fillerRootId,
+      }),
+    );
+    const lateRoot = makeIssue({ id: lateRootId });
+
+    const listSpy = vi.spyOn(harness.ctx.issues, "list").mockImplementation(async (input) => {
+      const offset = input?.offset ?? 0;
+      if (offset === 0) return filler;
+      if (offset === 1000) return [lateRoot];
+      return [];
+    });
+    const emptySubtree = (issueId: string) => ({
+      rootIssueId: issueId,
+      companyId: COMPANY_ID,
+      issueIds: [issueId],
+      issues: [],
+      activeRuns: {},
+    });
+    const getSubtreeSpy = vi
+      .spyOn(harness.ctx.issues, "getSubtree")
+      .mockImplementation(async (issueId: string) => {
+        if (issueId !== lateRootId) return emptySubtree(issueId);
+        return {
+          rootIssueId: lateRootId,
+          companyId: COMPANY_ID,
+          issueIds: [lateRootId],
+          issues: [lateRoot],
+          activeRuns: {
+            [lateRootId]: [
+              {
+                id: "run-late",
+                issueId: lateRootId,
+                agentId: AGENT_DEV_ID,
+                status: "running",
+                invocationSource: "heartbeat",
+                triggerDetail: null,
+                startedAt: "2026-08-22T00:00:00.000Z",
+                finishedAt: null,
+                error: null,
+                createdAt: "2026-08-22T00:00:00.000Z",
+              },
+            ],
+          },
+        };
+      });
+
+    const result = await bootstrapSnapshot(harness.ctx, COMPANY_ID);
+
+    expect(listSpy).toHaveBeenCalledWith(expect.objectContaining({ companyId: COMPANY_ID, offset: 0, limit: 1000 }));
+    expect(listSpy).toHaveBeenCalledWith(expect.objectContaining({ companyId: COMPANY_ID, offset: 1000, limit: 1000 }));
+    expect(result.snapshot.issues.some((i) => i.id === lateRootId)).toBe(true);
+    expect(getSubtreeSpy).toHaveBeenCalledWith(lateRootId, COMPANY_ID, { includeRoot: true, includeActiveRuns: true });
+    expect(result.activeRuns).toEqual([expect.objectContaining({ id: "run-late", agentId: AGENT_DEV_ID })]);
+    expect(
+      result.snapshot.agents.find((agent) => agent.id === AGENT_DEV_ID)?.activeRuns,
+    ).toEqual([expect.objectContaining({ id: "run-late" })]);
+
+    listSpy.mockRestore();
+    getSubtreeSpy.mockRestore();
+  });
+
+  it("stops after exactly one page when the company has fewer than 1000 issues (no wasted calls)", async () => {
+    const { harness } = seedStandardWorld();
+    const listSpy = vi.spyOn(harness.ctx.issues, "list");
+
+    await bootstrapSnapshot(harness.ctx, COMPANY_ID);
+
+    expect(listSpy).toHaveBeenCalledTimes(1);
+    expect(listSpy).toHaveBeenCalledWith(expect.objectContaining({ companyId: COMPANY_ID, offset: 0, limit: 1000 }));
+    listSpy.mockRestore();
+  });
+});
+
 describe("bootstrapAllCompanies", () => {
   it("bootstraps every seeded company, including project-less ones", async () => {
     const { harness } = seedStandardWorld();
