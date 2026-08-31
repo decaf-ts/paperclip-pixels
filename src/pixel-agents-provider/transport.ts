@@ -52,6 +52,7 @@ export type BridgeConnectionState = "disconnected" | "connected";
  */
 export interface AgentEventSink {
   emit(event: SessionAgentEvent): void | Promise<void>;
+  dispose?(): void;
 }
 
 /** Minimal fetch-like function (injectable so the package stays pure-TS). */
@@ -155,6 +156,8 @@ export class HttpPushSink implements AgentEventSink {
   private readonly authToken?: string;
   private readonly fetch: FetchLike;
   private lastError: string | undefined;
+  private pushQueue: Promise<void> = Promise.resolve();
+  private disposed = false;
 
   constructor(options: HttpPushSinkOptions) {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
@@ -168,28 +171,44 @@ export class HttpPushSink implements AgentEventSink {
     return this.lastError;
   }
 
-  async emit(event: SessionAgentEvent): Promise<void> {
+  emit(event: SessionAgentEvent): Promise<void> {
     const body = toClaudeHookBody(event);
-    if (!body) return;
+    if (!body) return Promise.resolve();
     const url = `${this.baseUrl}/api/hooks/${this.providerId}`;
     const headers: Record<string, string> = {
       "content-type": "application/json",
     };
     if (this.authToken) headers.authorization = `Bearer ${this.authToken}`;
-    try {
-      const res = await this.fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        this.lastError = `push failed: ${res.status} ${res.statusText}`;
-      } else {
-        this.lastError = undefined;
+    const push = async (): Promise<void> => {
+      if (this.disposed) return;
+      try {
+        const res = await this.fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          this.lastError = `push failed: ${res.status} ${res.statusText}`;
+        } else {
+          this.lastError = undefined;
+        }
+      } catch (err) {
+        this.lastError = `push error: ${err instanceof Error ? err.message : String(err)}`;
       }
-    } catch (err) {
-      this.lastError = `push error: ${err instanceof Error ? err.message : String(err)}`;
-    }
+    };
+
+    // Pixel Agents mutates and persists session state per hook request. Keep
+    // the wire stream ordered so a snapshot's confirmation/tool event cannot
+    // race ahead of its SessionStart, and concurrent state-file writes cannot
+    // discard agents from a large Paperclip roster.
+    const pending = this.pushQueue.then(push);
+    this.pushQueue = pending.catch(() => undefined);
+    return pending;
+  }
+
+  /** Stop queued, not-yet-started pushes when a relay is replaced or shut down. */
+  dispose(): void {
+    this.disposed = true;
   }
 }
 
@@ -341,6 +360,7 @@ export class BridgeTransport {
   /** Release the transport (sinks own their own disposal). */
   dispose(): void {
     this.connected = false;
+    this.sink.dispose?.();
   }
 
   // -- internals -----------------------------------------------------------

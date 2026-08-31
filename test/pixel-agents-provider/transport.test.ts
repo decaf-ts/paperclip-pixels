@@ -258,6 +258,32 @@ describe("HttpPushSink (§31.4, §7.3, §21)", () => {
     expect(sink.lastPushError).toBeUndefined();
   });
 
+  it("serializes concurrent hook pushes so SessionStart always arrives before its confirmation", async () => {
+    const fetchMock = fetchLike();
+    const resolvers: Array<() => void> = [];
+    fetchMock.mockImplementation(() => new Promise((resolve) => {
+      resolvers.push(() => resolve({ ok: true, status: 200, statusText: "OK" }));
+    }));
+    const sink = new HttpPushSink({ baseUrl: "https://bridge.example", fetch: fetchMock });
+    const sid = syntheticSessionId(COMPANY_ID, AGENT_A);
+
+    const start = sink.emit({ sessionId: sid, event: { kind: "sessionStart" } });
+    const confirm = sink.emit({ sessionId: sid, event: { kind: "turnEnd", awaitingInput: false } });
+    await Promise.resolve();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).hook_event_name).toBe("SessionStart");
+
+    resolvers[0]();
+    await start;
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).hook_event_name).toBe("Stop");
+
+    resolvers[1]();
+    await confirm;
+  });
+
   it("serializes every mapped AgentEvent kind into its real Claude hook body", async () => {
     const fetchMock = fetchLike();
     fetchMock.mockResolvedValue({ ok: true, status: 200, statusText: "OK" });

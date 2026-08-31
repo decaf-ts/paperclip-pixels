@@ -33,7 +33,8 @@ beforeEach(() => {
   }) as unknown as typeof setInterval);
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await pluginDefinition(plugin).onShutdown?.();
   for (const handle of intervalHandles) clearInterval(handle as unknown as ReturnType<typeof setInterval>);
   intervalHandles.length = 0;
   vi.restoreAllMocks();
