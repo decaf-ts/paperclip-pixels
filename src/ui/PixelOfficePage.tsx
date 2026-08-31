@@ -21,6 +21,9 @@ import { AgentCard } from "./components/agent-card";
 import { AgentDetail } from "./components/agent-detail";
 import { CompanyIntake } from "./components/company-intake";
 import { FeedbackPopup } from "./components/feedback-popup";
+import { CharacterSelector } from "./components/character-selector";
+import { usePluginData } from "@paperclipai/plugin-sdk/ui";
+import { BRIDGE_DATA_KEYS, type VisualSettingsData } from "./bridge-contract";
 
 export function PixelOfficePage({ context }: PluginPageProps) {
   if (!context.companyId) {
@@ -41,6 +44,7 @@ function PixelOfficePageInner({ companyId }: { companyId: string }) {
   const [dismissedFeedbackIds, setDismissedFeedbackIds] = useState<ReadonlySet<string>>(
     new Set<string>(),
   );
+  const visual = usePluginData<VisualSettingsData>(BRIDGE_DATA_KEYS.visualSettings, { companyId });
 
   const handleSendToCompany = useCallback((text: string) => {
     setIntakePrefill(text);
@@ -111,6 +115,20 @@ function PixelOfficePageInner({ companyId }: { companyId: string }) {
           paused until the bridge reconnects.
         </div>
       ) : null}
+
+      {visual.data?.pixelAgentsUiUrl ? (
+        <section style={{ display: "grid", gap: 8 }}>
+          <h2 style={{ margin: 0 }}>Office</h2>
+          <iframe
+            title="Pixel Agents office"
+            src={visual.data.pixelAgentsUiUrl}
+            style={{ width: "100%", minHeight: 620, border: "1px solid #9994", borderRadius: 10 }}
+            allow="clipboard-read; clipboard-write"
+          />
+        </section>
+      ) : null}
+
+      <CharacterSelector companyId={companyId} agents={snapshot.agents} />
 
       <section
         data-testid="company-overview"

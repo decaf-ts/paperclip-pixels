@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "characters": [
+    { "id": "pixel-agents:char-0", "name": "Character 1", "palette": 0, "file": "char_0.png", "source": "Pixel Agents built-in / MetroCity-derived", "license": "CC0-1.0" },
+    { "id": "pixel-agents:char-1", "name": "Character 2", "palette": 1, "file": "char_1.png", "source": "Pixel Agents built-in / MetroCity-derived", "license": "CC0-1.0" },
+    { "id": "pixel-agents:char-2", "name": "Character 3", "palette": 2, "file": "char_2.png", "source": "Pixel Agents built-in / MetroCity-derived", "license": "CC0-1.0" },
+    { "id": "pixel-agents:char-3", "name": "Character 4", "palette": 3, "file": "char_3.png", "source": "Pixel Agents built-in / MetroCity-derived", "license": "CC0-1.0" },
+    { "id": "pixel-agents:char-4", "name": "Character 5", "palette": 4, "file": "char_4.png", "source": "Pixel Agents built-in / MetroCity-derived", "license": "CC0-1.0" },
+    { "id": "pixel-agents:char-5", "name": "Character 6", "palette": 5, "file": "char_5.png", "source": "Pixel Agents built-in / MetroCity-derived", "license": "CC0-1.0" }
+  ]
+}

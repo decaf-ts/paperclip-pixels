@@ -13,3 +13,4 @@
 
 export { PixelOfficePage } from "./PixelOfficePage";
 export { PixelOfficeSidebar } from "./PixelOfficeSidebar";
+export { PixelOfficeSettingsPage } from "./PixelOfficeSettingsPage";

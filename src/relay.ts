@@ -63,6 +63,7 @@ export const DEFAULT_PIXEL_AGENTS_URL = "http://127.0.0.1:8081";
 export interface RelayCompanyConfig {
   enabled: boolean;
   pixelAgentsUrl: string;
+  pixelAgentsUiUrl: string;
   /** Resolved bearer token (never the persisted ref). */
   pixelAgentsToken?: string;
   providerId: string;
@@ -83,6 +84,7 @@ interface CompanyRelay {
  */
 export const RELAY_CONFIG_FIELDS = [
   "pixelAgentsUrl",
+  "pixelAgentsUiUrl",
   "pixelAgentsTokenRef",
   "pixelAgentsProviderId",
   "pixelAgentsRelayEnabled",
@@ -135,7 +137,10 @@ export function parseRelayConfig(
   const providerId = typeof raw.pixelAgentsProviderId === "string" && raw.pixelAgentsProviderId.trim().length > 0
     ? raw.pixelAgentsProviderId.trim()
     : CLAUDE_WIRE_PROVIDER_ID;
-  return { enabled, pixelAgentsUrl: url, providerId };
+  const pixelAgentsUiUrl = typeof raw.pixelAgentsUiUrl === "string" && raw.pixelAgentsUiUrl.trim().length > 0
+    ? raw.pixelAgentsUiUrl.trim()
+    : "http://localhost:8090";
+  return { enabled, pixelAgentsUrl: url, pixelAgentsUiUrl, providerId };
 }
 
 /**
@@ -365,6 +370,44 @@ export class BridgeRelay {
    */
   isConfigured(companyId: string): boolean {
     return this.companies.has(companyId);
+  }
+
+  /** Read the relay-owned character catalog and persisted per-agent choices. */
+  async getVisualSettings(companyId: string): Promise<unknown> {
+    const relay = this.companies.get(companyId);
+    if (!relay) {
+      return { schemaVersion: 1, configured: false, characters: [], assignments: {}, pixelAgentsUiUrl: "http://localhost:8090" };
+    }
+    const response = await fetch(`${relay.config.pixelAgentsUrl}/api/visual-settings`, {
+      headers: relay.config.pixelAgentsToken
+        ? { authorization: `Bearer ${relay.config.pixelAgentsToken}` }
+        : undefined,
+    });
+    if (!response.ok) throw new Error(`Visual settings relay failed: ${response.status} ${response.statusText}`);
+    const payload = await response.json() as Record<string, unknown>;
+    return { ...payload, configured: true, pixelAgentsUiUrl: relay.config.pixelAgentsUiUrl };
+  }
+
+  /** Persist and apply a Paperclip agent's Pixel Agents palette through the public WS protocol. */
+  async setAgentAppearance(
+    companyId: string,
+    input: { agentId: string; agentName: string; characterId: string; palette: number; hueShift: number },
+  ): Promise<unknown> {
+    const relay = this.companies.get(companyId);
+    if (!relay) return { ok: false, error: "RELAY_NOT_CONFIGURED" };
+    const response = await fetch(`${relay.config.pixelAgentsUrl}/api/visual-settings`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(relay.config.pixelAgentsToken
+          ? { authorization: `Bearer ${relay.config.pixelAgentsToken}` }
+          : {}),
+      },
+      body: JSON.stringify({ companyId, ...input }),
+    });
+    const payload = await response.json() as unknown;
+    if (!response.ok) throw new Error(`Appearance update failed: ${response.status}`);
+    return payload;
   }
 
   /** Dispose all company relays (called on shutdown). */

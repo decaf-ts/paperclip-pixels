@@ -81,9 +81,8 @@ describe("Pixel Office against the BridgeCompanySnapshot contract (SAA-306)", ()
     await serveSnapshot(contractSnapshot());
     render(<PixelOfficeSidebar context={{ companyId: "co" } as never} />);
     await waitFor(() => expect(screen.getByTestId("pixel-office-sidebar-link")).toBeTruthy());
-    expect(screen.getByTestId("pixel-office-sidebar-status").textContent).toMatch(
-      /stale|live|offline/,
-    );
+    expect(screen.queryByTestId("pixel-office-sidebar-status")).toBeNull();
+    expect(screen.getByTestId("pixel-office-sidebar-link").textContent).toContain("characters");
   });
 
   it("fails closed (error boundary) when served a raw RawSnapshot instead of the contract", async () => {

@@ -436,6 +436,23 @@ const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime 
       return rt.store.getOutstandingFeedback(companyId);
     });
 
+    ctx.data.register(DATA_KEYS.visualSettings, async (params) => {
+      const companyId = String(params.companyId ?? "");
+      const rt = await getOrBootstrapCompany(companyId);
+      if (!rt) return { schemaVersion: BRIDGE_SCHEMA_VERSION, error: "company-not-found" };
+      try {
+        return await localRelay.getVisualSettings(companyId);
+      } catch (err) {
+        return {
+          schemaVersion: BRIDGE_SCHEMA_VERSION,
+          configured: localRelay.isConfigured(companyId),
+          characters: [],
+          assignments: {},
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    });
+
     registerActions({
       ctx,
       // C1: feedback is resolved server-side from the company's BridgeStore
@@ -443,6 +460,7 @@ const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime 
       // getFeedbackById. The worker never held a parallel feedback map.
       getFeedback: (cid, fid) => localRuntime.getCompany(cid)?.store.getFeedbackById(cid, fid),
       getLeadershipAgentId: (cid) => localRuntime.getCompany(cid)?.leadershipAgentId,
+      setAgentAppearance: (cid, input) => localRelay.setAgentAppearance(cid, input),
     });
 
     localRuntime.startTimers();
@@ -507,10 +525,18 @@ const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime 
         }
       }
     }
-    // M2 (fail-securely): a token must never travel over cleartext http:.
-    // Allow http: only for token-less sidecar-internal deployments.
+    // M2 (fail-securely): a token must never travel over public cleartext
+    // HTTP. The package's exact loopback/Compose sidecar names are the only
+    // exception; all operator-supplied remote names still require TLS.
     const hasToken = config.pixelAgentsTokenRef != null;
-    if (hasToken && urlProtocol === "http:") {
+    let bundledSidecar = false;
+    if (typeof url === "string") {
+      try {
+        bundledSidecar = ["localhost", "127.0.0.1", "::1", "pixel-agents-relay"]
+          .includes(new URL(url).hostname);
+      } catch { /* URL validation above reports the error. */ }
+    }
+    if (hasToken && urlProtocol === "http:" && !bundledSidecar) {
       errors.push("pixelAgentsUrl must be https: when pixelAgentsTokenRef is configured");
     }
     if (

@@ -30,6 +30,7 @@ describe("manifest", () => {
   });
 
   it("declares comment-create capabilities but no issue-create/update capabilities", () => {
+    expect(manifest.capabilities).toContain("issue.subtree.read");
     expect(manifest.capabilities).toContain("issue.comments.create");
     expect(manifest.capabilities).toContain("issue.comments.create_human_attributed");
     expect(manifest.capabilities).not.toContain("issues.create");
@@ -89,6 +90,7 @@ describe("manifest", () => {
         "pixelAgentsProviderId",
         "pixelAgentsRelayEnabled",
         "pixelAgentsTokenRef",
+        "pixelAgentsUiUrl",
         "pixelAgentsUrl",
       ]);
       expect(properties.pixelAgentsToken).toBeUndefined();

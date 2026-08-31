@@ -49,7 +49,7 @@ npx @decaf-ts/paperclip-pixels paperclip-pixel-relay
 paperclip-pixel-relay --port 8081 --pixel-agents-url http://127.0.0.1:8080
 ```
 
-Options (all also settable via env var — see `--help` for the full list): `--port`/`$RELAY_PORT` (default `8081`), `--host`/`$RELAY_HOST` (default `127.0.0.1`), `--pixel-agents-url`/`$PIXEL_AGENTS_URL` (default `http://127.0.0.1:8080`), `--pixel-agents-home`/`$PIXEL_AGENTS_HOME` (default `$HOME/.pixel-agents` — override if the relay runs under a different user/HOME than Pixel Agents, e.g. two containers sharing a mounted volume at a non-default path), `--shared-secret`/`$RELAY_SHARED_SECRET` (optional; requires an `X-Relay-Secret` header on inbound requests — this is the relay's own inbound contract, not a Paperclip or Pixel Agents concept, only useful if the relay is reachable beyond your trusted network).
+Options (all also settable via env var — see `--help`): `--port`/`$RELAY_PORT` (default `8081`), `--host`/`$RELAY_HOST` (default `127.0.0.1`), `--pixel-agents-url`/`$PIXEL_AGENTS_URL` (default `http://127.0.0.1:8080`), `--pixel-agents-home`/`$PIXEL_AGENTS_HOME`, and `--shared-secret`/`$RELAY_SHARED_SECRET`. A unique relay secret of at least 24 characters is mandatory; bind the same value as `pixelAgentsTokenRef` in Paperclip. This prevents the relay from becoming an unauthenticated credential-bearing hook proxy.
 
 **Docker / Kubernetes:** see `deploy/` in this repo for a complete, working minikube stack (Postgres + Paperclip host with the plugin baked in + Pixel Agents + the relay as a same-pod sidecar container) as a concrete reference. The short version: run `paperclip-pixel-relay --host 0.0.0.0` as a second container in the same pod as Pixel Agents, sharing an `emptyDir` volume mounted at `~/.pixel-agents` in both containers.
 
@@ -60,7 +60,8 @@ Set these on the plugin's instance config (Paperclip UI: Plugins → this plugin
 | Field | Default | Meaning |
 |---|---|---|
 | `pixelAgentsUrl` | `http://127.0.0.1:8081` | Base URL of the running `paperclip-pixel-relay` (**not** Pixel Agents itself — the relay is the one that knows the bearer token). The default assumes Paperclip, the relay, and Pixel Agents are all on one machine; **set this explicitly** whenever the relay runs on a different host/pod than Paperclip (e.g. this repo's own k8s reference deployment, where the relay lives in the Pixel Agents pod). |
-| `pixelAgentsTokenRef` | *(unset)* | Optional secret reference for an `Authorization: Bearer` header the relay itself requires (only relevant if you set `--shared-secret` on the relay — Pixel Agents' own token is handled entirely by the relay, never touches Paperclip). |
+| `pixelAgentsTokenRef` | *(required by the relay)* | Secret reference resolved to the relay's shared secret. Pixel Agents' own token remains local to the companion. |
+| `pixelAgentsUiUrl` | `http://localhost:8090` | Browser-reachable Pixel Agents URL embedded in the Pixel Office page. |
 | `pixelAgentsProviderId` | `claude` | Path segment in the hook URL. Leave as `claude` — it's the only provider id Pixel Agents' unmodified route currently accepts. |
 | `pixelAgentsRelayEnabled` | `true` | Explicit on/off switch. |
 

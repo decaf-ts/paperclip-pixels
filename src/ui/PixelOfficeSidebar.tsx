@@ -10,8 +10,6 @@
 import { useHostNavigation } from "@paperclipai/plugin-sdk/ui";
 import type { PluginSidebarProps } from "@paperclipai/plugin-sdk/ui";
 import { PIXEL_OFFICE_PAGE_ROUTE } from "./bridge-contract";
-import { formatTimestamp } from "./format";
-import { useBridge } from "./use-bridge";
 
 /**
  * Sidebar component for the Pixel Office UI.
@@ -21,52 +19,24 @@ export function PixelOfficeSidebar({ context }: PluginSidebarProps) {
   if (!context.companyId) {
     return null;
   }
-  return <PixelOfficeSidebarInner companyId={context.companyId} />;
+  return <PixelOfficeSidebarInner />;
 }
 
-function PixelOfficeSidebarInner({ companyId }: { companyId: string }) {
-  const { state, connected, stale } = useBridge(companyId);
+function PixelOfficeSidebarInner() {
   const navigation = useHostNavigation();
-  const snapshot = state.snapshot;
 
   return (
     <div
       data-testid="pixel-office-sidebar"
       style={{ display: "grid", gap: 6, fontSize: "0.9em" }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-        <strong>Pixel Office</strong>
-        <span data-testid="pixel-office-sidebar-status">
-          {state.loading && !snapshot
-            ? "loading"
-            : connected
-              ? "live"
-              : stale
-                ? "stale"
-                : "polling"}
-        </span>
-      </div>
-
-      {snapshot ? (
-        <>
-          <div>{snapshot.summary.agentCount} agents · {snapshot.summary.activeRunCount} active runs</div>
-          <div>
-            {snapshot.summary.openIssueCount} open · {snapshot.summary.blockedIssueCount}{" "}
-            blocked · {snapshot.summary.waitingApprovalCount} approvals waiting
-          </div>
-          <div style={{ opacity: 0.7 }}>
-            last sync {formatTimestamp(state.lastSyncedAt)}
-          </div>
-        </>
-      ) : state.error ? (
-        <div style={{ opacity: 0.7 }}>bridge unavailable</div>
-      ) : null}
+      <strong>Pixel Office</strong>
 
       <a
         data-testid="pixel-office-sidebar-link"
         {...navigation.linkProps(`/${PIXEL_OFFICE_PAGE_ROUTE}`)}
       >
-        Open Pixel Office
+        Open office and characters
       </a>
     </div>
   );

@@ -21,7 +21,7 @@ describe("constants", () => {
     // Bumped 2026-08-31 alongside package.json's own version (was drifted at
     // "0.1.0" while package.json had already moved to 0.2.0) as part of the
     // x-paperclip-advanced schema fix + ctx.http.fetch bypass release.
-    expect(PLUGIN_VERSION).toBe("0.2.1");
+    expect(PLUGIN_VERSION).toBe("0.4.0");
     expect(PLUGIN_API_VERSION).toBe(1);
   });
 
@@ -30,12 +30,14 @@ describe("constants", () => {
     expect(ACTION_KEYS).toEqual({
       companySendMessage: "company.send-message",
       agentReplyToFeedback: "agent.reply-to-feedback",
+      setAgentAppearance: "agent.set-pixel-appearance",
     });
     expect(DATA_KEYS).toEqual({
       bridgeSnapshot: "bridge-snapshot",
       companySummary: "company-summary",
       agentBehavior: "agent-behavior",
       outstandingFeedback: "outstanding-feedback",
+      visualSettings: "visual-settings",
     });
     expect(STREAM_CHANNELS).toEqual({ bridge: "bridge", behavior: "behavior" });
   });
@@ -82,6 +84,7 @@ describe("constants", () => {
       "companies.read",
       "projects.read",
       "issues.read",
+      "issue.subtree.read",
       "issue.comments.read",
       "agents.read",
       "approvals.read",

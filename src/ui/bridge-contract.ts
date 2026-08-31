@@ -117,13 +117,42 @@ export const PIXEL_OFFICE_PAGE_ROUTE = "pixel-office";
 /** Worker data keys consumed by this UI (spec §15). */
 export const BRIDGE_DATA_KEYS = {
   snapshot: "bridge-snapshot",
+  visualSettings: "visual-settings",
 } as const;
 
 /** Worker action keys consumed by this UI (spec §15, §17, §18). */
 export const BRIDGE_ACTION_KEYS = {
   companySendMessage: "company.send-message",
   agentReplyToFeedback: "agent.reply-to-feedback",
+  setAgentAppearance: "agent.set-pixel-appearance",
 } as const;
+
+export interface PixelCharacterChoice {
+  id: string;
+  name: string;
+  palette: number;
+  previewDataUrl: string;
+  source: string;
+  license: string;
+}
+
+export interface PixelAppearanceAssignment {
+  agentId: string;
+  agentName: string;
+  characterId: string;
+  palette: number;
+  hueShift: number;
+  applied: boolean;
+}
+
+export interface VisualSettingsData {
+  schemaVersion: 1;
+  configured: boolean;
+  pixelAgentsUiUrl?: string;
+  characters: PixelCharacterChoice[];
+  assignments: Record<string, PixelAppearanceAssignment>;
+  error?: string;
+}
 
 /** Company-scoped stream channel (spec §16). */
 /** Returns the company‑scoped behavior stream channel name. */

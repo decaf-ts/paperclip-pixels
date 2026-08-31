@@ -27,8 +27,16 @@ const relayConfigSchema: JsonSchema = {
       type: "string",
       title: "Pixel Agents server URL",
       description:
-        "Base URL of the running paperclip-pixel-relay companion process (not Pixel Agents itself). Must be https: when a token is configured. Defaults to http://127.0.0.1:8081 (the relay's own default bind) when left unset — set this explicitly if the relay runs on a different host/pod than Paperclip.",
+        "Base URL of the paperclip-pixel-relay companion (not Pixel Agents itself). Public endpoints must use https; the bundled loopback/Compose sidecar may use http. Defaults to http://127.0.0.1:8081.",
       format: "uri",
+    },
+    pixelAgentsUiUrl: {
+      type: "string",
+      title: "Pixel Agents browser URL",
+      description:
+        "Browser-reachable URL embedded in the Pixel Office page. This is normally http://localhost:8090 for the bundled Compose deployment and is distinct from the worker-to-relay URL.",
+      format: "uri",
+      default: "http://localhost:8090",
     },
     pixelAgentsTokenRef: {
       type: "string",
@@ -89,6 +97,12 @@ const manifest: PaperclipPluginManifestV1 = {
         id: UI_SLOT_IDS.sidebar,
         displayName: "Pixel Office",
         exportName: UI_EXPORT_NAMES.sidebar,
+      },
+      {
+        type: "settingsPage",
+        id: UI_SLOT_IDS.settings,
+        displayName: "Pixel Office Settings",
+        exportName: UI_EXPORT_NAMES.settings,
       },
     ],
   },

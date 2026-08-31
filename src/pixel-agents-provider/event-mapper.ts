@@ -337,6 +337,21 @@ export class EventMapper {
           reason: "snapshot",
           occurredAt: snapshot.observedAt,
         });
+      } else {
+        // A reconciliation snapshot is authoritative, including when the
+        // worker missed a live run event. Repair both visual edges instead of
+        // merely replacing the counter: open work whenever the snapshot says
+        // runs exist but no tool is open, and close it when no runs remain.
+        state.agentName = agent.name;
+        if (activeRunCount > 0 && !state.toolActive) {
+          const issueId = agent.activeRuns?.[0]?.issueId ?? undefined;
+          const started = this.startWorkFor(snapshot.company.id, agent.id, state, issueId);
+          if (started) agentEvents.push(started);
+        } else if (activeRunCount === 0 && state.toolActive) {
+          agentEvents.push(this.toolEndFor(snapshot.company.id, agent.id));
+          state.toolActive = false;
+          agentEvents.push(this.turnEndFor(snapshot.company.id, agent.id, false));
+        }
       }
       state.activeRunCount = activeRunCount;
       state.lastEventAt = snapshot.observedAt;

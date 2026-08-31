@@ -29,7 +29,7 @@ function mapProject(p: Project): ProjectInput {
   };
 }
 
-function mapAgent(a: Agent): AgentInput {
+function mapAgent(a: Agent, activeRuns: RunSummaryInput[]): AgentInput {
   return {
     id: a.id,
     companyId: a.companyId,
@@ -37,7 +37,33 @@ function mapAgent(a: Agent): AgentInput {
     status: a.status,
     role: a.role,
     title: a.title,
-    activeRuns: [],
+    activeRuns,
+  };
+}
+
+function mapRun(
+  run: {
+    id: string;
+    agentId: string;
+    issueId: string | null;
+    status: string;
+    invocationSource: string;
+    startedAt: string | null;
+    finishedAt: string | null;
+    error: string | null;
+  },
+  issuesById: ReadonlyMap<string, Issue>,
+): RunSummaryInput {
+  return {
+    id: run.id,
+    agentId: run.agentId,
+    issueId: run.issueId,
+    projectId: run.issueId ? issuesById.get(run.issueId)?.projectId ?? null : null,
+    status: run.status,
+    invocationSource: run.invocationSource,
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    error: run.error,
   };
 }
 
@@ -100,19 +126,40 @@ export async function bootstrapSnapshot(
     ctx.approvals.list({ companyId, status: null }),
   ]);
 
-  const projectIds = projects.map((p) => p.id);
-  const issueBatches = await Promise.all(
-    projectIds.map((pid) =>
-      ctx.issues.list({ companyId, projectId: pid, limit: 1000 }),
+  const issues = await ctx.issues.list({ companyId, limit: 1000 });
+  const issuesById = new Map(issues.map((issue) => [issue.id, issue]));
+  const rootIssues = issues.filter(
+    (issue) => issue.parentId == null || !issuesById.has(issue.parentId),
+  );
+  const subtrees = await Promise.all(
+    rootIssues.map((issue) =>
+      ctx.issues.getSubtree(issue.id, companyId, {
+        includeRoot: true,
+        includeActiveRuns: true,
+      }),
     ),
   );
-  const issues = issueBatches.flat();
+  const activeRunsById = new Map<string, RunSummaryInput>();
+  for (const subtree of subtrees) {
+    for (const runs of Object.values(subtree.activeRuns ?? {})) {
+      for (const run of runs) {
+        activeRunsById.set(run.id, mapRun(run, issuesById));
+      }
+    }
+  }
+  const activeRuns = [...activeRunsById.values()];
+  const activeRunsByAgent = new Map<string, RunSummaryInput[]>();
+  for (const run of activeRuns) {
+    const agentRuns = activeRunsByAgent.get(run.agentId) ?? [];
+    agentRuns.push(run);
+    activeRunsByAgent.set(run.agentId, agentRuns);
+  }
 
   const observedAt = new Date().toISOString();
 
   const snapshot: AuthoritativeSnapshotInput = {
     company: mapCompany(company),
-    agents: agents.map(mapAgent),
+    agents: agents.map((agent) => mapAgent(agent, activeRunsByAgent.get(agent.id) ?? [])),
     projects: projects.map(mapProject),
     issues: issues.map(mapIssue),
     approvals: (approvalsResp as Approval[]).map(mapApproval),
@@ -122,7 +169,7 @@ export async function bootstrapSnapshot(
   return {
     snapshot,
     companyId,
-    activeRuns: [],
+    activeRuns,
   };
 }
 

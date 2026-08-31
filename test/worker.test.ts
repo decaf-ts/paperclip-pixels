@@ -542,6 +542,14 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
 });
 
 describe("worker onValidateConfig (M2 cleartext token rejection)", () => {
+  it("accepts the authenticated bundled Compose sidecar", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({
+      pixelAgentsUrl: "http://pixel-agents-relay:8081",
+      pixelAgentsTokenRef: "secret-1",
+    });
+    expect(result.ok).toBe(true);
+  });
   it("rejects http: pixelAgentsUrl when a token ref is configured", async () => {
     const def = pluginDefinition(plugin);
     const result = await def.onValidateConfig!({

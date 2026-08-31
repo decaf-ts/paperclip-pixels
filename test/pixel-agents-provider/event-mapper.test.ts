@@ -1,4 +1,4 @@
-import { EventMapper, ID_NAMESPACE, syntheticSessionId } from "../../src/pixel-agents-provider/index.js";
+import { EventMapper, ID_NAMESPACE, syntheticCwd, syntheticSessionId } from "../../src/pixel-agents-provider/index.js";
 import {
   AGENT_A,
   AGENT_B,
@@ -340,6 +340,15 @@ describe("non-mappable bridge events stay sidecar-only (§31.4, FR-14)", () => {
 });
 
 describe("synthetic session ids are deterministic and namespaced (§31.4, §21.3)", () => {
+  it("uses the real Paperclip agent name as Pixel Agents' folder label", () => {
+    expect(syntheticCwd("company-1", "agent-opaque", "Front-End Developer")).toBe(
+      "/paperclip/company-1/Front-End Developer",
+    );
+    expect(syntheticCwd("company-1", "agent-opaque", "QA/Release\\Lead")).toBe(
+      "/paperclip/company-1/QA-Release-Lead",
+    );
+  });
+
   it("is a pure function of (companyId, agentId)", () => {
     expect(syntheticSessionId("c", "a")).toBe("paperclip-bridge:c:a");
     expect(syntheticSessionId("c", "a")).toBe(syntheticSessionId("c", "a"));
@@ -435,6 +444,42 @@ describe("toolStart captions carry the real issue title when known (Task/descrip
     const res = mapper.mapSnapshot(withActiveRun);
     const toolStart = res.agentEvents.find((e) => e.event.kind === "toolStart");
     expect(toolStart?.event).toMatchObject({ toolName: "Task", input: { description: "Issue 1" } });
+  });
+
+  it("authoritative re-snapshots repair missed run starts and finishes", () => {
+    const mapper = new EventMapper();
+    mapper.mapSnapshot(snapshot());
+
+    const working = snapshot({
+      agents: [
+        {
+          id: AGENT_A,
+          companyId: COMPANY_ID,
+          name: "Alice",
+          status: "running",
+          activeRuns: [
+            {
+              id: "r-reconciled",
+              agentId: AGENT_A,
+              issueId: ISSUE_1,
+              projectId: PROJECT_X,
+              status: "running",
+            },
+          ],
+        },
+      ],
+    });
+    const started = mapper.mapSnapshot(working);
+    expect(started.agentEvents.map((entry) => entry.event.kind)).toEqual(["toolStart"]);
+
+    const stopped = mapper.mapSnapshot(snapshot({ agents: [working.agents[0]!] }));
+    expect(stopped.agentEvents).toEqual([]);
+
+    const idle = snapshot({
+      agents: [{ ...working.agents[0]!, status: "idle", activeRuns: [] }],
+    });
+    const finished = mapper.mapSnapshot(idle);
+    expect(finished.agentEvents.map((entry) => entry.event.kind)).toEqual(["toolEnd", "turnEnd"]);
   });
 
   it("learns a title from issue.updated too, for a run that starts afterward", () => {

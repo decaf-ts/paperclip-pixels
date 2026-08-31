@@ -1,6 +1,6 @@
 {
   "name": "@decaf-ts/paperclip-pixels",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Paperclip <-> Pixel Agents bridge: a Paperclip plugin (manifest, event subscriptions, snapshot bootstrap, worker->UI bridge, action policy) plus the paperclip-pixel-relay companion CLI for Pixel Agents.",
   "type": "module",
   "main": "dist/worker.js",
@@ -25,6 +25,7 @@
   "files": [
     "dist",
     "bin/paperclip-pixel-relay.js",
+    "assets/characters",
     "scripts/link-paperclip-sdk.mjs",
     "README.md",
     "LICENSE"
@@ -75,6 +76,9 @@
   "peerDependencies": {
     "react": ">=18",
     "react-dom": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
   },
   "peerDependenciesMeta": {
     "react": {

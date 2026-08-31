@@ -92,6 +92,53 @@ describe("bootstrapSnapshot", () => {
     expect(raw.approvals.map((a) => a.id)).toEqual(approvals.map((a) => a.id));
     expect(raw.schemaVersion).toBe(1);
   });
+
+  it("preserves active issue runs across bootstrap and reconciliation", async () => {
+    const { harness } = seedStandardWorld();
+    vi.spyOn(harness.ctx.issues, "getSubtree").mockResolvedValue({
+      rootIssueId: ISSUE_ID,
+      companyId: COMPANY_ID,
+      issueIds: [ISSUE_ID],
+      issues: [makeIssue()],
+      activeRuns: {
+        [ISSUE_ID]: [
+          {
+            id: "run-active",
+            issueId: ISSUE_ID,
+            agentId: AGENT_DEV_ID,
+            status: "running",
+            invocationSource: "heartbeat",
+            triggerDetail: null,
+            startedAt: "2026-08-22T00:00:00.000Z",
+            finishedAt: null,
+            error: null,
+            createdAt: "2026-08-22T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+
+    const result = await bootstrapSnapshot(harness.ctx, COMPANY_ID);
+    const activeRun = expect.objectContaining({
+      id: "run-active",
+      agentId: AGENT_DEV_ID,
+      issueId: ISSUE_ID,
+      projectId: PROJECT_ID,
+      status: "running",
+    });
+    expect(result.activeRuns).toEqual([activeRun]);
+    expect(result.snapshot.agents.find((agent) => agent.id === AGENT_DEV_ID)?.activeRuns).toEqual([activeRun]);
+    expect(harness.ctx.issues.getSubtree).toHaveBeenCalledWith(ISSUE_ID, COMPANY_ID, {
+      includeRoot: true,
+      includeActiveRuns: true,
+    });
+
+    const store = new BridgeStore();
+    store.replaceAuthoritativeSnapshot(result.snapshot);
+    expect(store.getRawSnapshot().agents.find((agent) => agent.agentId === AGENT_DEV_ID)?.activeRuns).toEqual([
+      expect.objectContaining({ runId: "run-active", status: "running" }),
+    ]);
+  });
 });
 
 describe("bootstrapAllCompanies", () => {

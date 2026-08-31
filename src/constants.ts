@@ -1,7 +1,7 @@
 /** Unique identifier for this Paperclip plugin. */
 export const PLUGIN_ID = "paperclip-pixel.paperclip-plugin";
 /** Semantic version of the plugin package. */
-export const PLUGIN_VERSION = "0.2.1";
+export const PLUGIN_VERSION = "0.4.0";
 /** Version of the Paperclip Plugin API this manifest conforms to. */
 export const PLUGIN_API_VERSION = 1 as const;
 
@@ -9,12 +9,14 @@ export const PLUGIN_API_VERSION = 1 as const;
 export const UI_SLOT_IDS = {
   page: "pixel-office-page",
   sidebar: "pixel-office-sidebar",
+  settings: "pixel-office-settings",
 } as const;
 
 /** Export names that correspond to each UI slot's React component. */
 export const UI_EXPORT_NAMES = {
   page: "PixelOfficePage",
   sidebar: "PixelOfficeSidebar",
+  settings: "PixelOfficeSettingsPage",
 } as const;
 
 /** Route segment under which the Pixel Office page is mounted in the host UI. */
@@ -29,6 +31,7 @@ export const JOB_KEYS = {
 export const ACTION_KEYS = {
   companySendMessage: "company.send-message",
   agentReplyToFeedback: "agent.reply-to-feedback",
+  setAgentAppearance: "agent.set-pixel-appearance",
 } as const;
 
 /** Data endpoint keys exposed by the plugin for external consumption. */
@@ -37,6 +40,7 @@ export const DATA_KEYS = {
   companySummary: "company-summary",
   agentBehavior: "agent-behavior",
   outstandingFeedback: "outstanding-feedback",
+  visualSettings: "visual-settings",
 } as const;
 
 /** Stream channel names used for emitting plugin events. */
@@ -106,6 +110,10 @@ export const MANIFEST_CAPABILITIES = [
   "companies.read",
   "projects.read",
   "issues.read",
+  // Snapshot reconciliation must include queued/running issue runs; otherwise
+  // every restart and scheduled reconciliation incorrectly resets working
+  // agents to idle. The public SDK exposes these through issues.getSubtree.
+  "issue.subtree.read",
   "issue.comments.read",
   // L1: the reply action posts comments via ctx.issues.createComment.
   // `issue.comments.create` covers plugin-agent-attributed comments; the
@@ -136,6 +144,7 @@ export const MANIFEST_CAPABILITIES = [
   "http.outbound",
   "ui.page.register",
   "ui.sidebar.register",
+  "instance.settings.register",
   // Required by the host's plugin-capability-validator: any non-empty
   // manifest.jobs requires the `jobs.schedule` capability to be declared.
   // The bridge schedules the `bridge-reconcile` job (see manifest.ts).

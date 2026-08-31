@@ -15,6 +15,7 @@
 export {
   EventMapper,
   ID_NAMESPACE,
+  syntheticCwd,
   syntheticSessionId,
   parseBridgeEvent,
 } from "./event-mapper.js";

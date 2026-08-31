@@ -35,10 +35,23 @@ const AgentReplyToFeedbackSchema = z.object({
   renderEnvironment: z.unknown().optional(),
 }).strict();
 
+const SetAgentAppearanceSchema = z.object({
+  companyId: z.string().min(1),
+  agentId: z.string().min(1),
+  characterId: z.string().min(1),
+  palette: z.number().int().min(0),
+  hueShift: z.number().int().min(0).max(360).default(0),
+  renderEnvironment: z.unknown().optional(),
+}).strict();
+
 export interface ActionDeps {
   ctx: PluginContext;
   getFeedback: (companyId: string, feedbackId: string) => AgentFeedback | undefined;
   getLeadershipAgentId: (companyId: string) => string | undefined;
+  setAgentAppearance?: (
+    companyId: string,
+    input: { agentId: string; agentName: string; characterId: string; palette: number; hueShift: number },
+  ) => Promise<unknown>;
 }
 
 function actorFromContext(context: PluginPerformActionContext): { id?: string; type?: string } {
@@ -208,6 +221,27 @@ export async function handleAgentReplyToFeedback(
   return { ok: true, feedbackId, issueId: result.issueId, runId: result.runId };
 }
 
+export async function handleSetAgentAppearance(
+  deps: ActionDeps,
+  params: Record<string, unknown>,
+  context: PluginPerformActionContext,
+): Promise<unknown> {
+  const parsed = SetAgentAppearanceSchema.safeParse(params);
+  if (!parsed.success) return { ok: false, error: "INVALID_PARAMS", details: parsed.error.issues };
+  const scope = resolveCompanyScope(parsed.data.companyId, context);
+  if ("error" in scope) return { ok: false, error: scope.error };
+  if (!deps.setAgentAppearance) return { ok: false, error: "RELAY_NOT_CONFIGURED" };
+  const agent = await deps.ctx.agents.get(parsed.data.agentId, scope.companyId);
+  if (!agent) return { ok: false, error: "AGENT_NOT_FOUND" };
+  return deps.setAgentAppearance(scope.companyId, {
+    agentId: agent.id,
+    agentName: agent.name,
+    characterId: parsed.data.characterId,
+    palette: parsed.data.palette,
+    hueShift: parsed.data.hueShift,
+  });
+}
+
 /**
  * Registers the plugin's actions with the Paperclip framework.
  *
@@ -222,5 +256,8 @@ export function registerActions(deps: ActionDeps): void {
   );
   deps.ctx.actions.register(ACTION_KEYS.agentReplyToFeedback, (params, context) =>
     handleAgentReplyToFeedback(deps, params, context),
+  );
+  deps.ctx.actions.register(ACTION_KEYS.setAgentAppearance, (params, context) =>
+    handleSetAgentAppearance(deps, params, context),
   );
 }
