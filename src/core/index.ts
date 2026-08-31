@@ -59,6 +59,11 @@ export type {
   BudgetIncidentOpenedPayload,
   BudgetIncidentResolvedPayload,
   CostEventCreatedPayload,
+  AgentCreatedPayload,
+  AgentErrorClearedPayload,
+  IssueCheckedOutPayload,
+  IssueAssignmentWakeupRequestedPayload,
+  IssueDocumentPayload,
   BridgeInputEvent,
   BridgeEventKind,
 } from "./domain/events.js";

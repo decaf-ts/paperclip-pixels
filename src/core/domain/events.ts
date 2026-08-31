@@ -231,6 +231,66 @@ export interface CostEventCreatedPayload {
   outputTokens?: number;
 }
 
+/**
+ * `agentId` here is the new agent's own id, read from the envelope's
+ * top-level `entityId` (never `payload.agentId`, which the host's generic
+ * activity-log payload construction sets to the *actor* who created the
+ * agent, not the agent itself — confirmed by reading
+ * `server/src/services/activity-log.ts`'s `persistActivity`: it always
+ * spreads `details` first, then unconditionally overwrites `agentId` with
+ * the actor's id).
+ */
+export interface AgentCreatedPayload {
+  agentId: string;
+  name?: string;
+  role?: string;
+}
+
+/** Same `agentId`-from-`entityId` caveat as {@link AgentCreatedPayload}. */
+export interface AgentErrorClearedPayload {
+  agentId: string;
+}
+
+/**
+ * `agentId` is the checking-out agent in the common case (an agent checks
+ * itself out before acting), but is technically the API actor's id per the
+ * same host payload-construction rule — a human/system-triggered checkout on
+ * another agent's behalf would report the actor here, not the checked-out
+ * agent. Accepted as a best-effort signal (self-checkout is the dominant
+ * real-world pattern; see this company's own git-ops conventions).
+ */
+export interface IssueCheckedOutPayload {
+  issueId: string;
+  agentId?: string | null;
+}
+
+/**
+ * Fires only when a plugin explicitly calls the host's
+ * `issues.requestWakeup`/`requestWakeups` capability (confirmed by reading
+ * `server/src/services/plugin-host-services.ts`) — not a general "blocker
+ * resolved" signal. Dormant unless some other installed plugin in the
+ * company actively uses that capability.
+ */
+export interface IssueAssignmentWakeupRequestedPayload {
+  issueId: string;
+  assigneeAgentId?: string | null;
+  reason?: string;
+}
+
+/**
+ * Shared shape for `issue.document.created`/`issue.document.updated`.
+ * `agentId` here IS reliably the authoring actor (the host's activity-log
+ * `details` object for this action never sets its own `agentId` key, so
+ * nothing overwrites the generic actor-id field — unlike
+ * {@link IssueCheckedOutPayload}).
+ */
+export interface IssueDocumentPayload {
+  issueId: string;
+  documentId?: string;
+  title?: string;
+  agentId?: string | null;
+}
+
 // --- Discriminated union ---------------------------------------------------
 
 export type BridgeInputEvent =
@@ -281,6 +341,30 @@ export type BridgeInputEvent =
   | (BridgeEventBase & {
       kind: "cost_event.created";
       payload: CostEventCreatedPayload;
+    })
+  | (BridgeEventBase & {
+      kind: "agent.created";
+      payload: AgentCreatedPayload;
+    })
+  | (BridgeEventBase & {
+      kind: "agent.error_cleared";
+      payload: AgentErrorClearedPayload;
+    })
+  | (BridgeEventBase & {
+      kind: "issue.checked_out";
+      payload: IssueCheckedOutPayload;
+    })
+  | (BridgeEventBase & {
+      kind: "issue.assignment_wakeup_requested";
+      payload: IssueAssignmentWakeupRequestedPayload;
+    })
+  | (BridgeEventBase & {
+      kind: "issue.document.created";
+      payload: IssueDocumentPayload;
+    })
+  | (BridgeEventBase & {
+      kind: "issue.document.updated";
+      payload: IssueDocumentPayload;
     });
 
 /** All event kinds core handles (spec §12.2). */
@@ -297,6 +381,12 @@ export const BRIDGE_EVENT_KINDS = [
   "budget.incident.opened",
   "budget.incident.resolved",
   "cost_event.created",
+  "agent.created",
+  "agent.error_cleared",
+  "issue.checked_out",
+  "issue.assignment_wakeup_requested",
+  "issue.document.created",
+  "issue.document.updated",
 ] as const;
 
 export type BridgeEventKind = (typeof BRIDGE_EVENT_KINDS)[number];

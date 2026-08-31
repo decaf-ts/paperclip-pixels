@@ -8,16 +8,35 @@
  * Safe mappings (spike SAA-175 §4; §21.2 table):
  *   sessionStart              — agent first appears (character spawn)
  *   sessionEnd                — agent leaves / despawns
- *   toolStart("PaperclipWork")— a run starts (§21.4): a SYNTHETIC, honestly-
- *                                named tool id, never a fabricated real tool
- *                                (never "Bash"/"Write"/etc. — FR-14's actual
- *                                concern is never claiming a specific CLI tool
- *                                ran when there's no such evidence, not that
- *                                "work is happening" can't be shown at all).
+ *   toolStart                 — a run starts (§21.4). Uses `toolName:"Task"`
+ *                                with `input.description` set to the actual
+ *                                issue title whenever it's known (see
+ *                                `startWorkFor`/`issueTitles`), falling back
+ *                                to the SYNTHETIC `"PaperclipWork"` name with
+ *                                no input when it isn't. Never a fabricated
+ *                                real tool ("Bash"/"Read"/etc.) — Paperclip's
+ *                                own event catalog has no per-tool-call
+ *                                telemetry at all to honestly source that
+ *                                from (confirmed 2026-08-31 against the
+ *                                host's full `PLUGIN_EVENT_TYPES` catalog).
+ *                                "Task" is chosen because it's the one real
+ *                                Claude-hook tool name whose caption format
+ *                                (`formatToolStatus`) shows `input.description`
+ *                                verbatim — the closest honest fit for "an
+ *                                agent is working a specific ticket".
  *   toolEnd                   — the same run finishes/fails/cancels
  *   turnEnd(awaitingInput=false) — agent finished a unit of work (idle/done)
  *   turnEnd(awaitingInput=true)  — agent waiting on a human (awaiting reply)
  *   permissionRequest         — approval gate requiring human input
+ *   transient toolStart+toolEnd pair, own toolId (never the run-tracking one)
+ *                              — a discrete, already-completed action
+ *                                (`issue.document.created/updated` -> "Write
+ *                                <doc>"; a reassignment handoff ->
+ *                                "SendMessage -> <new assignee>"). Paired
+ *                                start+end immediately, on a toolId scoped to
+ *                                the action itself, so it can never corrupt
+ *                                the one "current work" toolId a real
+ *                                run-started/run-finished pair owns (§21.4).
  *
  * Sidecar (no current AgentEvent correspondence, §21.5): run concurrency /
  * multi-project activity, behavioral proxies, temporal metrics, semantic
@@ -243,16 +262,20 @@ interface AgentSessionState {
  * State is per-agent (session presence + active-run concurrency) plus an
  * `issueId -> assigneeAgentId` index so a human question comment can be routed
  * to the agent responsible for that issue (the comment payload carries the
- * commenter, not the assignee).
+ * commenter, not the assignee), and an `issueId -> title` cache (learned from
+ * snapshots and `issue.updated`) so a run/checkout's toolStart caption can
+ * name the actual ticket instead of a generic synthetic string.
  */
 export class EventMapper {
   private readonly sessions = new Map<string, AgentSessionState>();
   private readonly issueAssignees = new Map<string, string>();
+  private readonly issueTitles = new Map<string, string>();
 
-  /** Reset all session and issue-assignee state (e.g. on company switch). */
+  /** Reset all session, issue-assignee, and issue-title state (e.g. on company switch). */
   reset(): void {
     this.sessions.clear();
     this.issueAssignees.clear();
+    this.issueTitles.clear();
   }
 
   /**
@@ -280,6 +303,18 @@ export class EventMapper {
     const agentEvents: SessionAgentEvent[] = [];
     const sidecarEntries: SidecarEntry[] = [];
 
+    // Learn every known issue's title and current assignee up front: titles
+    // so the active-run branch below (and any later event referencing one of
+    // these issues) can build an honest "Task: <title>" caption instead of
+    // the generic fallback, and assignees so a REASSIGNMENT the bridge only
+    // ever observes via a live issue.updated (never a second snapshot read)
+    // can still detect the correct previous assignee for the handoff blip
+    // below, even when the original assignment was only ever seen here.
+    for (const issue of snapshot.issues) {
+      if (issue.title) this.issueTitles.set(issue.id, issue.title);
+      if (issue.assigneeAgentId) this.issueAssignees.set(issue.id, issue.assigneeAgentId);
+    }
+
     for (const agent of snapshot.agents) {
       const state = this.ensureSession(snapshot.company.id, agent.id);
       const activeRunCount = agent.activeRuns?.length ?? 0;
@@ -288,8 +323,9 @@ export class EventMapper {
         state.agentName = agent.name;
         agentEvents.push(this.sessionStartFor(snapshot.company.id, agent.id, agent.name));
         if (activeRunCount > 0) {
-          agentEvents.push(this.toolStartFor(snapshot.company.id, agent.id));
-          state.toolActive = true;
+          const issueId = agent.activeRuns?.[0]?.issueId ?? undefined;
+          const started = this.startWorkFor(snapshot.company.id, agent.id, state, issueId);
+          if (started) agentEvents.push(started);
         } else {
           agentEvents.push(this.turnEndFor(snapshot.company.id, agent.id, false));
         }
@@ -358,17 +394,19 @@ export class EventMapper {
         const state = this.ensureSession(companyId, agentId);
         this.spawnIfUnseen(companyId, agentId, state, agentEvents, occurredAt);
         // Rising edge (0 -> 1 active runs): the character starts visibly
-        // "working" (§21.4). A SYNTHETIC, honestly-named tool — never a
-        // fabricated real one (FR-14) — and never re-fired while further
-        // concurrent runs stack on top: the current AgentEvent model tracks
-        // one "current" tool per session, so a second toolStart here would
+        // "working" (§21.4), captioned with the actual issue title when
+        // known (see startWorkFor). Never re-fired while further concurrent
+        // runs stack on top: the current AgentEvent model tracks one
+        // "current" tool per session, so a second toolStart here would
         // corrupt the correlation a later toolEnd relies on. Full concurrency
         // (every run, not just "any active") is preserved losslessly in the
-        // sidecar below for the richer Paperclip-embedded UI (§10).
-        if (!state.toolActive) {
-          agentEvents.push(this.toolStartFor(companyId, agentId));
-          state.toolActive = true;
-        }
+        // sidecar below for the richer Paperclip-embedded UI (§10). Usually a
+        // no-op here because `issue.checked_out` (moments earlier in the real
+        // checkout-then-run flow) already opened it via the same helper —
+        // this is the fallback for whenever that wasn't observed (worker
+        // restart mid-run, event delivered out of order, etc.).
+        const started = this.startWorkFor(companyId, agentId, state, issueId);
+        if (started) agentEvents.push(started);
         state.activeRunCount += 1;
         state.lastEventAt = occurredAt;
         sidecar = {
@@ -429,6 +467,39 @@ export class EventMapper {
       case "issue.updated": {
         const { issueId, projectId, status, title, assigneeAgentId, blocked } =
           event.payload;
+        if (title) this.issueTitles.set(issueId, title);
+        // A real hand-off: this issue had a different, already-visible
+        // assignee, and it's being reassigned to someone else. Represent it
+        // as an honest, discrete "sent the work along" blip on the PREVIOUS
+        // assignee's character — never on the run-tracking toolId (§21.4),
+        // so it can never corrupt an in-progress run's own toolStart/toolEnd
+        // correlation. Only fires when there was a real prior assignee with
+        // an existing, visible character; never forces a spawn just to show
+        // a departing handoff.
+        const previousAssignee = this.issueAssignees.get(issueId);
+        if (
+          assigneeAgentId
+          && previousAssignee
+          && previousAssignee !== assigneeAgentId
+        ) {
+          const previousState = this.sessions.get(
+            syntheticSessionId(companyId, previousAssignee),
+          );
+          if (previousState?.seen) {
+            const recipientName =
+              this.sessions.get(syntheticSessionId(companyId, assigneeAgentId))
+                ?.agentName ?? assigneeAgentId;
+            agentEvents.push(
+              ...this.transientToolFor(
+                companyId,
+                previousAssignee,
+                `handoff:${issueId}`,
+                "SendMessage",
+                { recipient: recipientName },
+              ),
+            );
+          }
+        }
         if (assigneeAgentId !== undefined && assigneeAgentId !== null) {
           this.issueAssignees.set(issueId, assigneeAgentId);
         }
@@ -583,6 +654,97 @@ export class EventMapper {
         break;
       }
 
+      // A newly hired agent would otherwise only appear at the next 5-minute
+      // reconciliation snapshot. Spawn it immediately, idle (no run has
+      // started yet — never fabricate work that hasn't happened).
+      case "agent.created": {
+        const { agentId, name } = event.payload;
+        if (!agentId) break;
+        const state = this.ensureSession(companyId, agentId);
+        if (!state.seen) {
+          state.seen = true;
+          state.agentName = name;
+          agentEvents.push(this.sessionStartFor(companyId, agentId, name));
+          agentEvents.push(this.turnEndFor(companyId, agentId, false));
+        }
+        sidecar = {
+          kind: "lifecycle",
+          companyId,
+          agentId,
+          transition: "started",
+          reason: "hired",
+          occurredAt,
+        };
+        break;
+      }
+
+      // A recovery signal — no dedicated AgentEvent kind fits "was stuck,
+      // now isn't" (this is not a session boundary), so it's sidecar-only.
+      case "agent.error_cleared": {
+        sidecar = null;
+        break;
+      }
+
+      // The claim-before-run moment — fires before the matching
+      // agent.run.started, and already carries the specific issue, so it's
+      // the earliest point the "Task: <title>" caption can honestly start
+      // (see startWorkFor's toolActive gate: agent.run.started becomes a
+      // no-op fallback once this has already fired for the same agent).
+      case "issue.checked_out": {
+        const { issueId, agentId } = event.payload;
+        if (!agentId) break;
+        const state = this.ensureSession(companyId, agentId);
+        this.spawnIfUnseen(companyId, agentId, state, agentEvents, occurredAt);
+        const started = this.startWorkFor(companyId, agentId, state, issueId);
+        if (started) agentEvents.push(started);
+        break;
+      }
+
+      // Only fires when another installed plugin explicitly calls the
+      // host's issues.requestWakeup(s) capability (confirmed 2026-08-31 by
+      // reading plugin-host-services.ts) — not a general "blocker resolved"
+      // signal, and dormant unless such a plugin exists. Ensures the
+      // character exists ahead of the run that's about to be requested;
+      // never fabricates a busy state since no run has actually started.
+      // When it does spawn, also confirms it idle (turnEnd) — a bare
+      // sessionStart alone never promotes past Pixel Agents' own "pending"
+      // state (see mapSnapshot's doc comment); a no-op for an already-seen
+      // agent, matching every other spawn-if-unseen call site.
+      case "issue.assignment_wakeup_requested": {
+        const { assigneeAgentId } = event.payload;
+        if (!assigneeAgentId) break;
+        const state = this.ensureSession(companyId, assigneeAgentId);
+        const wasUnseen = !state.seen;
+        this.spawnIfUnseen(companyId, assigneeAgentId, state, agentEvents, occurredAt);
+        if (wasUnseen) {
+          agentEvents.push(this.turnEndFor(companyId, assigneeAgentId, false));
+        }
+        break;
+      }
+
+      // A document write is a discrete, already-completed action by the
+      // time this event arrives — represented as an honest, immediate
+      // toolStart+toolEnd pair on its OWN toolId (never the run-tracking
+      // one), so it never corrupts an in-progress run's own correlation even
+      // when (the common case) a document changes mid-run.
+      case "issue.document.created":
+      case "issue.document.updated": {
+        const { issueId, documentId, title, agentId } = event.payload;
+        if (!agentId) break;
+        const state = this.ensureSession(companyId, agentId);
+        this.spawnIfUnseen(companyId, agentId, state, agentEvents, occurredAt);
+        agentEvents.push(
+          ...this.transientToolFor(
+            companyId,
+            agentId,
+            `doc:${documentId ?? issueId}`,
+            "Write",
+            { file_path: title ?? documentId ?? issueId },
+          ),
+        );
+        break;
+      }
+
       default: {
         // Exhaustiveness guard: unknown kinds are non-mappable -> sidecar-less.
         sidecar = null;
@@ -677,15 +839,32 @@ export class EventMapper {
     };
   }
 
-  /** Stable per-agent synthetic tool id (one "current" tool slot, §21.4). */
-  private toolStartFor(companyId: string, agentId: string): SessionAgentEvent {
+  /**
+   * Stable per-agent synthetic tool id (one "current" tool slot, §21.4).
+   * `toolName:"Task"` with `input.description` set produces Pixel Agents'
+   * "Subtask: <description>" caption (`formatToolStatus`'s real, existing
+   * case for that tool name); omitting `description` falls back to the
+   * generic synthetic `"PaperclipWork"` name (caption: "Using PaperclipWork").
+   */
+  private toolStartFor(
+    companyId: string,
+    agentId: string,
+    description?: string,
+  ): SessionAgentEvent {
     return {
       sessionId: syntheticSessionId(companyId, agentId),
-      event: {
-        kind: "toolStart",
-        toolId: `${ID_NAMESPACE}:work:${companyId}:${agentId}`,
-        toolName: "PaperclipWork",
-      },
+      event: description
+        ? {
+            kind: "toolStart",
+            toolId: `${ID_NAMESPACE}:work:${companyId}:${agentId}`,
+            toolName: "Task",
+            input: { description },
+          }
+        : {
+            kind: "toolStart",
+            toolId: `${ID_NAMESPACE}:work:${companyId}:${agentId}`,
+            toolName: "PaperclipWork",
+          },
     };
   }
 
@@ -697,6 +876,53 @@ export class EventMapper {
         toolId: `${ID_NAMESPACE}:work:${companyId}:${agentId}`,
       },
     };
+  }
+
+  /**
+   * Opens the run-tracking toolStart slot, captioned with the known issue
+   * title when available (falls back to the generic synthetic name
+   * otherwise). Gated on `state.toolActive` — a no-op returning `null` if
+   * something already opened it (typically `issue.checked_out`, moments
+   * earlier in the real checkout-then-run flow; see the call sites in
+   * `mapSnapshot` and the `agent.run.started`/`issue.checked_out` cases,
+   * whichever observes the agent first). Callers own pushing the returned
+   * event into their own `agentEvents` array.
+   */
+  private startWorkFor(
+    companyId: string,
+    agentId: string,
+    state: AgentSessionState,
+    issueId: string | null | undefined,
+  ): SessionAgentEvent | null {
+    if (state.toolActive) return null;
+    state.toolActive = true;
+    const title = issueId ? this.issueTitles.get(issueId) : undefined;
+    return this.toolStartFor(companyId, agentId, title);
+  }
+
+  /**
+   * A discrete, already-completed action (a document write, a reassignment
+   * handoff) represented as an immediate toolStart+toolEnd pair on its OWN
+   * `scope`-suffixed toolId — never the shared run-tracking toolId
+   * (`${ID_NAMESPACE}:work:...}`) `toolStartFor`/`toolEndFor` use — so it can
+   * never corrupt an in-progress run's own start/end correlation even when
+   * (the common case) the blip happens mid-run. Pixel Agents tracks
+   * `activeToolStatuses` per toolId, so a distinct, transient id coexisting
+   * alongside the main one is a supported shape, not a hack.
+   */
+  private transientToolFor(
+    companyId: string,
+    agentId: string,
+    scope: string,
+    toolName: string,
+    input: unknown,
+  ): SessionAgentEvent[] {
+    const sessionId = syntheticSessionId(companyId, agentId);
+    const toolId = `${ID_NAMESPACE}:blip:${companyId}:${agentId}:${scope}`;
+    return [
+      { sessionId, event: { kind: "toolStart", toolId, toolName, input } },
+      { sessionId, event: { kind: "toolEnd", toolId } },
+    ];
   }
 }
 

@@ -66,7 +66,20 @@ export const STATE_NAMESPACES = {
 /** Default interval (in ms) for the bridge reconciliation job. */
 export const RECONCILIATION_DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
 
-/** List of Paperclip event types this plugin subscribes to. */
+/**
+ * List of Paperclip event types this plugin subscribes to. Cross-referenced
+ * 2026-08-31 against the host's full, authoritative catalog
+ * (`@paperclipai/shared`'s `PLUGIN_EVENT_TYPES`, 33 entries total) to find
+ * additional signal worth carrying into the bridge beyond the original 12.
+ * Deliberately still NOT subscribed: `company.*`, `project.*` (organizational,
+ * not agent-scoped — better fits Paperclip's own embedded UI than a
+ * per-character animation), `goal.*` (same reasoning), `issue.created`
+ * (no assignee yet, nothing agent-visual to say), `issue.relations.updated`
+ * (dependency-graph detail, sidecar-appropriate at best),
+ * `issue.document.deleted` (no honest "undo a Write" animation), and
+ * `activity.logged` (a generic catch-all for actions with no dedicated event
+ * type — subscribing risks duplicating the specific types below with noise).
+ */
 export const SUBSCRIBED_EVENT_TYPES = [
   "agent.status_changed",
   "agent.run.started",
@@ -80,6 +93,12 @@ export const SUBSCRIBED_EVENT_TYPES = [
   "budget.incident.opened",
   "budget.incident.resolved",
   "cost_event.created",
+  "agent.created",
+  "agent.error_cleared",
+  "issue.checked_out",
+  "issue.assignment_wakeup_requested",
+  "issue.document.created",
+  "issue.document.updated",
 ] as const;
 
 /** Capability identifiers required by the plugin manifest. */

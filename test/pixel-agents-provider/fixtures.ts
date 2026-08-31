@@ -292,6 +292,95 @@ export function costEvent(
   };
 }
 
+export function agentCreated(
+  eventId: string,
+  tsMs: number,
+  agentId = AGENT_NEW,
+  opts: { name?: string; role?: string } = {},
+): BridgeInputEvent {
+  return {
+    ...baseEvent(eventId, tsMs),
+    kind: "agent.created",
+    payload: {
+      agentId,
+      name: opts.name ?? "New Agent",
+      role: opts.role ?? "engineer",
+    },
+  };
+}
+
+export function agentErrorCleared(
+  eventId: string,
+  tsMs: number,
+  agentId = AGENT_A,
+): BridgeInputEvent {
+  return {
+    ...baseEvent(eventId, tsMs),
+    kind: "agent.error_cleared",
+    payload: { agentId },
+  };
+}
+
+export function issueCheckedOut(
+  eventId: string,
+  tsMs: number,
+  issueId = ISSUE_1,
+  agentId = AGENT_A,
+): BridgeInputEvent {
+  return {
+    ...baseEvent(eventId, tsMs),
+    kind: "issue.checked_out",
+    payload: { issueId, agentId },
+  };
+}
+
+export function issueAssignmentWakeupRequested(
+  eventId: string,
+  tsMs: number,
+  issueId = ISSUE_1,
+  assigneeAgentId = AGENT_A,
+): BridgeInputEvent {
+  return {
+    ...baseEvent(eventId, tsMs),
+    kind: "issue.assignment_wakeup_requested",
+    payload: { issueId, assigneeAgentId, reason: "plugin_issue_wakeup_requested" },
+  };
+}
+
+export function issueDocumentCreated(
+  eventId: string,
+  tsMs: number,
+  opts: { issueId?: string; documentId?: string; title?: string; agentId?: string } = {},
+): BridgeInputEvent {
+  return {
+    ...baseEvent(eventId, tsMs),
+    kind: "issue.document.created",
+    payload: {
+      issueId: opts.issueId ?? ISSUE_1,
+      documentId: opts.documentId ?? "doc-1",
+      title: opts.title ?? "PR Description",
+      agentId: opts.agentId ?? AGENT_A,
+    },
+  };
+}
+
+export function issueDocumentUpdated(
+  eventId: string,
+  tsMs: number,
+  opts: { issueId?: string; documentId?: string; title?: string; agentId?: string } = {},
+): BridgeInputEvent {
+  return {
+    ...baseEvent(eventId, tsMs),
+    kind: "issue.document.updated",
+    payload: {
+      issueId: opts.issueId ?? ISSUE_1,
+      documentId: opts.documentId ?? "doc-1",
+      title: opts.title ?? "PR Description v2",
+      agentId: opts.agentId ?? AGENT_A,
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Authoritative snapshot builder
 // ---------------------------------------------------------------------------

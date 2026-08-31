@@ -210,6 +210,80 @@ export function mapPluginEvent(event: PluginEvent): BridgeInputEvent | null {
         },
       };
     }
+    // The host's generic activity-log payload construction always overwrites
+    // a `payload.agentId` field with the *actor* who performed the action
+    // (confirmed by reading server/src/services/activity-log.ts), so the new
+    // agent's own id is only reliably available as the envelope's top-level
+    // `entityId` — never `p.agentId` here.
+    case "agent.created": {
+      return {
+        ...base,
+        kind: "agent.created",
+        payload: {
+          agentId: event.entityId ?? "",
+          name: asString(p.name),
+          role: asString(p.role),
+        },
+      };
+    }
+    case "agent.error_cleared": {
+      return {
+        ...base,
+        kind: "agent.error_cleared",
+        payload: {
+          agentId: event.entityId ?? "",
+        },
+      };
+    }
+    case "issue.checked_out": {
+      return {
+        ...base,
+        kind: "issue.checked_out",
+        payload: {
+          issueId: event.entityId ?? "",
+          // Best-effort: this is the actor performing the checkout API call,
+          // which equals the checking-out agent in the common self-checkout
+          // pattern, but is not guaranteed for a human/system-triggered
+          // checkout on another agent's behalf.
+          agentId: asStringOrNull(p.agentId),
+        },
+      };
+    }
+    case "issue.assignment_wakeup_requested": {
+      return {
+        ...base,
+        kind: "issue.assignment_wakeup_requested",
+        payload: {
+          issueId: event.entityId ?? "",
+          assigneeAgentId: asStringOrNull(p.assigneeAgentId),
+          reason: asString(p.reason),
+        },
+      };
+    }
+    case "issue.document.created": {
+      return {
+        ...base,
+        kind: "issue.document.created",
+        payload: {
+          issueId: event.entityId ?? "",
+          documentId: asString(p.documentId),
+          title: asString(p.title),
+          agentId: asStringOrNull(p.agentId),
+        },
+      };
+    }
+    case "issue.document.updated": {
+      return {
+        ...base,
+        kind: "issue.document.updated",
+        payload: {
+          issueId: event.entityId ?? "",
+          documentId: asString(p.documentId),
+          title: asString(p.title),
+          agentId: asStringOrNull(p.agentId),
+        },
+      };
+    }
     default:
       return null;
   }

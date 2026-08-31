@@ -203,4 +203,96 @@ describe("mapPluginEvent", () => {
       expect(mapPluginEvent(makePluginEvent("company.updated", {}))).toBeNull();
     });
   });
+
+  // Added 2026-08-31: six additional PLUGIN_EVENT_TYPES entries subscribed to
+  // enrich the bridge's simulation of real Paperclip activity (see
+  // event-mapper.ts's mapSnapshot/mapEvent doc comments for the visual side).
+  // agent.created/agent.error_cleared/issue.checked_out/
+  // issue.assignment_wakeup_requested carry their real subject only as the
+  // envelope's top-level entityId, never payload.agentId (the host's generic
+  // activity-log payload construction always overwrites that field with the
+  // *actor*, confirmed by reading server/src/services/activity-log.ts) — so
+  // these fixtures exercise entityId explicitly rather than relying on the
+  // table runner above.
+  describe("new event types (2026-08-31)", () => {
+    it("maps agent.created from entityId, never payload.agentId", () => {
+      const bridge = mapPluginEvent(
+        makePluginEvent(
+          "agent.created",
+          { name: "Full-Stack Engineer", role: "engineer", agentId: "actor-who-hired-them" },
+          { entityId: "new-agent-1" },
+        ),
+      );
+      expect(bridge?.kind).toBe("agent.created");
+      expect(payloadOf<{ agentId: string; name?: string; role?: string }>(bridge)).toEqual({
+        agentId: "new-agent-1",
+        name: "Full-Stack Engineer",
+        role: "engineer",
+      });
+    });
+
+    it("maps agent.error_cleared from entityId with no other payload required", () => {
+      const bridge = mapPluginEvent(
+        makePluginEvent("agent.error_cleared", {}, { entityId: "agent-7" }),
+      );
+      expect(bridge?.kind).toBe("agent.error_cleared");
+      expect(payloadOf<{ agentId: string }>(bridge)).toEqual({ agentId: "agent-7" });
+    });
+
+    it("maps issue.checked_out with issueId from entityId and agentId from payload", () => {
+      const bridge = mapPluginEvent(
+        makePluginEvent("issue.checked_out", { agentId: "agent-dev" }, { entityId: "issue-42" }),
+      );
+      expect(bridge?.kind).toBe("issue.checked_out");
+      expect(payloadOf<{ issueId: string; agentId?: string | null }>(bridge)).toEqual({
+        issueId: "issue-42",
+        agentId: "agent-dev",
+      });
+    });
+
+    it("maps issue.assignment_wakeup_requested with issueId from entityId", () => {
+      const bridge = mapPluginEvent(
+        makePluginEvent(
+          "issue.assignment_wakeup_requested",
+          { assigneeAgentId: "agent-dev", reason: "plugin_issue_wakeup_requested" },
+          { entityId: "issue-42" },
+        ),
+      );
+      expect(bridge?.kind).toBe("issue.assignment_wakeup_requested");
+      expect(payloadOf<{ issueId: string; assigneeAgentId?: string | null; reason?: string }>(bridge)).toEqual({
+        issueId: "issue-42",
+        assigneeAgentId: "agent-dev",
+        reason: "plugin_issue_wakeup_requested",
+      });
+    });
+
+    it("maps issue.document.created with issueId from entityId", () => {
+      const bridge = mapPluginEvent(
+        makePluginEvent(
+          "issue.document.created",
+          { documentId: "doc-1", title: "PR Description", agentId: "agent-dev" },
+          { entityId: "issue-42" },
+        ),
+      );
+      expect(bridge?.kind).toBe("issue.document.created");
+      expect(payloadOf<{ issueId: string; documentId?: string; title?: string; agentId?: string | null }>(bridge)).toEqual({
+        issueId: "issue-42",
+        documentId: "doc-1",
+        title: "PR Description",
+        agentId: "agent-dev",
+      });
+    });
+
+    it("maps issue.document.updated the same shape as issue.document.created", () => {
+      const bridge = mapPluginEvent(
+        makePluginEvent(
+          "issue.document.updated",
+          { documentId: "doc-1", title: "PR Description v2", agentId: "agent-dev" },
+          { entityId: "issue-42" },
+        ),
+      );
+      expect(bridge?.kind).toBe("issue.document.updated");
+      expect(payloadOf<{ title?: string }>(bridge).title).toBe("PR Description v2");
+    });
+  });
 });

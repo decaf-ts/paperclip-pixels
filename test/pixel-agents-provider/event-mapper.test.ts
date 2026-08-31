@@ -5,13 +5,20 @@ import {
   AGENT_NEW,
   COMPANY_ID,
   ISSUE_1,
+  ISSUE_2,
   PROJECT_X,
+  agentCreated,
+  agentErrorCleared,
   approvalCreated,
   approvalDecided,
   budgetIncidentOpened,
   budgetIncidentResolved,
   commentCreated,
   costEvent,
+  issueAssignmentWakeupRequested,
+  issueCheckedOut,
+  issueDocumentCreated,
+  issueDocumentUpdated,
   issueUpdated,
   runCancelled,
   runFailed,
@@ -381,5 +388,196 @@ describe("synthetic session ids are deterministic and namespaced (§31.4, §21.3
     for (const e of res.agentEvents) {
       expect(e.sessionId.startsWith(`${ID_NAMESPACE}:`)).toBe(true);
     }
+  });
+});
+
+// Added 2026-08-31: real-issue-title-aware toolStart captions, the six new
+// subscribed event types, and the reassignment handoff blip — see this
+// file's own event-mapper.ts doc comment for the full design rationale.
+describe("toolStart captions carry the real issue title when known (Task/description)", () => {
+  it("agent.run.started uses the title cached from a prior snapshot", () => {
+    const mapper = new EventMapper();
+    mapper.mapSnapshot(snapshot()); // learns ISSUE_1 -> "Issue 1", spawns+idles AGENT_A
+    const res = mapper.mapEvent(runStarted("e1", 10, "r1", AGENT_A, ISSUE_1, PROJECT_X));
+    const toolStart = res.agentEvents.find((e) => e.event.kind === "toolStart");
+    expect(toolStart?.event).toEqual({
+      kind: "toolStart",
+      toolId: `${ID_NAMESPACE}:work:${COMPANY_ID}:${AGENT_A}`,
+      toolName: "Task",
+      input: { description: "Issue 1" },
+    });
+  });
+
+  it("falls back to the generic PaperclipWork name when the issue title is unknown", () => {
+    const mapper = new EventMapper();
+    const res = mapper.mapEvent(runStarted("e1", 0, "r1", AGENT_NEW, ISSUE_2, PROJECT_X));
+    const toolStart = res.agentEvents.find((e) => e.event.kind === "toolStart");
+    expect(toolStart?.event).toEqual({
+      kind: "toolStart",
+      toolId: `${ID_NAMESPACE}:work:${COMPANY_ID}:${AGENT_NEW}`,
+      toolName: "PaperclipWork",
+    });
+  });
+
+  it("mapSnapshot's already-active-run branch is also title-aware", () => {
+    const mapper = new EventMapper();
+    const withActiveRun = snapshot({
+      agents: [
+        {
+          id: AGENT_A,
+          companyId: COMPANY_ID,
+          name: "Alice",
+          status: "running",
+          activeRuns: [{ id: "r1", agentId: AGENT_A, issueId: ISSUE_1, projectId: PROJECT_X, status: "running" }],
+        },
+      ],
+    });
+    const res = mapper.mapSnapshot(withActiveRun);
+    const toolStart = res.agentEvents.find((e) => e.event.kind === "toolStart");
+    expect(toolStart?.event).toMatchObject({ toolName: "Task", input: { description: "Issue 1" } });
+  });
+
+  it("learns a title from issue.updated too, for a run that starts afterward", () => {
+    const mapper = new EventMapper();
+    mapper.mapEvent(issueUpdated("e0", 0, ISSUE_2, "todo", { title: "Fix the thing" }));
+    const res = mapper.mapEvent(runStarted("e1", 10, "r1", AGENT_NEW, ISSUE_2, PROJECT_X));
+    const toolStart = res.agentEvents.find((e) => e.event.kind === "toolStart");
+    expect(toolStart?.event).toMatchObject({ toolName: "Task", input: { description: "Fix the thing" } });
+  });
+});
+
+describe("issue.checked_out opens the work slot ahead of agent.run.started (§21.4)", () => {
+  it("checked_out spawns the character and opens toolActive with the issue title", () => {
+    const mapper = new EventMapper();
+    mapper.mapSnapshot(snapshot()); // learns ISSUE_1 -> "Issue 1"
+    const res = mapper.mapEvent(issueCheckedOut("e1", 10, ISSUE_1, AGENT_A));
+    const toolStart = res.agentEvents.find((e) => e.event.kind === "toolStart");
+    expect(toolStart?.event).toMatchObject({ toolName: "Task", input: { description: "Issue 1" } });
+  });
+
+  it("the later agent.run.started for the same agent becomes a no-op fallback, never a second toolStart", () => {
+    const mapper = new EventMapper();
+    mapper.mapSnapshot(snapshot());
+    mapper.mapEvent(issueCheckedOut("e1", 10, ISSUE_1, AGENT_A));
+    const res = mapper.mapEvent(runStarted("e2", 20, "r1", AGENT_A, ISSUE_1, PROJECT_X));
+    expect(res.agentEvents.some((e) => e.event.kind === "toolStart")).toBe(false);
+  });
+});
+
+describe("agent.created spawns immediately, idle (never fabricates a running state)", () => {
+  it("spawns a sessionStart + turnEnd(false) pair for a brand-new agent", () => {
+    const mapper = new EventMapper();
+    const res = mapper.mapEvent(agentCreated("e1", 0, AGENT_NEW, { name: "Fresh Hire", role: "engineer" }));
+    expect(res.agentEvents.map((e) => e.event.kind)).toEqual(["sessionStart", "turnEnd"]);
+    expect(res.agentEvents[0].event).toMatchObject({ kind: "sessionStart" });
+    expect(res.agentEvents[1].event).toEqual({ kind: "turnEnd", awaitingInput: false });
+    for (const e of res.agentEvents) {
+      expect(e.sessionId).toBe(syntheticSessionId(COMPANY_ID, AGENT_NEW));
+    }
+  });
+
+  it("never re-spawns the same agent twice", () => {
+    const mapper = new EventMapper();
+    mapper.mapEvent(agentCreated("e1", 0, AGENT_NEW));
+    const res = mapper.mapEvent(agentCreated("e2", 10, AGENT_NEW));
+    expect(res.agentEvents).toHaveLength(0);
+  });
+});
+
+describe("agent.error_cleared is sidecar-less and never fabricates a session boundary", () => {
+  it("emits no AgentEvent and no sidecar", () => {
+    const mapper = new EventMapper();
+    const res = mapper.mapEvent(agentErrorCleared("e1", 0, AGENT_A));
+    expect(res.agentEvents).toHaveLength(0);
+    expect(res.sidecar).toBeNull();
+  });
+});
+
+describe("issue.assignment_wakeup_requested ensures the character exists without fabricating work", () => {
+  it("spawns the assignee if unseen, with no busy/toolStart signal", () => {
+    const mapper = new EventMapper();
+    const res = mapper.mapEvent(issueAssignmentWakeupRequested("e1", 0, ISSUE_1, AGENT_NEW));
+    expect(res.agentEvents.map((e) => e.event.kind)).toEqual(["sessionStart", "turnEnd"]);
+  });
+
+  it("is a no-op for an already-seen agent", () => {
+    const mapper = new EventMapper();
+    mapper.mapSnapshot(snapshot());
+    const res = mapper.mapEvent(issueAssignmentWakeupRequested("e1", 10, ISSUE_1, AGENT_A));
+    expect(res.agentEvents).toHaveLength(0);
+  });
+});
+
+describe("issue.document.created/updated map to an honest, transient Write blip (§21.4 isolation)", () => {
+  it("emits a toolStart+toolEnd pair on a document-scoped toolId, captioned with the document title", () => {
+    const mapper = new EventMapper();
+    const res = mapper.mapEvent(
+      issueDocumentCreated("e1", 0, { issueId: ISSUE_1, documentId: "doc-1", title: "PR Description", agentId: AGENT_NEW }),
+    );
+    const [sessionStart, toolStart, toolEnd] = res.agentEvents;
+    expect(sessionStart.event.kind).toBe("sessionStart");
+    const expectedToolId = `${ID_NAMESPACE}:blip:${COMPANY_ID}:${AGENT_NEW}:doc:doc-1`;
+    expect(toolStart.event).toEqual({
+      kind: "toolStart",
+      toolId: expectedToolId,
+      toolName: "Write",
+      input: { file_path: "PR Description" },
+    });
+    expect(toolEnd.event).toEqual({ kind: "toolEnd", toolId: expectedToolId });
+  });
+
+  it("never touches the main run-tracking toolId, even mid-run", () => {
+    const mapper = new EventMapper();
+    mapper.mapSnapshot(snapshot());
+    mapper.mapEvent(runStarted("e1", 0, "r1", AGENT_A, ISSUE_1, PROJECT_X));
+    const res = mapper.mapEvent(
+      issueDocumentUpdated("e2", 10, { issueId: ISSUE_1, documentId: "doc-1", agentId: AGENT_A }),
+    );
+    const mainToolId = `${ID_NAMESPACE}:work:${COMPANY_ID}:${AGENT_A}`;
+    expect(res.agentEvents.some((e) => "toolId" in e.event && e.event.toolId === mainToolId)).toBe(false);
+    // The run's own toolEnd (when it later finishes) must still fire — the
+    // blip must not have corrupted `state.toolActive`.
+    const finished = mapper.mapEvent(runFinished("e3", 20, "r1", AGENT_A));
+    expect(finished.agentEvents.some((e) => e.event.kind === "toolEnd" && "toolId" in e.event && e.event.toolId === mainToolId)).toBe(true);
+  });
+});
+
+describe("issue.updated reassignment emits a SendMessage handoff blip on the previous assignee (§21.4 isolation)", () => {
+  it("emits the blip on the previous assignee, captioned with the new assignee's name", () => {
+    const mapper = new EventMapper();
+    mapper.mapSnapshot(snapshot()); // AGENT_A ("Alice") and AGENT_B ("Bob") both spawned+idled, ISSUE_1 -> AGENT_A
+    const res = mapper.mapEvent(
+      issueUpdated("e1", 10, ISSUE_1, "in_progress", { assigneeAgentId: AGENT_B }),
+    );
+    const blipStart = res.agentEvents.find(
+      (e) => e.event.kind === "toolStart" && (e.event as { toolName: string }).toolName === "SendMessage",
+    );
+    expect(blipStart?.sessionId).toBe(syntheticSessionId(COMPANY_ID, AGENT_A));
+    expect(blipStart?.event).toMatchObject({ toolName: "SendMessage", input: { recipient: "Bob" } });
+    const toolId = (blipStart!.event as { toolId: string }).toolId;
+    expect(
+      res.agentEvents.some((e) => e.event.kind === "toolEnd" && "toolId" in e.event && e.event.toolId === toolId),
+    ).toBe(true);
+  });
+
+  it("does not fire when there was no previous assignee", () => {
+    const mapper = new EventMapper();
+    const res = mapper.mapEvent(issueUpdated("e1", 0, ISSUE_2, "in_progress", { assigneeAgentId: AGENT_A }));
+    expect(res.agentEvents.some((e) => e.event.kind === "toolStart")).toBe(false);
+  });
+
+  it("does not fire when reassigned to the same agent", () => {
+    const mapper = new EventMapper();
+    mapper.mapSnapshot(snapshot());
+    const res = mapper.mapEvent(issueUpdated("e1", 10, ISSUE_1, "in_progress", { assigneeAgentId: AGENT_A }));
+    expect(res.agentEvents.some((e) => e.event.kind === "toolStart")).toBe(false);
+  });
+
+  it("does not fire when the previous assignee was never actually seen/spawned", () => {
+    const mapper = new EventMapper();
+    // Learn the assignment without ever spawning AGENT_A (no snapshot, no run event).
+    mapper.mapEvent(issueUpdated("e1", 0, ISSUE_1, "todo", { assigneeAgentId: AGENT_A }));
+    const res = mapper.mapEvent(issueUpdated("e2", 10, ISSUE_1, "in_progress", { assigneeAgentId: AGENT_B }));
+    expect(res.agentEvents.some((e) => e.event.kind === "toolStart")).toBe(false);
   });
 });
