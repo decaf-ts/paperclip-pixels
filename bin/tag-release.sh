@@ -182,8 +182,13 @@ if [[ -s .token ]]; then
   CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
   UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)
 
-  # Push using token; omit -u to avoid changing upstream
-  git push "https://${GIT_USER}:$(cat .token)@${REMOTE_URL#https://}" --follow-tags
+  # Push using token; omit -u to avoid changing upstream. GIT_USER (git config
+  # user.name) can be a display name containing spaces/reserved chars (e.g.
+  # "Tiago Venceslau"), which is invalid unencoded in a URL's userinfo
+  # component and makes git reject the URL outright ("Malformed input to a
+  # URL function") -- percent-encode it first.
+  ENCODED_GIT_USER=$(node -e "process.stdout.write(encodeURIComponent(process.argv[1]))" "$GIT_USER")
+  git push "https://${ENCODED_GIT_USER}:$(cat .token)@${REMOTE_URL#https://}" --follow-tags
   # Restore upstream tracking if it existed
   if [[ -n "$UPSTREAM" ]]; then
     git branch --set-upstream-to="$UPSTREAM" "$CURRENT_BRANCH" 2>/dev/null || true
