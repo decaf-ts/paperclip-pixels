@@ -517,6 +517,93 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
     warn.mockRestore();
   });
 
+  it("onConfigChanged's enable path immediately re-syncs, not just reconfigures — no need to wait for the next reconciliation job", async () => {
+    // Before this fix, configure() alone rebuilt the transport but never
+    // re-ingested a snapshot; a company only regained visible characters at
+    // the next scheduled bridge-reconcile job (up to ~5 min later) or via a
+    // manual ingestSnapshot call. Confirmed live 2026-08-31: this left agents
+    // invisible through any disable/re-enable cycle (or any operator config
+    // change) until then, and any live event racing ahead of that gap could
+    // permanently label an agent with its raw id instead of its real name
+    // (see resyncCompany's doc comment in relay.ts).
+    const { harness } = seedStandardWorld();
+    harness.setConfig({ pixelAgentsUrl: "https://pa.example" });
+    spyRelayFetch();
+    await setupWorker(harness);
+    await flushRelay();
+    const def = pluginDefinition(plugin);
+
+    await def.onConfigChanged!({ pixelAgentsRelayEnabled: false }, { companyId: COMPANY_ID });
+    await flushRelay();
+    const baseline = relayFetchCalls.length;
+
+    await def.onConfigChanged!({ pixelAgentsUrl: "https://pa.example" }, { companyId: COMPANY_ID });
+    await flushRelay();
+
+    const newCalls = relayFetchCalls.slice(baseline);
+    const bySession = new Map<string, string[]>();
+    for (const call of newCalls) {
+      const body = JSON.parse(call.body);
+      const list = bySession.get(body.session_id) ?? [];
+      list.push(body.hook_event_name);
+      bySession.set(body.session_id, list);
+    }
+    expect([...bySession.keys()].sort()).toEqual([
+      "paperclip-bridge:company-acme:agent-ceo",
+      "paperclip-bridge:company-acme:agent-dev",
+    ]);
+    for (const events of bySession.values()) {
+      expect(events).toEqual(["SessionStart", "Stop"]);
+    }
+  });
+
+  it("the reconciliation job periodically self-heals by resyncing the mapper every RESYNC_EVERY_N_RECONCILES ticks", async () => {
+    // A sessionStart push that silently fails once (HttpPushSink is
+    // fire-and-forget) otherwise strands that agent invisible for the rest of
+    // the worker's lifetime: mapSnapshot only ever sends incremental
+    // toolStart/toolEnd updates for an agent it already believes is "seen".
+    // Confirmed live 2026-08-31 during a concurrent container restart. The
+    // reconciliation job now forces a full resyncCompany (fresh mapper, fresh
+    // snapshot) every Nth tick as a bounded-time self-heal.
+    //
+    // Any run of RESYNC_EVERY_N_RECONCILES (6) consecutive ticks crosses
+    // exactly one multiple of the module-level tick counter, whatever its
+    // starting offset from other tests sharing this module instance — so this
+    // assertion is independent of test execution order. Nothing else about
+    // the seeded world changes between ticks, so every non-resync tick pushes
+    // nothing (mapSnapshot's already-seen/no-state-change branch is a no-op);
+    // the one resync tick re-sends a full SessionStart+Stop pair per agent.
+    const { harness } = seedStandardWorld();
+    harness.setConfig({ pixelAgentsUrl: "https://pa.example" });
+    spyRelayFetch();
+    await setupWorker(harness);
+    await flushRelay();
+    const baseline = relayFetchCalls.length;
+    expect(baseline).toBeGreaterThan(0);
+
+    for (let i = 0; i < 6; i += 1) {
+      await harness.runJob(JOB_KEYS.reconciliation);
+      await flushRelay();
+    }
+
+    const newCalls = relayFetchCalls.slice(baseline);
+    expect(newCalls).toHaveLength(4);
+    const bySession = new Map<string, string[]>();
+    for (const call of newCalls) {
+      const body = JSON.parse(call.body);
+      const list = bySession.get(body.session_id) ?? [];
+      list.push(body.hook_event_name);
+      bySession.set(body.session_id, list);
+    }
+    expect([...bySession.keys()].sort()).toEqual([
+      "paperclip-bridge:company-acme:agent-ceo",
+      "paperclip-bridge:company-acme:agent-dev",
+    ]);
+    for (const events of bySession.values()) {
+      expect(events).toEqual(["SessionStart", "Stop"]);
+    }
+  });
+
   it("onHealth details reports companies and relayCompanies counts", async () => {
     const { harness } = seedStandardWorld();
     harness.setConfig({ pixelAgentsUrl: "https://pa.example" });

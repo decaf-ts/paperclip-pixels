@@ -287,6 +287,17 @@ async function reconcileCompany(ctx: PluginContext, runtime: BridgeRuntime, comp
 let runtime: BridgeRuntime | null = null;
 let relay: BridgeRelay | null = null;
 
+// See the reconciliation job's registration below and resyncCompany's doc
+// comment in relay.ts: every Nth reconcile tick forces a full relay re-sync
+// (instead of the normal incremental ingest) as a bounded-time self-heal
+// against a `sessionStart` push that silently failed once. At the job
+// scheduler's ~5-minute cadence (JOB_KEYS.reconciliation), 6 ticks is ~30
+// minutes — frequent enough that a stranded agent doesn't stay invisible for
+// long, infrequent enough that the redundant-confirm burst it causes for
+// already-healthy agents is negligible.
+const RESYNC_EVERY_N_RECONCILES = 6;
+let reconciliationTickCount = 0;
+
 const plugin = definePlugin({
   async setup(ctx) {
     ctx.logger.info("Paperclip Pixel Bridge worker starting", {
@@ -355,7 +366,22 @@ const plugin = definePlugin({
     }
 
     ctx.jobs.register(JOB_KEYS.reconciliation, async () => {
+      // Every RESYNC_EVERY_N_RECONCILES-th tick, force a full relay re-sync
+      // (fresh EventMapper + fresh snapshot) instead of the normal incremental
+      // ingest. This is the self-healing half of resyncCompany's contract
+      // (see relay.ts): a `sessionStart` push that silently failed once (the
+      // sink is fire-and-forget) otherwise strands that agent invisible for
+      // the rest of the worker's lifetime, since mapSnapshot never resends a
+      // sessionStart for an agent it already believes is "seen". Re-sending
+      // for an already-registered agent is a harmless no-op on Pixel Agents'
+      // side, so this trades a small periodic burst of redundant confirms for
+      // never leaving a stranded agent invisible indefinitely.
+      reconciliationTickCount += 1;
+      const shouldResync = reconciliationTickCount % RESYNC_EVERY_N_RECONCILES === 0;
       for (const companyId of localRuntime.companies.keys()) {
+        if (shouldResync) {
+          await localRelay.resyncCompany(companyId);
+        }
         await reconcileCompany(ctx, localRuntime, companyId, localRelay);
       }
     });
@@ -489,6 +515,11 @@ const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime 
     if (!companyId) return;
     try {
       await relay?.configure(companyId, newConfig);
+      // configure() rebuilds the transport (a fresh, name-cache-cold
+      // EventMapper) but never re-ingests a snapshot on its own — see
+      // resyncCompany's doc comment in relay.ts for the live-event race this
+      // closes. A no-op when the reconfigure left the company disabled.
+      await relay?.resyncCompany(companyId);
     } catch (err) {
       // Best-effort: a config change must never crash the worker.
       const msg = err instanceof Error ? err.message : String(err);

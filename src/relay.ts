@@ -47,6 +47,7 @@ import {
   CLAUDE_WIRE_PROVIDER_ID,
   type FetchLike,
 } from "./pixel-agents-provider/index.js";
+import { bootstrapSnapshot } from "./snapshot.js";
 
 /**
  * Generic-package default: `paperclip-pixel-relay` binds `127.0.0.1:8081` by
@@ -333,6 +334,58 @@ export class BridgeRelay {
       pixelAgentsUrl: config.pixelAgentsUrl,
       providerId: config.providerId,
     });
+  }
+
+  /**
+   * Force a full re-sync for a company: clears the transport's event-mapper
+   * session state (so every agent is treated as never-before-seen again) and
+   * immediately re-ingests a freshly bootstrapped snapshot.
+   *
+   * Exists to close two related gaps, both confirmed live 2026-08-31:
+   *
+   * 1. `configure()` rebuilding the transport (e.g. on an operator config
+   *    change, or a disable/re-enable cycle) does NOT itself re-ingest a
+   *    snapshot — that only happens in `setupCompany`'s one-time initial call
+   *    or the next scheduled `bridge-reconcile` job (every 5 min, per
+   *    `JOB_KEYS.reconciliation`'s cadence). In that window, any *live* event
+   *    for an already-active agent can reach the fresh, name-cache-cold
+   *    `EventMapper` before a snapshot ever does, and `spawnIfUnseen`'s
+   *    documented fallback (event-mapper.ts) then permanently labels that
+   *    agent with its raw id instead of its real name for the transport's
+   *    lifetime. Calling this right after a reconfigure closes that window.
+   * 2. `EventMapper.mapSnapshot`/`mapEvent` mark an agent's session `seen`
+   *    optimistically, before knowing whether the mapped `sessionStart` push
+   *    actually reached Pixel Agents (`HttpPushSink.emit` is fire-and-forget;
+   *    a transient failure is recorded in `lastPushError` but never retried).
+   *    A single bad push during that initial burst — confirmed live during a
+   *    concurrent container restart — permanently strands the agent:
+   *    `mapSnapshot`'s "already seen" branch only ever sends incremental
+   *    `toolStart`/`toolEnd` updates afterward, which Pixel Agents silently
+   *    drops for a session it never actually registered. Resetting the
+   *    mapper here (called periodically from the reconciliation job, see
+   *    worker.ts) re-sends a full `sessionStart` + confirming pair for every
+   *    agent, self-healing within a bounded time instead of never. Re-sending
+   *    for an agent Pixel Agents already knows about is a harmless no-op on
+   *    its side (its session router recognizes an already-resolved session
+   *    and returns early).
+   *
+   * A no-op when the company has no configured relay.
+   *
+   * @param companyId - Identifier of the company to re-sync.
+   */
+  async resyncCompany(companyId: string): Promise<void> {
+    const entry = this.companies.get(companyId);
+    if (!entry) return;
+    try {
+      entry.transport.eventMapper.reset();
+      const result = await bootstrapSnapshot(this.ctx, companyId);
+      entry.transport.ingestSnapshot(result.snapshot);
+    } catch (err) {
+      this.ctx.logger.warn("Bridge relay re-sync failed for company", {
+        companyId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /** Feed an authoritative snapshot (bootstrap / reconciliation). */

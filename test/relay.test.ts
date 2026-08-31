@@ -586,6 +586,19 @@ describe("BridgeRelay", () => {
     expect(relay.lastPushError("company-ghost")).toBeUndefined();
   });
 
+  it("resyncCompany is a no-op for an unconfigured company (does not throw, no push)", async () => {
+    // The full resync path (mapper reset + fresh bootstrapSnapshot) needs a
+    // ctx surface (ctx.companies/ctx.agents/...) this file's narrow makeCtx()
+    // doesn't provide — see test/worker.test.ts's "reconciliation job
+    // periodically self-heals" and "onConfigChanged's enable path immediately
+    // re-syncs" tests for that end-to-end coverage against the real harness.
+    // This only exercises the early-return guard.
+    const relay = new BridgeRelay(makeCtx().ctx);
+    await expect(relay.resyncCompany("company-ghost")).resolves.toBeUndefined();
+    await flush();
+    expect(calls).toHaveLength(0);
+  });
+
   it("disposeAll clears every company and further ingests are no-ops", async () => {
     const relay = new BridgeRelay(makeCtx().ctx);
     await relay.configure(COMPANY_ID, { pixelAgentsUrl: "https://pa.example" });
