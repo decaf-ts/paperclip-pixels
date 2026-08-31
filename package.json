@@ -1,6 +1,6 @@
 {
   "name": "@decaf-ts/paperclip-pixels",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "description": "Paperclip <-> Pixel Agents bridge: a Paperclip plugin (manifest, event subscriptions, snapshot bootstrap, worker->UI bridge, action policy) plus the paperclip-pixel-relay companion CLI for Pixel Agents.",
   "type": "module",
   "main": "dist/worker.js",
