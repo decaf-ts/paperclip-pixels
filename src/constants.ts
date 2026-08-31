@@ -1,7 +1,7 @@
 /** Unique identifier for this Paperclip plugin. */
 export const PLUGIN_ID = "paperclip-pixel.paperclip-plugin";
 /** Semantic version of the plugin package. */
-export const PLUGIN_VERSION = "0.5.3";
+export const PLUGIN_VERSION = "0.5.4";
 /** Version of the Paperclip Plugin API this manifest conforms to. */
 export const PLUGIN_API_VERSION = 1 as const;
 
