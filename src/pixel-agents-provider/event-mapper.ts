@@ -8,22 +8,19 @@
  * Safe mappings (spike SAA-175 §4; §21.2 table):
  *   sessionStart              — agent first appears (character spawn)
  *   sessionEnd                — agent leaves / despawns
- *   toolStart                 — a run starts (§21.4). Uses `toolName:"Task"`
- *                                with `input.description` set to the actual
- *                                issue title whenever it's known (see
- *                                `startWorkFor`/`issueTitles`), falling back
- *                                to the SYNTHETIC `"PaperclipWork"` name with
- *                                no input when it isn't. Never a fabricated
+ *   toolStart                 — a run starts (§21.4). Uses the SYNTHETIC
+ *                                `"PaperclipWork"` name, with
+ *                                `input.description` set to the actual issue
+ *                                title whenever it's known. Never a fabricated
  *                                real tool ("Bash"/"Read"/etc.) — Paperclip's
  *                                own event catalog has no per-tool-call
  *                                telemetry at all to honestly source that
  *                                from (confirmed 2026-08-31 against the
  *                                host's full `PLUGIN_EVENT_TYPES` catalog).
- *                                "Task" is chosen because it's the one real
- *                                Claude-hook tool name whose caption format
- *                                (`formatToolStatus`) shows `input.description`
- *                                verbatim — the closest honest fit for "an
- *                                agent is working a specific ticket".
+ *                                Pixel Agents 1.4.x deliberately suppresses
+ *                                hook overlays named `Task`/`Agent` because
+ *                                it reserves them for sub-agent discovery, so
+ *                                those names cannot represent visible work.
  *   toolEnd                   — the same run finishes/fails/cancels
  *   turnEnd(awaitingInput=false) — agent finished a unit of work (idle/done)
  *   turnEnd(awaitingInput=true)  — agent waiting on a human (awaiting reply)
@@ -856,10 +853,10 @@ export class EventMapper {
 
   /**
    * Stable per-agent synthetic tool id (one "current" tool slot, §21.4).
-   * `toolName:"Task"` with `input.description` set produces Pixel Agents'
-   * "Subtask: <description>" caption (`formatToolStatus`'s real, existing
-   * case for that tool name); omitting `description` falls back to the
-   * generic synthetic `"PaperclipWork"` name (caption: "Using PaperclipWork").
+   * Pixel Agents 1.4.x suppresses visible `PreToolUse` overlays whose tool
+   * name is `Task` or `Agent`, so the run marker always uses the synthetic
+   * non-reserved `PaperclipWork` name. The issue title remains available in
+   * `input.description` for diagnostics and future renderers.
    */
   private toolStartFor(
     companyId: string,
@@ -868,18 +865,12 @@ export class EventMapper {
   ): SessionAgentEvent {
     return {
       sessionId: syntheticSessionId(companyId, agentId),
-      event: description
-        ? {
-            kind: "toolStart",
-            toolId: `${ID_NAMESPACE}:work:${companyId}:${agentId}`,
-            toolName: "Task",
-            input: { description },
-          }
-        : {
-            kind: "toolStart",
-            toolId: `${ID_NAMESPACE}:work:${companyId}:${agentId}`,
-            toolName: "PaperclipWork",
-          },
+      event: {
+        kind: "toolStart",
+        toolId: `${ID_NAMESPACE}:work:${companyId}:${agentId}`,
+        toolName: "PaperclipWork",
+        ...(description ? { input: { description } } : {}),
+      },
     };
   }
 
@@ -894,9 +885,9 @@ export class EventMapper {
   }
 
   /**
-   * Opens the run-tracking toolStart slot, captioned with the known issue
-   * title when available (falls back to the generic synthetic name
-   * otherwise). Gated on `state.toolActive` — a no-op returning `null` if
+   * Opens the run-tracking toolStart slot, carrying the known issue title in
+   * its input when available. Gated on `state.toolActive` — a no-op returning
+   * `null` if
    * something already opened it (typically `issue.checked_out`, moments
    * earlier in the real checkout-then-run flow; see the call sites in
    * `mapSnapshot` and the `agent.run.started`/`issue.checked_out` cases,

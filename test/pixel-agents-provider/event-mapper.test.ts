@@ -403,7 +403,7 @@ describe("synthetic session ids are deterministic and namespaced (§31.4, §21.3
 // Added 2026-08-31: real-issue-title-aware toolStart captions, the six new
 // subscribed event types, and the reassignment handoff blip — see this
 // file's own event-mapper.ts doc comment for the full design rationale.
-describe("toolStart captions carry the real issue title when known (Task/description)", () => {
+describe("visible PaperclipWork markers carry the real issue title in their input", () => {
   it("agent.run.started uses the title cached from a prior snapshot", () => {
     const mapper = new EventMapper();
     mapper.mapSnapshot(snapshot()); // learns ISSUE_1 -> "Issue 1", spawns+idles AGENT_A
@@ -412,7 +412,7 @@ describe("toolStart captions carry the real issue title when known (Task/descrip
     expect(toolStart?.event).toEqual({
       kind: "toolStart",
       toolId: `${ID_NAMESPACE}:work:${COMPANY_ID}:${AGENT_A}`,
-      toolName: "Task",
+      toolName: "PaperclipWork",
       input: { description: "Issue 1" },
     });
   });
@@ -443,7 +443,7 @@ describe("toolStart captions carry the real issue title when known (Task/descrip
     });
     const res = mapper.mapSnapshot(withActiveRun);
     const toolStart = res.agentEvents.find((e) => e.event.kind === "toolStart");
-    expect(toolStart?.event).toMatchObject({ toolName: "Task", input: { description: "Issue 1" } });
+    expect(toolStart?.event).toMatchObject({ toolName: "PaperclipWork", input: { description: "Issue 1" } });
   });
 
   it("authoritative re-snapshots repair missed run starts and finishes", () => {
@@ -487,7 +487,7 @@ describe("toolStart captions carry the real issue title when known (Task/descrip
     mapper.mapEvent(issueUpdated("e0", 0, ISSUE_2, "todo", { title: "Fix the thing" }));
     const res = mapper.mapEvent(runStarted("e1", 10, "r1", AGENT_NEW, ISSUE_2, PROJECT_X));
     const toolStart = res.agentEvents.find((e) => e.event.kind === "toolStart");
-    expect(toolStart?.event).toMatchObject({ toolName: "Task", input: { description: "Fix the thing" } });
+    expect(toolStart?.event).toMatchObject({ toolName: "PaperclipWork", input: { description: "Fix the thing" } });
   });
 });
 
@@ -497,7 +497,7 @@ describe("issue.checked_out opens the work slot ahead of agent.run.started (§21
     mapper.mapSnapshot(snapshot()); // learns ISSUE_1 -> "Issue 1"
     const res = mapper.mapEvent(issueCheckedOut("e1", 10, ISSUE_1, AGENT_A));
     const toolStart = res.agentEvents.find((e) => e.event.kind === "toolStart");
-    expect(toolStart?.event).toMatchObject({ toolName: "Task", input: { description: "Issue 1" } });
+    expect(toolStart?.event).toMatchObject({ toolName: "PaperclipWork", input: { description: "Issue 1" } });
   });
 
   it("the later agent.run.started for the same agent becomes a no-op fallback, never a second toolStart", () => {
