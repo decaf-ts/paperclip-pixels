@@ -87,6 +87,8 @@ describe("manifest", () => {
       expect(manifest.instanceConfigSchema).toBeDefined();
       expect((manifest.instanceConfigSchema as { type?: string }).type).toBe("object");
       expect(Object.keys(properties).sort()).toEqual([
+        "paperclipApiBaseUrl",
+        "paperclipApiTokenRef",
         "pixelAgentsProviderId",
         "pixelAgentsRelayEnabled",
         "pixelAgentsTokenRef",

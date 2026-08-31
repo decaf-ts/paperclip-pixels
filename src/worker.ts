@@ -2,6 +2,7 @@ import { definePlugin, runWorker } from "@paperclipai/plugin-sdk";
 import type { PluginContext, PluginEvent } from "@paperclipai/plugin-sdk";
 import {
   BridgeStore,
+  type AuthoritativeSnapshotInput,
   type BehaviorChangedEvent,
   type BridgeUiEvent,
   type CompanySummary,
@@ -203,6 +204,24 @@ class BridgeRuntime {
  * @param companyId - Identifier of the company being set-up.
  * @param relay - The bridge relay used for event emission.
  */
+/**
+ * Register every currently-active run in a bootstrapped snapshot with the
+ * relay's tool-activity poller (see relay.ts's trackActiveRun doc comment).
+ * A run already tracked is a no-op, so calling this on every setup and
+ * reconcile is safe and cheap.
+ */
+function trackActiveRunsFromSnapshot(
+  relay: BridgeRelay,
+  companyId: string,
+  snapshot: AuthoritativeSnapshotInput,
+): void {
+  for (const agent of snapshot.agents) {
+    for (const run of agent.activeRuns ?? []) {
+      relay.trackActiveRun(companyId, agent.id, run.id);
+    }
+  }
+}
+
 async function setupCompany(ctx: PluginContext, runtime: BridgeRuntime, companyId: string, relay: BridgeRelay): Promise<CompanyRuntime> {
   const restoredBuckets = await loadCompactBuckets(ctx, companyId);
   const rt = runtime.getOrCreateCompany(companyId);
@@ -233,6 +252,7 @@ async function setupCompany(ctx: PluginContext, runtime: BridgeRuntime, companyI
     const companyConfig = await ctx.config.get(companyId);
     await relay.configure(companyId, companyConfig);
     relay.ingestSnapshot(companyId, result.snapshot);
+    trackActiveRunsFromSnapshot(relay, companyId, result.snapshot);
   } catch (err) {
     ctx.logger.warn("Bridge relay setup failed for company", {
       companyId,
@@ -272,6 +292,11 @@ async function reconcileCompany(ctx: PluginContext, runtime: BridgeRuntime, comp
     // Re-feed the authoritative snapshot so the relay sidecar resyncs and
     // re-spawns any agents that appeared since the last reconciliation.
     relay.ingestSnapshot(companyId, result.snapshot);
+    // Catch-up path for the tool-activity poller, mirroring why resyncCompany
+    // exists for sessionStart (see relay.ts): a missed/late-subscribed
+    // agent.run.started must not leave that run's real tool calls untracked
+    // forever. A run already tracked is a no-op (trackActiveRun checks first).
+    trackActiveRunsFromSnapshot(relay, companyId, result.snapshot);
     ctx.logger.debug("Reconciliation complete", { companyId, changed: recon.changedEntities.length });
   } catch (err) {
     ctx.logger.warn("Reconciliation failed", {
@@ -344,6 +369,19 @@ const plugin = definePlugin({
 
         const bridgeEvent = mapPluginEvent(event);
         if (!bridgeEvent) return;
+
+        // Tool-activity poller lifecycle (relay.ts's trackActiveRun doc
+        // comment): a run must be tracked for the duration it's genuinely
+        // active, no longer. finished/failed/cancelled all carry runId.
+        if (bridgeEvent.kind === "agent.run.started") {
+          localRelay.trackActiveRun(companyId, bridgeEvent.payload.agentId, bridgeEvent.payload.runId);
+        } else if (
+          bridgeEvent.kind === "agent.run.finished"
+          || bridgeEvent.kind === "agent.run.failed"
+          || bridgeEvent.kind === "agent.run.cancelled"
+        ) {
+          localRelay.untrackActiveRun(companyId, bridgeEvent.payload.runId);
+        }
 
         const before = rt2.store.getCompanySummary();
         await rt2.store.applyPaperclipEvent(bridgeEvent);
@@ -588,6 +626,42 @@ const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime 
       && typeof config.pixelAgentsRelayEnabled !== "boolean"
     ) {
       errors.push("pixelAgentsRelayEnabled must be a boolean when present");
+    }
+    // Same M2 fail-securely rule as pixelAgentsTokenRef above, applied to the
+    // tool-activity poller's own token/URL pair.
+    const apiUrl = config.paperclipApiBaseUrl;
+    let apiUrlProtocol: string | null = null;
+    if (apiUrl != null) {
+      if (typeof apiUrl !== "string" || apiUrl.trim().length === 0) {
+        errors.push("paperclipApiBaseUrl must be a non-empty string when present");
+      } else {
+        try {
+          const parsed = new URL(apiUrl);
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+            errors.push("paperclipApiBaseUrl must be an http(s) URL");
+          } else {
+            apiUrlProtocol = parsed.protocol;
+          }
+        } catch {
+          errors.push("paperclipApiBaseUrl is not a valid URL");
+        }
+      }
+    }
+    const hasApiToken = config.paperclipApiTokenRef != null;
+    let apiUrlIsLoopback = true; // the unset default (127.0.0.1:3100) is always loopback
+    if (typeof apiUrl === "string") {
+      try {
+        apiUrlIsLoopback = ["localhost", "127.0.0.1", "::1"].includes(new URL(apiUrl).hostname);
+      } catch { /* URL validation above reports the error. */ }
+    }
+    if (hasApiToken && apiUrlProtocol === "http:" && !apiUrlIsLoopback) {
+      errors.push("paperclipApiBaseUrl must be https: when paperclipApiTokenRef is configured and the host is not loopback");
+    }
+    if (
+      config.paperclipApiTokenRef != null
+      && !isValidTokenRef(config.paperclipApiTokenRef)
+    ) {
+      errors.push("paperclipApiTokenRef must be a secret_ref binding or non-empty string when present");
     }
     return { ok: errors.length === 0, errors: errors.length ? errors : undefined };
   },

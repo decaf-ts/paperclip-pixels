@@ -684,4 +684,40 @@ describe("worker onValidateConfig (M2 cleartext token rejection)", () => {
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("pixelAgentsTokenRef must be a secret_ref binding or non-empty string when present");
   });
+
+  it("accepts the default loopback paperclipApiBaseUrl with a token (same-container worker, never plaintext-remote)", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({
+      paperclipApiBaseUrl: "http://127.0.0.1:3100",
+      paperclipApiTokenRef: "board-token-1",
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects http: paperclipApiBaseUrl on a non-loopback host when a token ref is configured", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({
+      paperclipApiBaseUrl: "http://paperclip.example.internal:3100",
+      paperclipApiTokenRef: "board-token-1",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain(
+      "paperclipApiBaseUrl must be https: when paperclipApiTokenRef is configured and the host is not loopback",
+    );
+  });
+
+  it("rejects a malformed paperclipApiTokenRef", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({
+      paperclipApiTokenRef: 42,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("paperclipApiTokenRef must be a secret_ref binding or non-empty string when present");
+  });
+
+  it("is valid with neither paperclipApiBaseUrl nor paperclipApiTokenRef set (the feature is fully optional)", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({ pixelAgentsUrl: "https://pa.example" });
+    expect(result.ok).toBe(true);
+  });
 });

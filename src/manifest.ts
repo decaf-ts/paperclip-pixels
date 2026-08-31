@@ -74,6 +74,37 @@ const relayConfigSchema: JsonSchema = {
       title: "Relay enabled",
       description: "Explicit on/off. Defaults to on when pixelAgentsUrl is set.",
     },
+    paperclipApiBaseUrl: {
+      type: "string",
+      title: "Paperclip API base URL (for real tool descriptions)",
+      description:
+        "Base URL this plugin worker calls to read a run's raw execution log (GET /api/heartbeat-runs/:runId/log), used to show real per-tool-call status (\"Reading X\"/\"Using Y\") instead of the generic \"PaperclipWork\" placeholder. Defaults to http://127.0.0.1:3100 (the worker runs in the same container as the Paperclip server in the bundled Compose deployment). Only used when paperclipApiTokenRef is also set.",
+      format: "uri",
+    },
+    paperclipApiTokenRef: {
+      format: "secret-ref",
+      anyOf: [
+        { type: "string" },
+        {
+          type: "object",
+          additionalProperties: false,
+          required: ["type", "secretId"],
+          properties: {
+            type: { const: "secret_ref" },
+            secretId: { type: "string", format: "uuid" },
+            version: {
+              anyOf: [
+                { const: "latest" },
+                { type: "integer", minimum: 1 },
+              ],
+            },
+          },
+        },
+      ],
+      title: "Paperclip API bearer token (for real tool descriptions)",
+      description:
+        "A board API key, resolved to a bearer token for GET /api/heartbeat-runs/:runId/log calls. Optional -- without it, Pixel Agents shows the generic \"PaperclipWork\" placeholder instead of a real tool name/file, but everything else (names, rooms, busy/idle status) keeps working unaffected.",
+    },
   },
 };
 

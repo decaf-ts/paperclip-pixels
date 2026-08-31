@@ -48,6 +48,7 @@ import {
   type FetchLike,
 } from "./pixel-agents-provider/index.js";
 import { bootstrapSnapshot } from "./snapshot.js";
+import { ToolActivityPoller, type LogFetchLike } from "./tool-activity-poller.js";
 
 /**
  * Generic-package default: `paperclip-pixel-relay` binds `127.0.0.1:8081` by
@@ -60,6 +61,16 @@ import { bootstrapSnapshot } from "./snapshot.js";
  */
 export const DEFAULT_PIXEL_AGENTS_URL = "http://127.0.0.1:8081";
 
+/**
+ * Default base URL for the tool-activity poller's `GET
+ * /api/heartbeat-runs/:runId/log` calls -- the plugin worker runs in the same
+ * container/process group as the Paperclip server itself (confirmed live
+ * 2026-08-31), so loopback is the correct default for the bundled Compose
+ * deployment. Overridable per company for topologies where that colocation
+ * doesn't hold.
+ */
+export const DEFAULT_PAPERCLIP_API_BASE_URL = "http://127.0.0.1:3100";
+
 /** Resolved per-company relay configuration. */
 export interface RelayCompanyConfig {
   enabled: boolean;
@@ -68,6 +79,10 @@ export interface RelayCompanyConfig {
   /** Resolved bearer token (never the persisted ref). */
   pixelAgentsToken?: string;
   providerId: string;
+  /** Base URL for the tool-activity poller's Paperclip API calls. */
+  paperclipApiBaseUrl: string;
+  /** Resolved bearer token for the tool-activity poller, if configured (never the persisted ref). */
+  paperclipApiToken?: string;
 }
 
 /** Company-scoped runtime state: a transport plus its underlying push sink. */
@@ -75,6 +90,8 @@ interface CompanyRelay {
   transport: BridgeTransport;
   sink: HttpPushSink;
   config: RelayCompanyConfig;
+  /** Present only when paperclipApiTokenRef resolved to a token (see configure()). */
+  toolActivityPoller?: ToolActivityPoller;
 }
 
 /** Names of the operator-config fields the relay reads. */
@@ -89,7 +106,12 @@ export const RELAY_CONFIG_FIELDS = [
   "pixelAgentsTokenRef",
   "pixelAgentsProviderId",
   "pixelAgentsRelayEnabled",
+  "paperclipApiBaseUrl",
+  "paperclipApiTokenRef",
 ] as const;
+
+/** How often the tool-activity poller re-fetches each tracked run's log. */
+const TOOL_ACTIVITY_POLL_INTERVAL_MS = 15_000;
 
 /**
  * Extract the operator-bound secret reference for the bearer token, if any.
@@ -141,7 +163,53 @@ export function parseRelayConfig(
   const pixelAgentsUiUrl = typeof raw.pixelAgentsUiUrl === "string" && raw.pixelAgentsUiUrl.trim().length > 0
     ? raw.pixelAgentsUiUrl.trim()
     : "http://localhost:8090";
-  return { enabled, pixelAgentsUrl: url, pixelAgentsUiUrl, providerId };
+  const configuredApiUrl = typeof raw.paperclipApiBaseUrl === "string" ? raw.paperclipApiBaseUrl.trim() : "";
+  const paperclipApiBaseUrl = configuredApiUrl.length > 0 ? configuredApiUrl : DEFAULT_PAPERCLIP_API_BASE_URL;
+  return { enabled, pixelAgentsUrl: url, pixelAgentsUiUrl, providerId, paperclipApiBaseUrl };
+}
+
+/**
+ * Extract the operator-bound secret reference for the tool-activity poller's
+ * Paperclip API token, if any. Mirrors {@link extractTokenRef} exactly; kept
+ * separate because the two tokens authenticate against different servers
+ * (Pixel Agents' relay vs. Paperclip's own API) and an operator may configure
+ * either without the other.
+ */
+export function extractApiTokenRef(
+  raw: Record<string, unknown>,
+): EnvSecretRefBinding | string | undefined {
+  const ref = raw.paperclipApiTokenRef;
+  if (ref == null) return undefined;
+  if (typeof ref === "string") {
+    return ref.trim().length > 0 ? ref : undefined;
+  }
+  if (
+    typeof ref === "object"
+    && !Array.isArray(ref)
+    && (ref as { type?: unknown }).type === "secret_ref"
+    && typeof (ref as { secretId?: unknown }).secretId === "string"
+  ) {
+    return ref as EnvSecretRefBinding;
+  }
+  return undefined;
+}
+
+/**
+ * `LogFetchLike` companion to `rawFetch()` above (same DELIBERATE
+ * ctx.http.fetch bypass, same trust-boundary reasoning: this is a call to
+ * Paperclip's own API on the same operator's infrastructure, not a
+ * multi-tenant destination `ctx.http.fetch`'s SSRF filter needs to protect
+ * against). Reads the JSON body, unlike `rawFetch()`'s fire-and-forget POSTs.
+ */
+function rawLogFetch(): LogFetchLike {
+  return async (url, init) => {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error(`Refusing non-http(s) protocol for heartbeat-log read: ${parsed.protocol}`);
+    }
+    const res = await fetch(url, { method: init.method, headers: init.headers });
+    return { ok: res.ok, status: res.status, statusText: res.statusText, json: () => res.json() };
+  };
 }
 
 /**
@@ -257,6 +325,7 @@ export class BridgeRelay {
     const existing = this.companies.get(companyId);
     if (!config.enabled) {
       existing?.transport.dispose();
+      existing?.toolActivityPoller?.stop();
       this.companies.delete(companyId);
       this.ctx.logger.info("Bridge relay disabled for company", { companyId });
       return;
@@ -271,12 +340,32 @@ export class BridgeRelay {
         });
       } catch (err) {
         existing?.transport.dispose();
+        existing?.toolActivityPoller?.stop();
         this.companies.delete(companyId);
         this.ctx.logger.warn("Bridge relay token resolution failed; relay disabled for company", {
           companyId,
           error: err instanceof Error ? err.message : String(err),
         });
         return;
+      }
+    }
+    // Unlike pixelAgentsTokenRef above, a resolution failure here disables
+    // only the tool-activity poller (an additive enhancement), never the
+    // core relay -- names, rooms, and busy/idle status keep working with the
+    // synthetic "PaperclipWork" label exactly as before this feature existed.
+    let apiToken: string | undefined;
+    const apiTokenRef = extractApiTokenRef(raw);
+    if (apiTokenRef) {
+      try {
+        apiToken = await this.ctx.secrets.resolve(apiTokenRef, {
+          companyId,
+          configPath: "paperclipApiTokenRef",
+        });
+      } catch (err) {
+        this.ctx.logger.warn(
+          "Tool-activity poller token resolution failed; real tool descriptions disabled for company",
+          { companyId, error: err instanceof Error ? err.message : String(err) },
+        );
       }
     }
     // rawFetch() skips the RPC round-trip entirely, so it also skips the
@@ -309,11 +398,14 @@ export class BridgeRelay {
       && existing.config.pixelAgentsUiUrl === config.pixelAgentsUiUrl
       && existing.config.providerId === config.providerId
       && existing.config.pixelAgentsToken === authToken
+      && existing.config.paperclipApiBaseUrl === config.paperclipApiBaseUrl
+      && existing.config.paperclipApiToken === apiToken
     ) {
       this.ctx.logger.debug("Bridge relay config unchanged for company", { companyId });
       return;
     }
     existing?.transport.dispose();
+    existing?.toolActivityPoller?.stop();
     this.companies.delete(companyId);
     const sink = new HttpPushSink({
       baseUrl: config.pixelAgentsUrl,
@@ -328,12 +420,50 @@ export class BridgeRelay {
       fetch: rawFetch(),
     });
     const transport = new BridgeTransport({ agentEventSink: sink });
-    this.companies.set(companyId, { transport, sink, config: { ...config, pixelAgentsToken: authToken } });
+    let toolActivityPoller: ToolActivityPoller | undefined;
+    if (apiToken) {
+      toolActivityPoller = new ToolActivityPoller({
+        apiBaseUrl: config.paperclipApiBaseUrl,
+        apiToken,
+        fetch: rawLogFetch(),
+        sink,
+        onError: (runId, err) => {
+          this.ctx.logger.debug("Tool-activity poll failed", {
+            companyId,
+            runId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        },
+      });
+      toolActivityPoller.start(TOOL_ACTIVITY_POLL_INTERVAL_MS);
+    }
+    this.companies.set(companyId, {
+      transport,
+      sink,
+      config: { ...config, pixelAgentsToken: authToken, paperclipApiToken: apiToken },
+      toolActivityPoller,
+    });
     this.ctx.logger.info("Bridge relay configured for company", {
       companyId,
       pixelAgentsUrl: config.pixelAgentsUrl,
       providerId: config.providerId,
+      toolActivityPollingEnabled: !!toolActivityPoller,
     });
+  }
+
+  /**
+   * Begin tracking a run for the tool-activity poller (a real tool call
+   * detected in its raw log is forwarded as a toolStart event, replacing the
+   * synthetic "PaperclipWork" placeholder for that agent). A no-op when the
+   * company has no poller configured (no paperclipApiTokenRef resolved).
+   */
+  trackActiveRun(companyId: string, agentId: string, runId: string): void {
+    this.companies.get(companyId)?.toolActivityPoller?.trackRun(runId, companyId, agentId);
+  }
+
+  /** Stop tracking a finished/failed/cancelled run. A no-op if it was never tracked. */
+  untrackActiveRun(companyId: string, runId: string): void {
+    this.companies.get(companyId)?.toolActivityPoller?.untrackRun(runId);
   }
 
   /**
@@ -487,6 +617,7 @@ export class BridgeRelay {
   disposeAll(): void {
     for (const relay of this.companies.values()) {
       relay.transport.dispose();
+      relay.toolActivityPoller?.stop();
     }
     this.companies.clear();
   }
