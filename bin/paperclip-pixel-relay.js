@@ -59,11 +59,17 @@ function attachPaperclipTranscript(body) {
   ) return body;
 
   const digest = createHash("sha256").update(body.session_id).digest("hex");
-  const transcriptPath = path.join(sessionsDir, `${digest}.jsonl`);
   const agentName = path.basename(body.cwd).slice(0, 200);
-  fs.mkdirSync(sessionsDir, { recursive: true });
+  // Pixel Agents derives folderName (the areaMappings key) from the
+  // transcript's parent directory when transcript_path is present. Keep that
+  // directory equal to the Paperclip name as well, so enabling the blue label
+  // does not collapse every agent into a generic "sessions" area key.
+  const agentDirName = agentName === "." || agentName === ".." ? digest : agentName;
+  const transcriptPath = path.join(sessionsDir, agentDirName, `${digest}.jsonl`);
+  fs.mkdirSync(path.dirname(transcriptPath), { recursive: true });
   const metadata = JSON.stringify({
-    type: "paperclip-session",
+    type: "assistant",
+    message: { content: [] },
     teamName: `paperclip-${digest.slice(0, 24)}`,
     agentName,
   });
