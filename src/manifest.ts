@@ -39,8 +39,25 @@ const relayConfigSchema: JsonSchema = {
       default: "http://localhost:8090",
     },
     pixelAgentsTokenRef: {
-      type: "string",
       format: "secret-ref",
+      anyOf: [
+        { type: "string" },
+        {
+          type: "object",
+          additionalProperties: false,
+          required: ["type", "secretId"],
+          properties: {
+            type: { const: "secret_ref" },
+            secretId: { type: "string", format: "uuid" },
+            version: {
+              anyOf: [
+                { const: "latest" },
+                { type: "integer", minimum: 1 },
+              ],
+            },
+          },
+        },
+      ],
       title: "Pixel Agents bearer token",
       description:
         "Optional secret reference resolved to the bearer token sent on each push to POST /api/hooks/<providerId>. Stored as a secret_ref binding, never as a plaintext value. Requires an https: pixelAgentsUrl. Not needed for the bundled sidecar default.",

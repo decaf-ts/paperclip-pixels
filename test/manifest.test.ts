@@ -100,8 +100,17 @@ describe("manifest", () => {
       expect(properties.pixelAgentsUrl).toMatchObject({ type: "string", format: "uri" });
     });
 
-    it("declares pixelAgentsTokenRef as a secret-ref string (never a plaintext value)", () => {
-      expect(properties.pixelAgentsTokenRef).toMatchObject({ type: "string", format: "secret-ref" });
+    it("declares pixelAgentsTokenRef as a secret-ref accepting Paperclip's object binding", () => {
+      expect(properties.pixelAgentsTokenRef).toMatchObject({
+        format: "secret-ref",
+        anyOf: expect.arrayContaining([
+          { type: "string" },
+          expect.objectContaining({
+            type: "object",
+            required: ["type", "secretId"],
+          }),
+        ]),
+      });
     });
 
     // Removed 2026-08-31: `x-paperclip-advanced` was a UI-grouping hint with
