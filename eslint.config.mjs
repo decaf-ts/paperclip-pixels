@@ -6,7 +6,16 @@ import eslintConfigPrettier from "eslint-config-prettier";
 export default [
   { files: ["**/*.{js,mjs,cjs,ts}"] },
   {
-    ignores: ["dist", "node_modules", "coverage"],
+    ignores: [
+      "dist",
+      "node_modules",
+      "coverage",
+      "paperclip",
+      "pixel-agents",
+      "tests/e2e/saa310-verify.mjs",
+      "tests/e2e/screenshot.mjs",
+      ".saa*/**",
+    ],
   },
   { languageOptions: { globals: { ...globals.node } } },
   pluginJs.configs.recommended,

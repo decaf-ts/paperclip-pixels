@@ -19,6 +19,16 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+// A downstream consumer (`npm install @decaf-ts/paperclip-pixels`) never has
+// the `paperclip/` submodule at all — that's the normal case, not a
+// misconfiguration, so stay silent and exit 0. Only warn when `paperclip/`
+// exists but a specific nested package is missing (a contributor forgot
+// `git submodule update --init`).
+if (!existsSync(path.join(root, "paperclip"))) {
+  process.exit(0);
+}
+
 const nodeModules = path.join(root, "node_modules", "@paperclipai");
 mkdirSync(nodeModules, { recursive: true });
 

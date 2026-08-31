@@ -15,3 +15,5 @@
 workdocs/locks/*
 !workdocs/locks/.gitkeep
 .saa*
+tests/e2e/saa310-verify.mjs
+tests/e2e/screenshot.mjs

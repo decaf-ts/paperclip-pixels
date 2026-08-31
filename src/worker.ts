@@ -385,7 +385,7 @@ const plugin = definePlugin({
  * @returns The `CompanyRuntime` for the company, or `null` if bootstrapping failed.
  */
 const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime | null> => {
-      let rt = localRuntime.getCompany(companyId);
+      const rt = localRuntime.getCompany(companyId);
       if (rt) return rt;
       try {
         ctx.logger.info("Lazy-bootstrapping company on demand", { companyId });

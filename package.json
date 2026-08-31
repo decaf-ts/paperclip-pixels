@@ -4,15 +4,15 @@
   "description": "Paperclip <-> Pixel Agents bridge: a Paperclip plugin (manifest, event subscriptions, snapshot bootstrap, worker->UI bridge, action policy) plus the paperclip-pixel-relay companion CLI for Pixel Agents.",
   "type": "module",
   "main": "dist/worker.js",
-  "types": "src/worker.ts",
+  "types": "dist/worker.d.ts",
   "exports": {
     ".": {
       "import": "./dist/worker.js",
-      "types": "./src/worker.ts"
+      "types": "./dist/worker.d.ts"
     },
     "./manifest": {
       "import": "./dist/manifest.js",
-      "types": "./src/manifest.ts"
+      "types": "./dist/manifest.d.ts"
     }
   },
   "bin": {
@@ -25,18 +25,20 @@
   "files": [
     "dist",
     "bin/paperclip-pixel-relay.js",
+    "scripts/link-paperclip-sdk.mjs",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
     "postinstall": "node scripts/link-paperclip-sdk.mjs",
     "prebuild": "rimraf ./dist",
-    "build": "node scripts/build.mjs && node scripts/build-ui.mjs",
+    "build": "node scripts/build.mjs && node scripts/build-ui.mjs && npm run build:types",
     "build:worker": "node scripts/build.mjs",
     "build:ui": "node scripts/build-ui.mjs",
     "build:types": "tsc -p tsconfig.json --emitDeclarationOnly",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:ui": "tsc -p tsconfig.test.json --noEmit",
+    "release": "./bin/tag-release.sh",
     "lint": "eslint .",
     "lint-fix": "eslint --fix .",
     "test": "jest --config jest.config.ts",
@@ -44,6 +46,7 @@
     "test:domain": "jest --config jest.config.domain.ts",
     "test:worker": "vitest run",
     "test:all": "npm run test:domain && npm run test:worker && npm run test",
+    "prepare-release": "npm run lint && npm run typecheck && npm run build && npm run test:all",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -82,6 +85,7 @@
     }
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@types/jest": "^29.5.13",
@@ -90,6 +94,9 @@
     "@types/react-dom": "^19.0.0",
     "esbuild": "^0.28.1",
     "eslint": "^9.12.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.11.0",
+    "typescript-eslint": "^8.68.0",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "react": "^19.2.8",
