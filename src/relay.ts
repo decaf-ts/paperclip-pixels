@@ -254,11 +254,9 @@ export class BridgeRelay {
   async configure(companyId: string, raw: Record<string, unknown>): Promise<void> {
     const config = parseRelayConfig(raw);
     const existing = this.companies.get(companyId);
-    if (existing) {
-      existing.transport.dispose();
-      this.companies.delete(companyId);
-    }
     if (!config.enabled) {
+      existing?.transport.dispose();
+      this.companies.delete(companyId);
       this.ctx.logger.info("Bridge relay disabled for company", { companyId });
       return;
     }
@@ -271,6 +269,8 @@ export class BridgeRelay {
           configPath: "pixelAgentsTokenRef",
         });
       } catch (err) {
+        existing?.transport.dispose();
+        this.companies.delete(companyId);
         this.ctx.logger.warn("Bridge relay token resolution failed; relay disabled for company", {
           companyId,
           error: err instanceof Error ? err.message : String(err),
@@ -293,12 +293,27 @@ export class BridgeRelay {
     // if the host's own record of this plugin's manifest does not declare
     // `http.outbound` — never push regardless of `pixelAgentsUrl`.
     if (!this.ctx.manifest.capabilities.includes("http.outbound")) {
+      existing?.transport.dispose();
+      this.companies.delete(companyId);
       this.ctx.logger.warn(
         "Bridge relay disabled for company: host-validated manifest does not declare http.outbound",
         { companyId },
       );
       return;
     }
+    if (
+      existing
+      && existing.config.enabled === config.enabled
+      && existing.config.pixelAgentsUrl === config.pixelAgentsUrl
+      && existing.config.pixelAgentsUiUrl === config.pixelAgentsUiUrl
+      && existing.config.providerId === config.providerId
+      && existing.config.pixelAgentsToken === authToken
+    ) {
+      this.ctx.logger.debug("Bridge relay config unchanged for company", { companyId });
+      return;
+    }
+    existing?.transport.dispose();
+    this.companies.delete(companyId);
     const sink = new HttpPushSink({
       baseUrl: config.pixelAgentsUrl,
       authToken,

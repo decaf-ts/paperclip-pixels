@@ -474,16 +474,19 @@ describe("BridgeRelay", () => {
     expect(calls).toHaveLength(2); // sessionStart + toolStart
   });
 
-  it("reconfigure enabled -> enabled disposes the prior transport (no duplicate pushes from old sink)", async () => {
-    const relay = new BridgeRelay(makeCtx().ctx);
+  it("an identical enabled reconfigure preserves the transport and its ordered push queue", async () => {
+    const { ctx, logger } = makeCtx();
+    const relay = new BridgeRelay(ctx);
     await relay.configure(COMPANY_ID, { pixelAgentsUrl: "https://pa.example" });
     await relay.configure(COMPANY_ID, { pixelAgentsUrl: "https://pa.example" });
     expect(relay.activeCompanyCount).toBe(1);
+    expect(logger.calls.filter((l) => l.message === "Bridge relay configured for company")).toHaveLength(1);
+    expect(logger.calls.some((l) => l.message === "Bridge relay config unchanged for company")).toBe(true);
 
     relay.ingestEvent(COMPANY_ID, runStarted(COMPANY_ID, AGENT_A, "run-1"));
     await flush();
-    // The old transport was disposed; the new transport emits exactly once
-    // per mapped AgentEvent (sessionStart + toolStart), no duplicates.
+    // The original transport remains live and emits exactly once per mapped
+    // AgentEvent (sessionStart + toolStart), with no queue cancellation.
     expect(calls).toHaveLength(2);
   });
 
