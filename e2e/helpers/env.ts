@@ -67,6 +67,8 @@ export const SEED_ISSUE_TITLE = str("PAPERCLIP_PIXEL_E2E_SEED_ISSUE", "E2E Pixel
 /** Plugin identifiers (discovered at runtime; these are fallbacks/known values). */
 export const PIXEL_OFFICE_PLUGIN_ID = "paperclip-pixel-agents";
 export const PIXEL_OFFICE_SIDEBAR_TESTID = "pixel-office-sidebar-link";
+/** Wrapping div the Pixel Office sidebar entry renders inside (testid on the wrapper, not the link). */
+export const PIXEL_OFFICE_SIDEBAR_ENTRY_TESTID = "pixel-office-sidebar";
 export const PIXEL_OFFICE_PAGE_TESTID = "pixel-office-page";
 
 /** Bounded-wait defaults (ms). */

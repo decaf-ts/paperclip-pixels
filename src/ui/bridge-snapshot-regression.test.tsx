@@ -16,8 +16,14 @@ import { Component, type ReactNode } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import { PixelOfficePage } from "./PixelOfficePage";
 import { PixelOfficeSidebar } from "./PixelOfficeSidebar";
-import { usePluginDataImpl, usePluginStreamImpl } from "./test-utils/sdk-ui";
-import { makeDataResult, makeStreamResult } from "./test-utils/sdk-ui";
+import {
+  makeDataResult,
+  makeLocation,
+  makeStreamResult,
+  useHostLocationImpl,
+  usePluginDataImpl,
+  usePluginStreamImpl,
+} from "./test-utils/sdk-ui";
 import { makeAgentView, makeProjection, makeSnapshot } from "./test-utils/fixtures";
 
 class Boundary extends Component<{ children: ReactNode }> {
@@ -81,8 +87,46 @@ describe("Pixel Office against the BridgeCompanySnapshot contract (SAA-306)", ()
     await serveSnapshot(contractSnapshot());
     render(<PixelOfficeSidebar context={{ companyId: "co" } as never} />);
     await waitFor(() => expect(screen.getByTestId("pixel-office-sidebar-link")).toBeTruthy());
+    // Wrapper div + link stay mounted inside the sidebar.
+    expect(screen.getByTestId("pixel-office-sidebar").contains(screen.getByTestId("pixel-office-sidebar-link"))).toBe(true);
+    // No sidecar status row (pre-SAA-306 shape).
     expect(screen.queryByTestId("pixel-office-sidebar-status")).toBeNull();
-    expect(screen.getByTestId("pixel-office-sidebar-link").textContent).toContain("characters");
+    // Single-line entry with the WS0 label only — no nested two-line block.
+    const link = screen.getByTestId("pixel-office-sidebar-link");
+    expect(link.textContent).toBe("Pixel Office");
+    expect(link.querySelector("strong")).toBeNull();
+    // Host SidebarNavItem row classes are replicated verbatim (pixel-identical row).
+    const className = link.getAttribute("class") ?? "";
+    expect(className).toContain("flex items-center");
+    expect(className).toContain("gap-2.5");
+    expect(className).toContain("mx-2");
+    expect(className).toContain("rounded-lg");
+    expect(className).toContain("px-2");
+    expect(className).toContain("py-1.5");
+    expect(className).toContain("font-medium");
+    expect(className).toContain("transition-colors");
+  });
+
+  it("marks the sidebar link active when the host pathname matches the resolved href", async () => {
+    await serveSnapshot(contractSnapshot());
+    useHostLocationImpl.mockReturnValue(makeLocation({ pathname: "/pixel-office" }));
+    render(<PixelOfficeSidebar context={{ companyId: "co" } as never} />);
+    await waitFor(() => expect(screen.getByTestId("pixel-office-sidebar-link")).toBeTruthy());
+    const link = screen.getByTestId("pixel-office-sidebar-link");
+    expect(link.getAttribute("aria-current")).toBe("page");
+    expect(link.getAttribute("class")).toContain("bg-accent text-foreground");
+    expect(link.getAttribute("class")).not.toContain("text-foreground/80");
+  });
+
+  it("does not mark the sidebar link active for an unrelated pathname", async () => {
+    await serveSnapshot(contractSnapshot());
+    useHostLocationImpl.mockReturnValue(makeLocation({ pathname: "/dashboard" }));
+    render(<PixelOfficeSidebar context={{ companyId: "co" } as never} />);
+    await waitFor(() => expect(screen.getByTestId("pixel-office-sidebar-link")).toBeTruthy());
+    const link = screen.getByTestId("pixel-office-sidebar-link");
+    expect(link.getAttribute("aria-current")).toBeNull();
+    expect(link.getAttribute("class")).toContain("text-foreground/80");
+    expect(link.getAttribute("class")).not.toContain("bg-accent text-foreground");
   });
 
   it("fails closed (error boundary) when served a raw RawSnapshot instead of the contract", async () => {

@@ -146,12 +146,9 @@ const manifest: PaperclipPluginManifestV1 = {
         displayName: "Pixel Office",
         exportName: UI_EXPORT_NAMES.sidebar,
       },
-      {
-        type: "settingsPage",
-        id: UI_SLOT_IDS.settings,
-        displayName: "Pixel Office Settings",
-        exportName: UI_EXPORT_NAMES.settings,
-      },
+      // No custom `settingsPage` slot: the host auto-renders an editable
+      // global config form from `instanceConfigSchema` (PAPERCLIP_PIXELS-2
+      // WS0 task 2). A custom slot would suppress that form.
     ],
   },
   jobs: [

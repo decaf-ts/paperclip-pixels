@@ -56,6 +56,27 @@ export interface UiContribution {
   launchers: unknown[];
 }
 
+/** Frozen per-agent pixel assignment (spec PAPERCLIP_PIXELS-1 §15). */
+export interface PixelCharacterAssignment {
+  characterId: string;
+  palette: number;
+  hueShift: number;
+  updatedAt: string;
+}
+
+/**
+ * The plugin's visual-settings data payload exactly as the plugin UI consumes
+ * it (`POST /api/plugins/:pluginId/data/visual-settings`).
+ */
+export interface VisualSettingsData {
+  schemaVersion?: number;
+  error?: string;
+  configured?: boolean;
+  pixelAgentsUiUrl?: string;
+  characters?: Array<{ id?: string; name?: string; palette?: number; [k: string]: unknown }>;
+  assignments?: Record<string, PixelCharacterAssignment>;
+}
+
 export class PaperclipApi {
   private cookie: string;
 
@@ -116,27 +137,11 @@ export class PaperclipApi {
     return this.json(`/api/companies/${companyId}/agents`);
   }
 
-  async createAgent(
-    companyId: string,
-    input: { name: string; adapterType: string; role?: string; adapterConfig?: Record<string, unknown> },
-  ): Promise<Agent> {
+  async createAgent(companyId: string, input: { name: string; adapterType: string; role?: string }): Promise<Agent> {
     return this.json(`/api/companies/${companyId}/agents`, {
       method: "POST",
       body: JSON.stringify(input),
     });
-  }
-
-  /** PATCH an agent (used to force a deterministic long-lived adapter config). */
-  async updateAgent(agentId: string, patch: { adapterConfig?: Record<string, unknown> }): Promise<Agent> {
-    return this.json(`/api/agents/${agentId}`, {
-      method: "PATCH",
-      body: JSON.stringify(patch),
-    });
-  }
-
-  /** DELETE an agent (used only to recreate a stale deterministic helper agent). */
-  async deleteAgent(agentId: string): Promise<unknown> {
-    return this.json(`/api/agents/${agentId}`, { method: "DELETE" });
   }
 
   async findOrCreateAgent(companyId: string, name: string, adapterType: string): Promise<Agent> {
@@ -231,6 +236,61 @@ export class PaperclipApi {
     return data as ReturnType<PaperclipApi["bridgeSnapshot"]>;
   }
 
+  /**
+   * Read the plugin's visual-settings data payload exactly as the plugin UI
+   * consumes it (`POST /api/plugins/:pluginId/data/visual-settings`). This is
+   * the UI's own vantage for per-agent character assignments (hue shifts) and
+   * the character catalog, so read-backs for the character picker match
+   * what the picker renders.
+   */
+  async visualSettings(companyId: string): Promise<VisualSettingsData> {
+    const plugin = await this.pixelPluginRecord();
+    if (!plugin) throw new ApiError(404, "pixel plugin not registered");
+    const res = await this.req(`/api/plugins/${plugin.id}/data/visual-settings`, {
+      method: "POST",
+      body: JSON.stringify({ companyId }),
+    });
+    const text = await res.text();
+    let body: unknown;
+    try {
+      body = text ? JSON.parse(text) : undefined;
+    } catch {
+      body = text;
+    }
+    if (!res.ok) {
+      throw new ApiError(res.status, "POST visual-settings", body);
+    }
+    const wrapped = body as { data?: unknown } | undefined;
+    return ((wrapped?.data ?? body) ?? {}) as VisualSettingsData;
+  }
+
+  /**
+   * Read the plugin's company-scoped config record (or null when the plugin
+   * has not been configured for the company). The plugin's global config is
+   * the only instanceConfig surface (WS0), so read-backs must never contain
+   * per-agent assignment values.
+   */
+  async pluginConfig(
+    pluginId: string,
+    companyId: string,
+  ): Promise<{ configJson?: Record<string, unknown>; [k: string]: unknown } | null> {
+    const res = await this.req(
+      `/api/plugins/${pluginId}/config?companyId=${encodeURIComponent(companyId)}`,
+    );
+    const text = await res.text();
+    let body: unknown;
+    try {
+      body = text ? JSON.parse(text) : undefined;
+    } catch {
+      body = text;
+    }
+    if (!res.ok) {
+      throw new ApiError(res.status, "GET plugin config", body);
+    }
+    if (body === null || body === undefined) return null;
+    return body as { configJson?: Record<string, unknown> };
+  }
+
   async disablePlugin(pluginId: string): Promise<unknown> {
     return this.json(`/api/plugins/${pluginId}/disable`, { method: "POST" });
   }
@@ -239,11 +299,22 @@ export class PaperclipApi {
     return this.json(`/api/plugins/${pluginId}/enable`, { method: "POST" });
   }
 
-  /** Trigger a real state change: assign + (best-effort) wake the agent on the issue. */
+  /**
+   * Trigger a real state change: assign + (best-effort) wake the agent on the
+   * issue.
+   *
+   * The wakeup route only reads `issueId` from the nested `payload` object
+   * (`req.body.payload.issueId` → `contextSnapshot.issueId` → the
+   * `agent.run.*` plugin-event payload); a top-level `issueId` is silently
+   * dropped and the resulting run's failed event arrives unbound, so the
+   * deterministic bound-feedback seed never appears. `reason` stays
+   * top-level.
+   */
   async wakeupAgent(agentId: string, body: { issueId?: string; reason?: string }): Promise<unknown> {
+    const { issueId, reason } = body;
     return this.json(`/api/agents/${agentId}/wakeup`, {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ reason, ...(issueId ? { payload: { issueId } } : {}) }),
     });
   }
 

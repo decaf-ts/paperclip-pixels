@@ -15,9 +15,17 @@ delivery plan, and the per-ticket domain records are owned elsewhere and
 referenced here, not duplicated:
 
 - **Specification domain record (normative for V1):** [`workdocs/ai/project/specifications/PAPERCLIP_PIXELS_1.md`](./specifications/PAPERCLIP_PIXELS_1.md) — referenced below as _the spec_; its numbered sections (§9 contract, §14 manifest, §15 protocol, §16 streams, §26 surfaces, §27 Paperclip UI example, §28 security, §29 performance, §30 failure handling) are the authoritative detail.
-- **PAPERCLIP_PIXELS-2** (bridge plugin esbuild bundling + in-plugin
-  `BridgeRelay`) has no separate specification domain record of its own; it
-  is delivered as the SAA-229 gate-reviewed commit and is documented here at
+- **PAPERCLIP_PIXELS-2** is specified in the domain record
+  [`workdocs/ai/project/specifications/PAPERCLIP_PIXELS_2.md`](./specifications/PAPERCLIP_PIXELS_2.md)
+  (Pixel Agents plugin-architecture fork plus the paperclip-plugin-side
+  character/menu/settings/assets workstreams WS0–WS5, delivered under
+  [SAA-447](/SAA/issues/SAA-447)). The per-agent character system and the
+  plugin UI surfaces (sidebar row, host auto-rendered settings form, character
+  picker) are documented in the companion handbook
+  [`workdocs/ai/architecture-handbook.md`](../architecture-handbook.md);
+  this handbook keeps the translation-layer + relay architecture below. The
+  earlier bundling + in-plugin `BridgeRelay` portion predates that record: it
+  was delivered as the SAA-229 gate-reviewed commit and is documented here at
   the architecture level. **Superseded (this revision):** the relay no longer
   waits on an upstream `pixel-agents` per-`providerId` dispatch change (spike
   SAA-175 §5/§6) — it reaches the live, unmodified Pixel Agents runtime today
@@ -43,7 +51,7 @@ it does not replace them.
 | --- | --- |
 | Project | Paperclip ↔ Pixel Agents translation layer (`PAPERCLIP_PIXELS-1`) + bridge plugin packaging & relay glue (`PAPERCLIP_PIXELS-2`) |
 | Owning team | Paperclip engineering (CTO governance) |
-| Specification | `PAPERCLIP_PIXELS-1` — see spec domain record linked above; `PAPERCLIP_PIXELS-2` documented here (no separate spec record) |
+| Specification | `PAPERCLIP_PIXELS-1` — see spec domain record linked above; `PAPERCLIP_PIXELS-2` — see spec domain record linked above (character system + plugin UI surfaces in the companion `workdocs/ai/architecture-handbook.md`) |
 | Lifespan | Always current; updated in place as the system changes |
 | Diagrams | Inline Mermaid (simple flows); no PlantUML assets required yet |
 

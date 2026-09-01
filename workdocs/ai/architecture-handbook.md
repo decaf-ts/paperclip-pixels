@@ -129,9 +129,11 @@ graph TD
   SDK behind the manifest's least-privilege capabilities. Direction:
   read-heavy inbound; the only writes are comments via the two intake/feedback
   actions.
-- **Operator / board user**: configures the plugin per company (7 operator
-  fields including `pixelAgentsUrl`, `pixelAgentsUiUrl`, `pixelAgentsTokenRef`),
-  and edits each agent's character through the picker on the Pixel Office page.
+- **Operator / board user**: edits the plugin's global operator settings (7
+  fields including `pixelAgentsUrl`, `pixelAgentsUiUrl`, `pixelAgentsTokenRef`)
+  on the host's auto-rendered settings form (Company Settings → Plugins →
+  Paperclip Pixel Bridge; global-only — no per-agent values), and edits each
+  agent's character through the picker on the Pixel Office page.
 - **Pixel Agents** (fork): receives hook-shaped bridge events on
   `POST /api/hooks/:id`, seat/appearance updates and the asset-directory
   registration over its websocket, and renders the office. Its startup token
@@ -192,6 +194,7 @@ graph TD
         PAGE[PixelOfficePage + AgentCharacterPicker]
         SIDE[PixelOfficeSidebar]
         HOOK[use-bridge hook]
+        NAV[host nav/location hooks]
     end
     subgraph Worker process
         SUB[subscriptions + snapshot bootstrap]
@@ -209,7 +212,7 @@ graph TD
     end
     PAGE --> HOOK --> DATA
     PAGE --> ACT
-    SIDE --> HOOK
+    SIDE --> NAV
     SUB --> CORE
     CORE --> DATA
     ACT --> PERS
@@ -241,11 +244,44 @@ the relay. Operator config arrives per company through `ctx.config`
 
 ### 5.3 Plugin UI (`src/ui/`)
 
-React 19 components registered into Paperclip's UI slots: the Pixel Office
-page (office iframe, company overview, per-agent character picker) and the
-sidebar entry. All data flows through `use-bridge` (snapshot + stream deltas)
-and `usePluginAction`; the UI never contacts Paperclip or the relay directly.
-While the bridge is stale/disconnected, state-changing actions pause.
+React 19 components registered into Paperclip's UI slots. All data flows
+through `use-bridge` (snapshot + stream deltas) and `usePluginAction`; the UI
+never contacts Paperclip or the relay directly. While the bridge is
+stale/disconnected, state-changing actions pause. The plugin's UI surface
+inventory:
+
+| Surface | Manifest slot | Renders |
+|---|---|---|
+| Pixel Office page | `page` (`pixel-office-page`, route `pixel-office`) | `PixelOfficePage`: office iframe, company overview, per-agent character picker (§5.5e) |
+| Sidebar entry | `sidebar` (`pixel-office-sidebar`) | `PixelOfficeSidebar`: single-line native row (below) |
+| Plugin settings | none — no custom `settingsPage` slot | Host auto-renders the editable global config form from `instanceConfigSchema` (below) |
+
+**Sidebar entry (single-line native row).** The sidebar renders one
+`Pixel Office` row, pixel-identical to the host's own `SidebarNavItem` rows.
+The plugin SDK does not export that host component, so its class strings are
+replicated verbatim (`ROW_BASE`/`ROW_ACTIVE`/`ROW_INACTIVE` in
+`src/ui/PixelOfficeSidebar.tsx` — same pill geometry, typography, hover and
+active highlight), headed by a plugin-owned 16px inline-SVG pixel-grid icon
+(licensing-safe, no third-party sprites). Active state derives from
+`useHostLocation()` with the host NavLink's own prefix-match semantics
+(`pathname === href || pathname.startsWith(href + "/")`), setting
+`aria-current="page"` plus the active classes only on match; navigation goes
+through `useHostNavigation().linkProps("/pixel-office")`. Testids
+`pixel-office-sidebar` (wrapper) and `pixel-office-sidebar-link` (row) are
+the stable RTL/e2e anchors. The obsolete two-line `<strong>`-headline block
+(SAA-231 chrome) is deleted; no state-changing action lives on the sidebar.
+
+**Settings surface (host auto-form, global-only).** The manifest declares no
+custom `settingsPage` slot — a custom slot would suppress the host's
+auto-rendered config form. Company Settings → Plugins → Paperclip Pixel
+Bridge therefore auto-renders all 7 `instanceConfigSchema` operator fields
+editable: `pixelAgentsUrl`, `pixelAgentsUiUrl`, `pixelAgentsTokenRef`,
+`pixelAgentsProviderId`, `pixelAgentsRelayEnabled`, `paperclipApiBaseUrl`,
+`paperclipApiTokenRef`. The surface is global-only: per-agent values
+(character + hue) live on the agent's own surface — the picker on the Pixel
+Office page — never in settings. The former read-only custom "Pixel Office
+settings" block (`PixelOfficeSettingsPage`, which suppressed the auto form)
+is deleted along with its UI-bundle export.
 
 ### 5.4 Relay CLI (`bin/paperclip-pixel-relay.js`)
 
@@ -326,7 +362,10 @@ palette index.
 (`src/ui/components/character-picker.tsx`) on the plugin's Pixel Office page:
 per-agent option rows (assigned character + hue summary vs "not yet
 assigned"), visual tiles over all 24 sheets with a live `hue-rotate` preview,
-hue slider + exact-number input (integer-clamped 0–360), per-agent drafts
+per-agent hueShift exposure via a range slider plus an exact-number input —
+both bounded [0, 360], with below-floor, above-ceiling, and fractional
+entries clamped into the integer domain as unsaved drafts (`clampHueShift`,
+pinned by `e2e/paperclip/hue-shift.spec.ts`) — per-agent drafts
 retained across agent switches, and a dirty-gated per-agent save wired to the
 `agent.set-pixel-appearance` action. Saves persist to `ctx.state` first;
 relay application is reported separately (`applied: false` still means the
@@ -388,6 +427,23 @@ The plugin worker runs as a forked child of the Paperclip host, not as its
 own pod. Rollback is trivial by construction: the bridge is a non-authoritative
 observer — disabling the plugin removes the graphical surface without
 touching business state. Full runbook detail lives in `deploy/README.md`.
+
+**E2E verification stack.** The canonical Playwright suite lives at the repo
+root under `e2e/` (relocated from `tests/e2e/` so the new WS0 specs import
+its fixtures/helpers from their final location). It runs against the
+disposable compose stack `paperclip-pixels-e2e`
+(`deploy/docker/docker-compose.bridge-stack.yml` plus the checked-in
+`docker-compose.e2e-override.yml`, which publishes Postgres at 15432 and
+points `PAPERCLIP_PUBLIC_URL` at the docker bridge gateway) — not against a
+developer instance. The WS0 specs pin the quick-win surfaces:
+`e2e/paperclip/sidebar-entry.spec.ts` (native single-line row, host class
+replication, navigation to the page),
+`e2e/paperclip/settings-editable.spec.ts` (no `settingsPage` slot in the
+contribution; auto-rendered editable 7-field global form; the suite's own
+edits are browser-local and never saved), and `e2e/paperclip/hue-shift.spec.ts` (per-agent picker
+selection, [0, 360]-bounded hue controls, clamping, per-agent draft
+retention). Rebuild/redeploy and suite-run instructions live in
+`deploy/README.md`.
 
 ## 07. Data Architecture
 

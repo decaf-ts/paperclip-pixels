@@ -5,10 +5,10 @@
   "description": "Pixel Office Playwright e2e suite (PAPERCLIP_PIXELS-1 / SAA-231) driving the deployed bridge stack.",
   "type": "module",
   "scripts": {
-    "test": "node_modules/.bin/playwright test --config playwright.config.ts",
-    "test:headed": "node_modules/.bin/playwright test --config playwright.config.ts --headed",
-    "install-browsers": "node_modules/.bin/playwright install chromium",
-    "typecheck": "node_modules/.bin/tsc -p tsconfig.json --noEmit"
+    "test": "playwright test --config playwright.config.ts",
+    "test:headed": "playwright test --config playwright.config.ts --headed",
+    "install-browsers": "playwright install chromium",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

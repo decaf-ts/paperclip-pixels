@@ -43,6 +43,13 @@ export interface HostNavigation {
   linkProps(to: string, options?: Record<string, unknown>): HostNavigationLinkProps;
 }
 
+export interface HostLocation {
+  pathname: string;
+  search: string;
+  hash: string;
+  state?: unknown;
+}
+
 export interface PluginHostContext {
   companyId: string | null;
   companyPrefix?: string | null;
@@ -71,6 +78,7 @@ export const usePluginStreamImpl = jest.fn();
 export const usePluginActionImpl = jest.fn();
 export const useHostContextImpl = jest.fn();
 export const useHostNavigationImpl = jest.fn();
+export const useHostLocationImpl = jest.fn();
 export const usePluginToastImpl = jest.fn();
 
 /** Factory for a `usePluginData` result. Tests override `refresh` to assert on it. */
@@ -114,6 +122,13 @@ export function makeNavigation(
   return { resolveHref, navigate, linkProps, ...overrides };
 }
 
+/** Factory for a `useHostLocation` result (host pathname/search/hash). */
+export function makeLocation(
+  overrides?: Partial<HostLocation>,
+): HostLocation {
+  return { pathname: "/", search: "", hash: "", ...overrides };
+}
+
 /**
  * Restore all SDK mocks to sane defaults. Called in `jest-setup.ts` before
  * every test so state never leaks between tests.
@@ -131,6 +146,8 @@ export function resetSdkUiMocks(): void {
   useHostContextImpl.mockReturnValue({ companyId: null });
   useHostNavigationImpl.mockReset();
   useHostNavigationImpl.mockReturnValue(makeNavigation());
+  useHostLocationImpl.mockReset();
+  useHostLocationImpl.mockReturnValue(makeLocation());
   usePluginToastImpl.mockReset();
   usePluginToastImpl.mockReturnValue(jest.fn());
 }
@@ -161,6 +178,10 @@ export function useHostContext(): PluginHostContext {
 
 export function useHostNavigation(): HostNavigation {
   return useHostNavigationImpl() as HostNavigation;
+}
+
+export function useHostLocation(): HostLocation {
+  return useHostLocationImpl() as HostLocation;
 }
 
 export function usePluginToast(): MockActionFn {

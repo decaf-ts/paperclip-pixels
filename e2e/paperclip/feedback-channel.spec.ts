@@ -42,11 +42,7 @@ const shot = (name: string) => e2ePath(path.join(SCREENSHOT_DIR, name));
 const REPLY_TEXT = "Quick clarification: which issue should this feedback attach to?";
 
 test.describe("Scenario 2 — feedback channel routes to existing work", () => {
-  test.beforeEach(async ({ api, seed }) => {
-    // `seed` must resolve first: it creates the company that grants the
-    // actor org access, which the ui-contributions call inside the gate
-    // requires (assertBoardOrgAccess 403s for a company-less actor).
-    void seed;
+  test.beforeEach(async ({ api }) => {
     await gatePixelOffice(api);
   });
 

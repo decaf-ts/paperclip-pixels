@@ -67,18 +67,17 @@ export async function loginViaUi(page: Page): Promise<LoginResult> {
 
   // The sign-in submit can transiently fail against the forwarded deployment
   // (origin rewrite + proxied fetch; the deployed host occasionally resets
-  // connections under load, and the shared stack's svc port-forward
-  // intermittently stalls stream creation for tens of seconds). Rather than
-  // trusting a single navigation or nailing the form, retry the whole sign-in a
-  // bounded number of times and settle once the session cookie is present in
-  // the browser context. Each attempt is isolated — a stall on goto/fill/submit
-  // moves to the next attempt instead of aborting the login.
+  // connections under load). Rather than trusting a single navigation or nailing
+  // the form, retry the whole sign-in a bounded number of times and settle once
+  // the session cookie is present in the browser context. Each attempt is
+  // isolated — a stall on goto/fill/submit moves to the next attempt instead of
+  // aborting the login.
   let lastError: string | null = null;
   let sessionCookieValue: string | null = null;
-  for (let attempt = 1; attempt <= 4; attempt += 1) {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
     let attemptError: string | null = null;
     try {
-      await page.goto(`${HOST_BASE_URL}/auth`, { waitUntil: "domcontentloaded", timeout: 45_000 });
+      await page.goto(`${HOST_BASE_URL}/auth`, { waitUntil: "domcontentloaded", timeout: 30_000 });
 
       const emailInput = page.locator('input#email[name="email"]');
       const passwordInput = page.locator('input#password[name="password"]');

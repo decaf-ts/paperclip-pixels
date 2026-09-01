@@ -30,11 +30,7 @@ const STALE_ENABLED = process.env.PAPERCLIP_PIXEL_E2E_STALE === "1";
 test.skip(!STALE_ENABLED, "stale/disconnect test is opt-in (PAPERCLIP_PIXEL_E2E_STALE=1); default gap");
 
 test.describe("Scenario 4 (bonus) — stale/disconnect safety", () => {
-  test.beforeEach(async ({ api, seed }) => {
-    // `seed` must resolve first: it creates the company that grants the
-    // actor org access, which the ui-contributions call inside the gate
-    // requires (assertBoardOrgAccess 403s for a company-less actor).
-    void seed;
+  test.beforeEach(async ({ api }) => {
     await gatePixelOffice(api);
   });
 

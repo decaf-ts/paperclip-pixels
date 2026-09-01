@@ -40,11 +40,7 @@ const shot = (name: string) => e2ePath(path.join(SCREENSHOT_DIR, name));
 const NEW_WORK_TEXT = "Build a new reporting dashboard for Q3 with charts and filters.";
 
 test.describe("Scenario 3 — new-work gate fails closed", () => {
-  test.beforeEach(async ({ api, seed }) => {
-    // `seed` must resolve first: it creates the company that grants the
-    // actor org access, which the ui-contributions call inside the gate
-    // requires (assertBoardOrgAccess 403s for a company-less actor).
-    void seed;
+  test.beforeEach(async ({ api }) => {
     await gatePixelOffice(api);
   });
 
