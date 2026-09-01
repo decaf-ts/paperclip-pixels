@@ -127,6 +127,11 @@ export const BRIDGE_ACTION_KEYS = {
   setAgentAppearance: "agent.set-pixel-appearance",
 } as const;
 
+/**
+ * One character sheet offered by the visual-settings payload: catalog
+ * metadata plus a base64 preview data URL so the picker can render
+ * immediately (WS3: served by the worker from the package catalog).
+ */
 export interface PixelCharacterChoice {
   id: string;
   name: string;
@@ -136,21 +141,36 @@ export interface PixelCharacterChoice {
   license: string;
 }
 
-export interface PixelAppearanceAssignment {
-  agentId: string;
-  agentName: string;
+/**
+ * FROZEN per-agent character assignment contract (WS3, spec
+ * PAPERCLIP_PIXELS-2 FR-13). Keyed by Paperclip agent id; the Front-End
+ * sibling builds against exactly this shape. Shaped to flow through the WS2
+ * appearance API unchanged.
+ */
+export interface PixelAgentCharacterAssignment {
+  /** Catalog id of the assigned character sheet. */
   characterId: string;
+  /** Integer palette index of the assigned sheet. */
   palette: number;
+  /** Hue rotation applied on top of the sheet, 0–360 degrees. */
   hueShift: number;
-  applied: boolean;
+  /** ISO timestamp of the last explicit or defaulted assignment. */
+  updatedAt: string;
 }
 
+/**
+ * Payload served by the worker's `visual-settings` data handler. WS3: built
+ * from plugin `ctx.state` (agent scope) plus the package catalog — no longer
+ * proxied from the relay, which is only an applier of the assignments pushed
+ * to it.
+ */
 export interface VisualSettingsData {
   schemaVersion: 1;
   configured: boolean;
   pixelAgentsUiUrl?: string;
   characters: PixelCharacterChoice[];
-  assignments: Record<string, PixelAppearanceAssignment>;
+  /** agentId -> assignment (frozen contract above). */
+  assignments: Record<string, PixelAgentCharacterAssignment>;
   error?: string;
 }
 

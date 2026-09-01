@@ -4,8 +4,11 @@ import type { PluginPerformActionContext } from "@paperclipai/plugin-sdk";
 import {
   evaluateAgentReply,
   validateIntake,
+  validateAssignmentInput,
+  type AgentCharacterAssignment,
   type AgentFeedback,
 } from "./core/index.js";
+import { loadCharacterCatalog } from "./characters.js";
 import {
   ACTION_KEYS,
 } from "./constants.js";
@@ -48,10 +51,19 @@ export interface ActionDeps {
   ctx: PluginContext;
   getFeedback: (companyId: string, feedbackId: string) => AgentFeedback | undefined;
   getLeadershipAgentId: (companyId: string) => string | undefined;
-  setAgentAppearance?: (
+  /**
+   * Persist and apply one agent's character assignment (WS3, spec
+   * PAPERCLIP_PIXELS-2 FR-13). Implemented by the worker: persists the
+   * assignment to plugin `ctx.state` agent scope (single source of truth),
+   * updates the runtime map, and pushes the company's appearance map to the
+   * relay applier (best-effort). Returns the persisted assignment plus
+   * whether the relay accepted the push (`applied: false` still means the
+   * write succeeded — the next sync re-applies it).
+   */
+  applyAgentCharacterAssignment?: (
     companyId: string,
-    input: { agentId: string; agentName: string; characterId: string; palette: number; hueShift: number },
-  ) => Promise<unknown>;
+    input: { agentId: string; agentName: string; assignment: AgentCharacterAssignment },
+  ) => Promise<{ ok: boolean; error?: string; assignment?: AgentCharacterAssignment; applied?: boolean }>;
 }
 
 function actorFromContext(context: PluginPerformActionContext): { id?: string; type?: string } {
@@ -230,15 +242,31 @@ export async function handleSetAgentAppearance(
   if (!parsed.success) return { ok: false, error: "INVALID_PARAMS", details: parsed.error.issues };
   const scope = resolveCompanyScope(parsed.data.companyId, context);
   if ("error" in scope) return { ok: false, error: scope.error };
-  if (!deps.setAgentAppearance) return { ok: false, error: "RELAY_NOT_CONFIGURED" };
+  // Catalog validation happens server-side against the worker's own package
+  // catalog: the character id must exist and the palette index must be the
+  // entry's own (a foreign palette would render a different sheet than the
+  // one the user picked).
+  let catalog;
+  try {
+    catalog = loadCharacterCatalog().catalog;
+  } catch {
+    return { ok: false, error: "CATALOG_UNAVAILABLE" };
+  }
+  const validated = validateAssignmentInput(catalog, parsed.data);
+  if (!validated.ok) return { ok: false, error: validated.error };
   const agent = await deps.ctx.agents.get(parsed.data.agentId, scope.companyId);
   if (!agent) return { ok: false, error: "AGENT_NOT_FOUND" };
-  return deps.setAgentAppearance(scope.companyId, {
-    agentId: agent.id,
-    agentName: agent.name,
+  if (!deps.applyAgentCharacterAssignment) return { ok: false, error: "ASSIGNMENT_APPLIER_UNAVAILABLE" };
+  const assignment: AgentCharacterAssignment = {
     characterId: parsed.data.characterId,
     palette: parsed.data.palette,
     hueShift: parsed.data.hueShift,
+    updatedAt: new Date().toISOString(),
+  };
+  return deps.applyAgentCharacterAssignment(scope.companyId, {
+    agentId: agent.id,
+    agentName: agent.name,
+    assignment,
   });
 }
 

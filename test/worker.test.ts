@@ -303,10 +303,22 @@ describe("worker trust boundary (criterion 8)", () => {
     await flushRelay();
 
     expect(rawFetch).toHaveBeenCalled();
-    for (const [url, init] of rawFetch.mock.calls as Array<[string, RequestInit?]>) {
-      expect(url).toBe("https://pa.example/api/hooks/claude");
-      expect(init?.method).toBe("POST");
+    // Every outbound call goes to the operator-configured destination via the
+    // Node global fetch: hook pushes to the hook endpoint, WS3 appearance
+    // pushes to the appearance-sync endpoint (same origin).
+    expect(relayFetchCalls.length).toBeGreaterThan(0);
+    for (const call of relayFetchCalls) {
+      expect(call.url.startsWith("https://pa.example/")).toBe(true);
+      expect(call.method).toBe("POST");
     }
+    expect(hookCalls().length).toBeGreaterThan(0);
+    for (const call of hookCalls()) {
+      expect(call.url).toBe("https://pa.example/api/hooks/claude");
+    }
+    // Tester tightening: the whole new-call surface is exactly the two relay
+    // kinds (hook pushes + appearance-sync pushes) — no third kind of raw
+    // fetch, so the finer hook assertions above truly cover the whole set.
+    expect(hookCalls().length + appearanceSyncCalls().length).toBe(relayFetchCalls.length);
   });
 
   it("refuses outbound HTTP through the harness when http.outbound is not declared", async () => {
@@ -365,6 +377,19 @@ function spyRelayFetch(): MockInstance<typeof fetch> {
   );
 }
 
+// WS3: the relay now carries two outbound surfaces to the same
+// operator-configured destination — the original Claude-hook pushes and the
+// per-agent appearance-sync pushes (plugin ctx.state is the source of truth;
+// the relay is the applier). Existing assertions about hook bodies must
+// filter to hook calls only.
+function hookCalls(): typeof relayFetchCalls {
+  return relayFetchCalls.filter((c) => /\/api\/hooks\/[a-z0-9-]+$/.test(c.url));
+}
+
+function appearanceSyncCalls(): typeof relayFetchCalls {
+  return relayFetchCalls.filter((c) => c.url.endsWith("/api/appearance-sync"));
+}
+
 describe("worker relay wiring (SAA-229 coverage gap)", () => {
 
   async function healthDetails(): Promise<Record<string, unknown>> {
@@ -385,8 +410,22 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
     await flushRelay();
 
     expect(harness.logs.some((l) => l.level === "info" && l.message === "Bridge relay configured for company")).toBe(true);
-    expect(relayFetchCalls).toHaveLength(4);
-    for (const call of relayFetchCalls) {
+    // WS3: setupCompany also pushes the per-agent appearance map (from
+    // ctx.state agent scope) to the relay applier exactly once.
+    const syncCalls = appearanceSyncCalls();
+    expect(syncCalls).toHaveLength(1);
+    expect(syncCalls[0].method).toBe("POST");
+    const syncBody = JSON.parse(syncCalls[0].body);
+    expect(syncBody.assignments.map((a: { agentId: string }) => a.agentId).sort()).toEqual([AGENT_CEO_ID, AGENT_DEV_ID]);
+    for (const assignment of Object.values(syncBody.assignments) as Array<Record<string, unknown>>) {
+      expect(typeof assignment.characterId).toBe("string");
+      expect(Number.isInteger(assignment.palette)).toBe(true);
+      expect(Number.isInteger(assignment.hueShift)).toBe(true);
+      expect(typeof assignment.updatedAt).toBe("string");
+    }
+    const hookPushes = hookCalls();
+    expect(hookPushes).toHaveLength(4);
+    for (const call of hookPushes) {
       expect(call.url).toBe("https://pa.example/api/hooks/claude");
       expect(call.method).toBe("POST");
       expect(call.headers["content-type"]).toBe("application/json");
@@ -397,7 +436,7 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
       expect(body.session_id.length).toBeGreaterThan(0);
     }
     const bySession = new Map<string, string[]>();
-    for (const call of relayFetchCalls) {
+    for (const call of hookPushes) {
       const body = JSON.parse(call.body);
       const list = bySession.get(body.session_id) ?? [];
       list.push(body.hook_event_name);
@@ -540,7 +579,7 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
     await def.onConfigChanged!({ pixelAgentsUrl: "https://pa.example" }, { companyId: COMPANY_ID });
     await flushRelay();
 
-    const newCalls = relayFetchCalls.slice(baseline);
+    const newCalls = hookCalls().filter((c) => relayFetchCalls.indexOf(c) >= baseline);
     const bySession = new Map<string, string[]>();
     for (const call of newCalls) {
       const body = JSON.parse(call.body);
@@ -555,6 +594,14 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
     for (const events of bySession.values()) {
       expect(events).toEqual(["SessionStart", "Stop"]);
     }
+    // The enable-reconfigure also re-pushes the appearance map to the relay
+    // applier exactly once (WS3), so the rebuilt applier seats everyone
+    // immediately. (Tester tightening: the pre-review version asserted only
+    // the hook pushes here.)
+    const newSyncCalls = relayFetchCalls.slice(baseline).filter((c) => c.url.endsWith("/api/appearance-sync"));
+    expect(newSyncCalls).toHaveLength(1);
+    const syncBody = JSON.parse(newSyncCalls[0].body);
+    expect(syncBody.assignments.map((a: { agentId: string }) => a.agentId).sort()).toEqual([AGENT_CEO_ID, AGENT_DEV_ID]);
   });
 
   it("the reconciliation job periodically self-heals by resyncing the mapper every RESYNC_EVERY_N_RECONCILES ticks", async () => {
@@ -586,8 +633,19 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
       await flushRelay();
     }
 
-    const newCalls = relayFetchCalls.slice(baseline);
+    const newCalls = relayFetchCalls.slice(baseline).filter((c) => /\/api\/hooks\/[a-z0-9-]+$/.test(c.url));
     expect(newCalls).toHaveLength(4);
+    // The one resync tick also re-pushes the appearance map to the relay
+    // applier (WS3); ordinary reconcile ticks push nothing extra.
+    const newSyncCalls = relayFetchCalls.slice(baseline).filter((c) => c.url.endsWith("/api/appearance-sync"));
+    expect(newSyncCalls).toHaveLength(1);
+    // Tester tightening: hooks + the one appearance-sync push are the
+    // exhaustive new-call surface across these reconcile ticks — no third
+    // kind of outbound fetch goes unnoticed.
+    const unaccounted = relayFetchCalls
+      .slice(baseline)
+      .filter((c) => !(/\/api\/hooks\/[a-z0-9-]+$/.test(c.url) || c.url.endsWith("/api/appearance-sync")));
+    expect(unaccounted).toHaveLength(0);
     const bySession = new Map<string, string[]>();
     for (const call of newCalls) {
       const body = JSON.parse(call.body);

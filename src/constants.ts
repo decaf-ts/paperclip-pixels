@@ -9,14 +9,12 @@ export const PLUGIN_API_VERSION = 1 as const;
 export const UI_SLOT_IDS = {
   page: "pixel-office-page",
   sidebar: "pixel-office-sidebar",
-  settings: "pixel-office-settings",
 } as const;
 
 /** Export names that correspond to each UI slot's React component. */
 export const UI_EXPORT_NAMES = {
   page: "PixelOfficePage",
   sidebar: "PixelOfficeSidebar",
-  settings: "PixelOfficeSettingsPage",
 } as const;
 
 /** Route segment under which the Pixel Office page is mounted in the host UI. */
@@ -60,11 +58,18 @@ export const STATE_KEYS = {
   lastReconciledAt: "last-reconciled-at",
   schemaVersion: "schema-version",
   leadershipAgentId: "leadership-agent-id",
+  /**
+   * Per-agent character assignment (WS3, spec PAPERCLIP_PIXELS-2 FR-13),
+   * stored in the plugin SDK's `agent` state scope (scopeId = agent id).
+   */
+  agentCharacter: "agent-character",
 } as const;
 
 /** Namespaces used for grouping plugin persisted state. */
 export const STATE_NAMESPACES = {
   bridge: "bridge",
+  /** Per-agent character assignments (WS3). */
+  characters: "characters",
 } as const;
 
 /** Default interval (in ms) for the bridge reconciliation job. */

@@ -33,8 +33,27 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const catalogPath = opts.characterCatalog || path.join(packageRoot, "assets", "characters", "catalog.json");
 const catalogDir = path.dirname(catalogPath);
 const serverJsonPath = path.join(opts.pixelAgentsHome, "server.json");
-const assignmentsPath = path.join(opts.pixelAgentsHome, "paperclip-appearance.json");
+// WS3: the relay is an APPLIER of per-agent appearances pushed from the
+// plugin worker (whose ctx.state agent scope is the single source of truth).
+// This file is only a write-through cache so a relay restart re-applies seats
+// without waiting for the next plugin push — never an independent source of
+// truth. The former paperclip-appearance.json (the retired file-based source
+// of truth) is no longer read or written.
+const appearanceCachePath = path.join(opts.pixelAgentsHome, "appearance-cache.json");
 const sessionsDir = path.join(opts.pixelAgentsHome, "paperclip-sessions");
+// Interim asset sharing (WS3, FR-17): the relay copies the catalog's extra
+// sheets (palette index >= BUNDLED_CHARACTER_COUNT) into a share directory
+// under the Pixel Agents home (the volume the relay and Pixel Agents already
+// share — same volume server.json's token is read from), then registers that
+// directory through Pixel Agents' existing addExternalAssetDirectory path,
+// which is privilege-gated server-side (the message must echo the server's
+// startup token; the gate fails closed otherwise — see the fork's
+// clientMessageHandler.ts). Pixel Agents appends external sheets AFTER its
+// bundled ones in numeric order, so a share directory containing exactly
+// char_6..char_N keeps the catalog's palette index invariant (index = filename
+// suffix = position in the merged sprite array).
+const BUNDLED_CHARACTER_COUNT = 6;
+const shareDir = path.join(opts.pixelAgentsHome, "paperclip-characters");
 const readJson = (file, fallback) => { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return fallback; } };
 function writeJson(file, value) { fs.mkdirSync(path.dirname(file), { recursive: true }); const temp = `${file}.${process.pid}.tmp`; fs.writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 }); fs.renameSync(temp, file); }
 const readToken = () => { const value = readJson(serverJsonPath, null); return typeof value?.token === "string" ? value.token : null; };
@@ -81,26 +100,84 @@ function attachPaperclipTranscript(body) {
 
 const catalog = readJson(catalogPath, { characters: [] });
 const characters = (catalog.characters ?? []).map((item) => ({ ...item, previewDataUrl: `data:image/png;base64,${fs.readFileSync(path.join(catalogDir, item.file)).toString("base64")}` }));
-let assignments = readJson(assignmentsPath, {}); let socket = null; let retry = null; let observed = { folderNames: {}, agentMeta: {} };
+
+// Copy the catalog's extra sheets (palette >= BUNDLED_CHARACTER_COUNT) into
+// the share directory. Idempotent: overwrites on every relay start so an
+// upgraded package's sheets replace stale ones. Files with a bundled index
+// are deliberately NOT copied — Pixel Agents already ships those, and a
+// duplicate would shift every external sheet's palette index.
+function syncShareDirectory() {
+  const shareCharsDir = path.join(shareDir, "assets", "characters");
+  fs.mkdirSync(shareCharsDir, { recursive: true });
+  let copied = 0;
+  for (const item of catalog.characters ?? []) {
+    if (typeof item.palette !== "number" || item.palette < BUNDLED_CHARACTER_COUNT) continue;
+    fs.copyFileSync(path.join(catalogDir, item.file), path.join(shareCharsDir, item.file));
+    copied += 1;
+  }
+  return copied;
+}
+const sharedSheetCount = syncShareDirectory();
+
+let assignments = readJson(appearanceCachePath, {}); let socket = null; let retry = null; let observed = { folderNames: {}, agentMeta: {} };
 function socketUrl(token) { const url = new URL(opts.pixelAgentsUrl); url.protocol = url.protocol === "https:" ? "wss:" : "ws:"; url.pathname = "/ws"; url.searchParams.set("token", token); return url; }
 function applyAssignments() {
   if (socket?.readyState !== WebSocket.OPEN) return; const seats = { ...observed.agentMeta }; let changed = false;
-  for (const assignment of Object.values(assignments)) { const ids = Object.entries(observed.folderNames).filter(([, name]) => name === assignment.agentName).map(([id]) => id); assignment.applied = false; if (ids.length !== 1) continue; seats[ids[0]] = { ...(seats[ids[0]] ?? {}), palette: assignment.palette, hueShift: assignment.hueShift }; assignment.applied = true; changed = true; }
-  if (changed) socket.send(JSON.stringify({ type: "saveAgentSeats", seats })); writeJson(assignmentsPath, assignments);
+  for (const assignment of Object.values(assignments)) { const ids = Object.entries(observed.folderNames).filter(([, name]) => name === assignment.agentName).map(([id]) => id); if (ids.length !== 1) continue; seats[ids[0]] = { ...(seats[ids[0]] ?? {}), palette: assignment.palette, hueShift: assignment.hueShift }; changed = true; }
+  if (changed) socket.send(JSON.stringify({ type: "saveAgentSeats", seats })); writeJson(appearanceCachePath, assignments);
 }
 function connect() {
   clearTimeout(retry); const token = readToken(); if (!token) { retry = setTimeout(connect, 2000); return; }
-  socket = new WebSocket(socketUrl(token)); socket.on("open", () => socket.send(JSON.stringify({ type: "webviewReady" })));
-  socket.on("message", (raw) => { try { const msg = JSON.parse(raw.toString()); if (msg.type === "existingAgents") { observed = { folderNames: msg.folderNames ?? {}, agentMeta: msg.agentMeta ?? {} }; applyAssignments(); } else if (msg.type === "agentCreated" || msg.type === "agentClosed") socket.send(JSON.stringify({ type: "webviewReady" })); } catch { /* unrelated message */ } });
+  socket = new WebSocket(socketUrl(token));
+  socket.on("open", () => {
+    socket.send(JSON.stringify({ type: "webviewReady" }));
+    // Interim asset sharing (WS3, FR-11/FR-17): register the share directory
+    // through Pixel Agents' existing external-asset-directory path. The
+    // privilegeToken echo is the server's own startup token (the same secret
+    // that privileged this WS handshake) — the fork's server-side gate
+    // validates it constant-time and fails closed without it. Re-registering
+    // on every reconnect is safe: the server de-duplicates known paths.
+    if (sharedSheetCount > 0) {
+      socket.send(JSON.stringify({ type: "addExternalAssetDirectory", path: shareDir, privilegeToken: token }));
+    }
+  });
+  socket.on("message", (raw) => { try { const msg = JSON.parse(raw.toString());
+    if (msg.type === "existingAgents") { observed = { folderNames: msg.folderNames ?? {}, agentMeta: msg.agentMeta ?? {} }; applyAssignments(); }
+    else if (msg.type === "externalAssetDirectoriesUpdated") { applyAssignments(); }
+    else if (msg.type === "agentCreated" || msg.type === "agentClosed") socket.send(JSON.stringify({ type: "webviewReady" })); } catch { /* unrelated message */ } });
   socket.on("close", () => { retry = setTimeout(connect, 2000); }); socket.on("error", () => socket?.close());
 }
 connect();
 
 const server = http.createServer(async (req, res) => {
   if (!authorized(req)) return sendJson(res, 401, { error: "unauthorized" });
-  if (req.method === "GET" && req.url === "/api/visual-settings") return sendJson(res, 200, { schemaVersion: 1, characters, assignments });
+  if (req.method === "GET" && req.url === "/api/visual-settings") {
+    // Debug/compat read: the plugin UI's visual-settings data is served by
+    // the worker from plugin state + the package catalog; this view only
+    // reflects what the relay applier currently holds (its write-through
+    // cache), keyed by agent id.
+    return sendJson(res, 200, { schemaVersion: 1, characters, assignments, shareDirectory: sharedSheetCount > 0 ? shareDir : null });
+  }
   if (req.method === "POST" && req.url === "/api/visual-settings") {
-    try { const body = JSON.parse(await readBody(req)); const choice = characters.find((item) => item.id === body.characterId); if (!choice || choice.palette !== body.palette || typeof body.agentId !== "string" || typeof body.agentName !== "string" || !Number.isInteger(body.hueShift) || body.hueShift < 0 || body.hueShift > 360) return sendJson(res, 400, { ok: false, error: "invalid-appearance" }); assignments[body.agentId] = { agentId: body.agentId, agentName: body.agentName, characterId: choice.id, palette: choice.palette, hueShift: body.hueShift, applied: false }; writeJson(assignmentsPath, assignments); if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "webviewReady" })); return sendJson(res, 200, { ok: true, assignment: assignments[body.agentId] }); } catch (err) { return sendJson(res, 400, { ok: false, error: err instanceof Error ? err.message : String(err) }); }
+    // RETIRED (WS3): per-agent appearance writes no longer flow through the
+    // relay. The plugin worker's ctx.state agent scope is the single source
+    // of truth; the worker pushes the full map via /api/appearance-sync.
+    return sendJson(res, 410, { ok: false, error: "retired: per-agent appearance writes live in plugin ctx.state (agent scope); the worker pushes the map via POST /api/appearance-sync" });
+  }
+  if (req.method === "POST" && req.url === "/api/appearance-sync") {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const list = Array.isArray(body?.assignments) ? body.assignments : null;
+      if (!list) return sendJson(res, 400, { ok: false, error: "invalid-appearance-sync" });
+      const next = {};
+      for (const entry of list) {
+        const choice = characters.find((item) => item.id === entry?.characterId);
+        if (!choice || choice.palette !== entry.palette || typeof entry.agentId !== "string" || entry.agentId.length === 0 || typeof entry.agentName !== "string" || entry.agentName.length === 0 || !Number.isInteger(entry.hueShift) || entry.hueShift < 0 || entry.hueShift > 360) return sendJson(res, 400, { ok: false, error: "invalid-appearance" });
+        next[entry.agentId] = { agentId: entry.agentId, agentName: entry.agentName, characterId: choice.id, palette: choice.palette, hueShift: entry.hueShift, updatedAt: typeof entry.updatedAt === "string" ? entry.updatedAt : new Date().toISOString() };
+      }
+      assignments = next; writeJson(appearanceCachePath, assignments); applyAssignments();
+      return sendJson(res, 200, { ok: true, count: Object.keys(assignments).length });
+    } catch (err) { return sendJson(res, 400, { ok: false, error: err instanceof Error ? err.message : String(err) }); }
   }
   if (req.method !== "POST" || !/^\/api\/hooks\/[a-z0-9-]+$/.test(req.url ?? "")) return sendJson(res, 405, { error: "method not allowed" });
   const token = readToken(); if (!token) return sendJson(res, 503, { error: "pixel-agents not ready" });
@@ -113,4 +190,4 @@ const server = http.createServer(async (req, res) => {
     res.end(await upstream.text());
   } catch (err) { sendJson(res, 502, { error: err instanceof Error ? err.message : String(err) }); }
 });
-server.listen(opts.port, opts.host, () => console.log(`[paperclip-pixel-relay] ${opts.host}:${opts.port}; ${characters.length} complete characters`));
+server.listen(opts.port, opts.host, () => console.log(`[paperclip-pixel-relay] ${opts.host}:${opts.port}; ${characters.length} complete characters; ${sharedSheetCount} extra sheets shared via ${sharedSheetCount > 0 ? shareDir : "(none)"}`));

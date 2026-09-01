@@ -71,9 +71,24 @@ export const DEFAULT_PIXEL_AGENTS_URL = "http://127.0.0.1:8081";
  */
 export const DEFAULT_PAPERCLIP_API_BASE_URL = "http://127.0.0.1:3100";
 
+/**
+ * One agent's fully-resolved appearance, as pushed to the relay for
+ * application in Pixel Agents. Carries the frozen per-agent assignment
+ * record (see `core/domain/characters.ts`) plus the agent's display name —
+ * the relay needs the name to find the agent's Pixel Agents seat, but the
+ * name is deliberately NOT part of the persisted assignment contract.
+ */
+export interface AgentAppearanceSyncEntry {
+  agentId: string;
+  agentName: string;
+  characterId: string;
+  palette: number;
+  hueShift: number;
+  updatedAt: string;
+}
+
 /** Resolved per-company relay configuration. */
-export interface RelayCompanyConfig {
-  enabled: boolean;
+export interface RelayCompanyConfig {  enabled: boolean;
   pixelAgentsUrl: string;
   pixelAgentsUiUrl: string;
   /** Resolved bearer token (never the persisted ref). */
@@ -502,14 +517,26 @@ export class BridgeRelay {
    * A no-op when the company has no configured relay.
    *
    * @param companyId - Identifier of the company to re-sync.
+   * @param appearances - Optional per-agent appearance map to re-push after
+   *   the resync, so a freshly rebuilt relay applier seats everyone without
+   *   waiting for the next explicit write. Skipped when omitted or empty.
    */
-  async resyncCompany(companyId: string): Promise<void> {
+  async resyncCompany(
+    companyId: string,
+    appearances?: AgentAppearanceSyncEntry[],
+  ): Promise<void> {
     const entry = this.companies.get(companyId);
     if (!entry) return;
     try {
       entry.transport.eventMapper.reset();
       const result = await bootstrapSnapshot(this.ctx, companyId);
       entry.transport.ingestSnapshot(result.snapshot);
+      // Re-push the per-agent appearance map so a freshly (re)configured
+      // relay applier picks up the current assignments from plugin state
+      // without waiting for the next explicit write.
+      if (appearances && appearances.length > 0) {
+        await this.syncAppearances(companyId, appearances);
+      }
     } catch (err) {
       this.ctx.logger.warn("Bridge relay re-sync failed for company", {
         companyId,
@@ -570,42 +597,54 @@ export class BridgeRelay {
     return this.companies.has(companyId);
   }
 
-  /** Read the relay-owned character catalog and persisted per-agent choices. */
-  async getVisualSettings(companyId: string): Promise<unknown> {
-    const relay = this.companies.get(companyId);
-    if (!relay) {
-      return { schemaVersion: 1, configured: false, characters: [], assignments: {}, pixelAgentsUiUrl: "http://localhost:8090" };
-    }
-    const response = await fetch(`${relay.config.pixelAgentsUrl}/api/visual-settings`, {
-      headers: relay.config.pixelAgentsToken
-        ? { authorization: `Bearer ${relay.config.pixelAgentsToken}` }
-        : undefined,
-    });
-    if (!response.ok) throw new Error(`Visual settings relay failed: ${response.status} ${response.statusText}`);
-    const payload = await response.json() as Record<string, unknown>;
-    return { ...payload, configured: true, pixelAgentsUiUrl: relay.config.pixelAgentsUiUrl };
+  /**
+   * The UI URL of the company's Pixel Agents instance (for the embedded
+   * office iframe), regardless of relay state.
+   */
+  getPixelAgentsUiUrl(companyId: string): string {
+    return this.companies.get(companyId)?.config.pixelAgentsUiUrl ?? "http://localhost:8090";
   }
 
-  /** Persist and apply a Paperclip agent's Pixel Agents palette through the public WS protocol. */
-  async setAgentAppearance(
+  /**
+   * Push the company's complete per-agent appearance map to the relay's
+   * `POST /api/appearance-sync` endpoint (WS3). Plugin `ctx.state` agent
+   * scope is the single source of truth; the relay is a stateless applier
+   * that turns the pushed map into Pixel Agents `saveAgentSeats` messages
+   * (and keeps a write-through cache only so its own restart re-applies
+   * seats without waiting for the next push).
+   *
+   * Uses the same narrowly-scoped raw `fetch` as the hook push sink — see
+   * `rawFetch()`'s doc comment: the destination is the operator-configured,
+   * same-operator relay sidecar, a boundary `ctx.http.fetch`'s private-IP
+   * SSRF filter categorically cannot reach.
+   *
+   * @returns `true` when the relay accepted the sync; `false` on any failure
+   * (relay not configured for the company, unreachable, or non-2xx — logged
+   * by the caller, never thrown: an appearance write must not fail because
+   * the relay is momentarily down; the next sync re-applies it).
+   */
+  async syncAppearances(
     companyId: string,
-    input: { agentId: string; agentName: string; characterId: string; palette: number; hueShift: number },
-  ): Promise<unknown> {
+    assignments: AgentAppearanceSyncEntry[],
+  ): Promise<boolean> {
     const relay = this.companies.get(companyId);
-    if (!relay) return { ok: false, error: "RELAY_NOT_CONFIGURED" };
-    const response = await fetch(`${relay.config.pixelAgentsUrl}/api/visual-settings`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(relay.config.pixelAgentsToken
-          ? { authorization: `Bearer ${relay.config.pixelAgentsToken}` }
-          : {}),
-      },
-      body: JSON.stringify({ companyId, ...input }),
-    });
-    const payload = await response.json() as unknown;
-    if (!response.ok) throw new Error(`Appearance update failed: ${response.status}`);
-    return payload;
+    if (!relay) return false;
+    try {
+      const fetchLike = rawFetch();
+      const res = await fetchLike(`${relay.config.pixelAgentsUrl}/api/appearance-sync`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(relay.config.pixelAgentsToken
+            ? { authorization: `Bearer ${relay.config.pixelAgentsToken}` }
+            : {}),
+        },
+        body: JSON.stringify({ companyId, assignments }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   /** Dispose all company relays (called on shutdown). */

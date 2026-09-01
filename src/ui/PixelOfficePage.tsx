@@ -21,7 +21,7 @@ import { AgentCard } from "./components/agent-card";
 import { AgentDetail } from "./components/agent-detail";
 import { CompanyIntake } from "./components/company-intake";
 import { FeedbackPopup } from "./components/feedback-popup";
-import { CharacterSelector } from "./components/character-selector";
+import { AgentCharacterPicker } from "./components/character-picker";
 import { usePluginData } from "@paperclipai/plugin-sdk/ui";
 import { BRIDGE_DATA_KEYS, type VisualSettingsData } from "./bridge-contract";
 
@@ -128,7 +128,15 @@ function PixelOfficePageInner({ companyId }: { companyId: string }) {
         </section>
       ) : null}
 
-      <CharacterSelector companyId={companyId} agents={snapshot.agents} />
+      <AgentCharacterPicker
+        companyId={companyId}
+        agents={snapshot.agents}
+        visual={visual.data ?? null}
+        visualLoading={visual.loading}
+        visualError={visual.error?.message ?? visual.data?.error ?? null}
+        disabled={stale}
+        onSaved={visual.refresh}
+      />
 
       <section
         data-testid="company-overview"

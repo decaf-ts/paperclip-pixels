@@ -614,6 +614,66 @@ describe("BridgeRelay", () => {
     expect(calls).toHaveLength(0);
   });
 
+  describe("syncAppearances (WS3)", () => {
+    function syncEntries(): Array<{ agentId: string; agentName: string; characterId: string; palette: number; hueShift: number; updatedAt: string }> {
+      return [
+        { agentId: AGENT_A, agentName: "Agent A", characterId: "pixel-agents:char-0", palette: 0, hueShift: 0, updatedAt: ISO },
+        { agentId: AGENT_B, agentName: "Agent B", characterId: "paperclip-pixels:char-6", palette: 6, hueShift: 45, updatedAt: ISO },
+      ];
+    }
+
+    it("pushes the full appearance map to POST /api/appearance-sync and reports success", async () => {
+      const relay = new BridgeRelay(makeCtx().ctx);
+      await relay.configure(COMPANY_ID, { pixelAgentsUrl: "https://pa.example" });
+
+      await expect(relay.syncAppearances(COMPANY_ID, syncEntries())).resolves.toBe(true);
+      expect(calls).toHaveLength(1);
+      const call = calls[0];
+      expect(call.url).toBe("https://pa.example/api/appearance-sync");
+      expect(call.method).toBe("POST");
+      expect(call.headers["content-type"]).toBe("application/json");
+      // No bearer token configured for this relay: no authorization header.
+      expect(call.headers.authorization).toBeUndefined();
+      const body = JSON.parse(call.body);
+      expect(body.companyId).toBe(COMPANY_ID);
+      expect(body.assignments).toEqual(syncEntries());
+    });
+
+    it("sends the configured bearer token when one was resolved from the secret ref", async () => {
+      const { ctx, resolve } = makeCtx(() => "test-token");
+      const relay = new BridgeRelay(ctx);
+      await relay.configure(COMPANY_ID, {
+        pixelAgentsUrl: "https://pa.example",
+        pixelAgentsTokenRef: "ref-token",
+      });
+      expect(resolve).toHaveBeenCalled();
+
+      await expect(relay.syncAppearances(COMPANY_ID, syncEntries())).resolves.toBe(true);
+      expect(calls[0].headers.authorization).toBe("Bearer test-token");
+      resolve.mockRestore();
+    });
+
+    it("returns false (never throws) when the relay is not configured, unreachable, or rejects", async () => {
+      const { ctx } = makeCtx(() => "");
+      const relay = new BridgeRelay(ctx);
+      await relay.configure(COMPANY_ID, { pixelAgentsUrl: "https://pa.example" });
+
+      // Unconfigured company.
+      await expect(relay.syncAppearances("company-ghost", syncEntries())).resolves.toBe(false);
+      expect(calls).toHaveLength(0);
+
+      // Non-2xx relay response.
+      responses.push({ ok: false, status: 400, statusText: "Bad Request" });
+      await expect(relay.syncAppearances(COMPANY_ID, syncEntries())).resolves.toBe(false);
+      expect(calls).toHaveLength(1);
+
+      // Transport failure (unreachable relay) — must never throw on a write.
+      calls = [];
+      responses.push(new Error("connection refused"));
+      await expect(relay.syncAppearances(COMPANY_ID, syncEntries())).resolves.toBe(false);
+    });
+  });
+
   it("a malformed stored URL surfaces as a captured push error, not a crash", async () => {
     // Nit: onValidateConfig rejects non-http(s) URLs, but parseRelayConfig does
     // not re-validate — a malformed stored URL only surfaces later as a

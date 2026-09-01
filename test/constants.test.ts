@@ -49,8 +49,9 @@ describe("constants", () => {
       lastReconciledAt: "last-reconciled-at",
       schemaVersion: "schema-version",
       leadershipAgentId: "leadership-agent-id",
+      agentCharacter: "agent-character",
     });
-    expect(STATE_NAMESPACES).toEqual({ bridge: "bridge" });
+    expect(STATE_NAMESPACES).toEqual({ bridge: "bridge", characters: "characters" });
   });
 
   it("defaults reconciliation to five minutes", () => {

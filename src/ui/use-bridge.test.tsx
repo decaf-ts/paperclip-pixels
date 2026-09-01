@@ -162,6 +162,19 @@ describe("useBridge — polling fallback for hosts where the stream never connec
   // See use-bridge.ts's HOST GAP doc comment: on a Paperclip host that never
   // wires up bridgeDeps.streamBus, stream.connected is permanently false, so
   // this polling loop is the only thing keeping data moving at all.
+  //
+  // The pinned harness React (19.2.8 without the `act` export; the passthrough
+  // shim in jest-setup.ts cannot flush concurrent work synchronously) commits
+  // the initial mount only via the scheduler's MessageChannel macrotask. RTL's
+  // `waitFor` fake-timer loop (@testing-library/dom wait-for.js) only ever
+  // yields microtasks between jest.advanceTimersByTime calls, so with fake
+  // timers installed it can never observe that commit — the initial snapshot
+  // load never lands and the probe stays empty. The probe load is therefore
+  // driven below by pumping real, pre-faked-capture macrotasks (loadProbe)
+  // instead of `waitFor`, which keeps the polling interval itself a fake
+  // timer (installed before render) that jest.advanceTimersByTime can drive.
+  const realSetTimeout = globalThis.setTimeout.bind(globalThis);
+
   beforeEach(() => {
     jest.useFakeTimers();
   });
@@ -170,11 +183,26 @@ describe("useBridge — polling fallback for hosts where the stream never connec
     jest.useRealTimers();
   });
 
+  // Yields real macrotasks through act() until the probe shows `expected`
+  // (typically the initial snapshot load), so the mount commit + mount-effect
+  // re-commit can complete even while timers are faked.
+  async function loadProbe(expected: string): Promise<void> {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      await act(async () => {
+        await new Promise<void>((resolve) => realSetTimeout(resolve, 0));
+      });
+      if (screen.queryByTestId("bp-snap")?.textContent === expected) return;
+    }
+    throw new Error(
+      `probe never rendered "${expected}" while timers were faked; body: ${document.body.innerHTML}`,
+    );
+  }
+
   it("calls refresh() again after REFRESH_INTERVAL_MS even though the stream never connects", async () => {
     const dataResult = makeDataResult({ data: snapshotWithAgent() });
     usePluginDataImpl.mockReturnValue(dataResult);
     render(<BridgeProbe companyId="c1" />);
-    await waitFor(loaded);
+    await loadProbe("loaded");
     expect(screen.getByTestId("bp-conn").textContent).toBe("false");
 
     const callsBefore = (dataResult.refresh as jest.Mock).mock.calls.length;
@@ -188,7 +216,7 @@ describe("useBridge — polling fallback for hosts where the stream never connec
     const dataResult = makeDataResult({ data: snapshotWithAgent() });
     usePluginDataImpl.mockReturnValue(dataResult);
     const { unmount } = render(<BridgeProbe companyId="c1" />);
-    await waitFor(loaded);
+    await loadProbe("loaded");
     unmount();
 
     const callsAtUnmount = (dataResult.refresh as jest.Mock).mock.calls.length;

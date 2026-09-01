@@ -35,6 +35,27 @@ export type { VersionedAgentBehaviorVector } from "./domain/behavior.js";
 
 export type { AgentFeedbackKind, AgentFeedback } from "./domain/feedback.js";
 
+// Per-agent character catalog + assignment selection (spec
+// PAPERCLIP_PIXELS-2, FR-13 / WS3).
+export type {
+  CharacterCatalogEntry,
+  CharacterCatalog,
+  AgentCharacterAssignment,
+  AgentCharacterAssignmentMap,
+} from "./domain/characters.js";
+export {
+  HUE_SHIFT_MAX_DEG,
+  parseCharacterCatalog,
+  findCatalogEntry,
+  isAgentCharacterAssignment,
+  mulberry32,
+  hashAgentSeed,
+  countCharacterUsage,
+  selectDefaultAssignment,
+  ensureAgentAssignments,
+  validateAssignmentInput,
+} from "./domain/characters.js";
+
 // Decoupled input contracts (spec §12).
 export type {
   CompanyInput,

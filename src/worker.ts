@@ -2,6 +2,8 @@ import { definePlugin, runWorker } from "@paperclipai/plugin-sdk";
 import type { PluginContext, PluginEvent } from "@paperclipai/plugin-sdk";
 import {
   BridgeStore,
+  ensureAgentAssignments,
+  type AgentCharacterAssignmentMap,
   type AuthoritativeSnapshotInput,
   type BehaviorChangedEvent,
   type BridgeUiEvent,
@@ -23,13 +25,16 @@ import {
 import { bootstrapAllCompanies, bootstrapSnapshot } from "./snapshot.js";
 import { mapPluginEvent } from "./subscriptions.js";
 import {
+  loadAgentCharacterAssignments,
   loadCompactBuckets,
+  persistAgentCharacterAssignment,
   persistCompactBuckets,
   persistLastReconciledAt,
   persistSchemaVersion,
 } from "./persistence.js";
+import { loadCharacterCatalog } from "./characters.js";
 import { registerActions } from "./actions.js";
-import { BridgeRelay } from "./relay.js";
+import { BridgeRelay, type AgentAppearanceSyncEntry } from "./relay.js";
 
 /**
  * A valid `pixelAgentsTokenRef` is either the shared
@@ -57,6 +62,14 @@ interface CompanyRuntime {
   store: BridgeStore;
   companyId: string;
   leadershipAgentId?: string;
+  /**
+   * Per-agent character assignments (WS3, frozen contract — see
+   * `core/domain/characters.ts`). Materialized from plugin `ctx.state` agent
+   * scope plus diverse-random defaults for agents that have none.
+   */
+  characterAssignments: AgentCharacterAssignmentMap;
+  /** Display names by agent id, for resolving relay appearance pushes. */
+  agentNames: Record<string, string>;
 }
 
 /**
@@ -104,7 +117,12 @@ class BridgeRuntime {
   getOrCreateCompany(companyId: string): CompanyRuntime {
     let rt = this.companies.get(companyId);
     if (!rt) {
-      rt = { store: new BridgeStore(), companyId };
+      rt = {
+        store: new BridgeStore(),
+        companyId,
+        characterAssignments: {},
+        agentNames: {},
+      };
       this.companies.set(companyId, rt);
     }
     return rt;
@@ -222,6 +240,52 @@ function trackActiveRunsFromSnapshot(
   }
 }
 
+/**
+ * Materialize the company's per-agent character assignments (WS3, spec
+ * PAPERCLIP_PIXELS-2 FR-13) from plugin `ctx.state` agent scope, filling
+ * diverse-random defaults for every agent that has no assignment yet (CEO
+ * decision 4: random among the least-used characters, hue-shifted on reuse —
+ * see `selectDefaultAssignment`). Defaults are persisted immediately so the
+ * map round-trips through `ctx.state` and survives plugin restart.
+ *
+ * @returns The ids of agents that received a fresh default assignment.
+ */
+async function ensureCompanyCharacters(
+  ctx: PluginContext,
+  rt: CompanyRuntime,
+  snapshot: AuthoritativeSnapshotInput,
+): Promise<string[]> {
+  const { catalog } = loadCharacterCatalog();
+  const agentIds = snapshot.agents.map((agent) => agent.id);
+  for (const agent of snapshot.agents) {
+    rt.agentNames[agent.id] = agent.name;
+  }
+  const persisted = await loadAgentCharacterAssignments(ctx, agentIds);
+  const { map, created } = ensureAgentAssignments(
+    catalog,
+    persisted,
+    agentIds,
+    new Date().toISOString(),
+  );
+  rt.characterAssignments = map;
+  for (const agentId of created) {
+    await persistAgentCharacterAssignment(ctx, agentId, map[agentId]);
+  }
+  return created;
+}
+
+/** Resolve the runtime assignment map into relay push entries. */
+function resolvedAppearances(rt: CompanyRuntime): AgentAppearanceSyncEntry[] {
+  return Object.entries(rt.characterAssignments).map(([agentId, assignment]) => ({
+    agentId,
+    agentName: rt.agentNames[agentId] ?? agentId,
+    characterId: assignment.characterId,
+    palette: assignment.palette,
+    hueShift: assignment.hueShift,
+    updatedAt: assignment.updatedAt,
+  }));
+}
+
 async function setupCompany(ctx: PluginContext, runtime: BridgeRuntime, companyId: string, relay: BridgeRelay): Promise<CompanyRuntime> {
   const restoredBuckets = await loadCompactBuckets(ctx, companyId);
   const rt = runtime.getOrCreateCompany(companyId);
@@ -246,6 +310,18 @@ async function setupCompany(ctx: PluginContext, runtime: BridgeRuntime, companyI
 
   runtime.emitBridgeEvent(companyId, "bridge.snapshot.loaded", buildCompanySnapshot(rt));
 
+  // Materialize per-agent character assignments (persisting fresh defaults)
+  // before the relay is configured so the appearance push right below
+  // carries the full map.
+  try {
+    await ensureCompanyCharacters(ctx, rt, result.snapshot);
+  } catch (err) {
+    ctx.logger.warn("Character assignment materialization failed for company", {
+      companyId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   // Configure this company's bridge relay from its operator plugin config and
   // seed it with the authoritative snapshot (spawns a character per agent).
   try {
@@ -253,6 +329,14 @@ async function setupCompany(ctx: PluginContext, runtime: BridgeRuntime, companyI
     await relay.configure(companyId, companyConfig);
     relay.ingestSnapshot(companyId, result.snapshot);
     trackActiveRunsFromSnapshot(relay, companyId, result.snapshot);
+    // Push the per-agent appearance map so the relay applier seats every
+    // agent with its assigned character. Best-effort: the relay is the
+    // applier, never the source of truth — a failed push is re-applied by
+    // the next reconcile or write.
+    const synced = await relay.syncAppearances(companyId, resolvedAppearances(rt));
+    if (!synced) {
+      ctx.logger.debug("Appearance sync push skipped or failed for company", { companyId });
+    }
   } catch (err) {
     ctx.logger.warn("Bridge relay setup failed for company", {
       companyId,
@@ -280,6 +364,17 @@ async function reconcileCompany(ctx: PluginContext, runtime: BridgeRuntime, comp
     const result = await bootstrapSnapshot(ctx, companyId);
     const recon = rt.store.reconcile(result.snapshot);
     await persistLastReconciledAt(ctx, companyId, result.snapshot.observedAt);
+    // Fill diverse-random defaults for agents that appeared since the last
+    // reconcile, then re-push the appearance map when anything changed (or
+    // always on the periodic full resync below, which rebuilds the relay
+    // applier's state).
+    const createdAssignments = await ensureCompanyCharacters(ctx, rt, result.snapshot);
+    if (createdAssignments.length > 0) {
+      await relay.syncAppearances(companyId, resolvedAppearances(rt));
+      runtime.emitBridgeEvent(companyId, "bridge.appearance.changed", {
+        created: createdAssignments,
+      });
+    }
     if (recon.changedEntities.length > 0) {
       runtime.emitBridgeEvent(companyId, "bridge.reconciliation.changed", {
         changedEntities: recon.changedEntities,
@@ -418,7 +513,11 @@ const plugin = definePlugin({
       const shouldResync = reconciliationTickCount % RESYNC_EVERY_N_RECONCILES === 0;
       for (const companyId of localRuntime.companies.keys()) {
         if (shouldResync) {
-          await localRelay.resyncCompany(companyId);
+          const rtForResync = localRuntime.getCompany(companyId);
+          await localRelay.resyncCompany(
+            companyId,
+            rtForResync ? resolvedAppearances(rtForResync) : undefined,
+          );
         }
         await reconcileCompany(ctx, localRuntime, companyId, localRelay);
       }
@@ -500,15 +599,28 @@ const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime 
       return rt.store.getOutstandingFeedback(companyId);
     });
 
+    // WS3: visual settings are served from the plugin's own state + package
+    // catalog — the worker no longer proxies the relay's HTTP surface for
+    // them. The relay is only an applier of the assignments pushed to it
+    // (`syncAppearances`); `ctx.state` agent scope is the single source of
+    // truth and survives plugin restart.
     ctx.data.register(DATA_KEYS.visualSettings, async (params) => {
       const companyId = String(params.companyId ?? "");
       const rt = await getOrBootstrapCompany(companyId);
-      if (!rt) return { schemaVersion: BRIDGE_SCHEMA_VERSION, error: "company-not-found" };
+      if (!rt) return { schemaVersion: 1, error: "company-not-found" };
       try {
-        return await localRelay.getVisualSettings(companyId);
+        const { entries } = loadCharacterCatalog();
+        return {
+          schemaVersion: 1,
+          configured: localRelay.isConfigured(companyId),
+          pixelAgentsUiUrl: localRelay.getPixelAgentsUiUrl(companyId),
+          characters: entries,
+          // FROZEN contract: agentId -> { characterId, palette, hueShift, updatedAt }.
+          assignments: rt.characterAssignments,
+        };
       } catch (err) {
         return {
-          schemaVersion: BRIDGE_SCHEMA_VERSION,
+          schemaVersion: 1,
           configured: localRelay.isConfigured(companyId),
           characters: [],
           assignments: {},
@@ -524,7 +636,30 @@ const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime 
       // getFeedbackById. The worker never held a parallel feedback map.
       getFeedback: (cid, fid) => localRuntime.getCompany(cid)?.store.getFeedbackById(cid, fid),
       getLeadershipAgentId: (cid) => localRuntime.getCompany(cid)?.leadershipAgentId,
-      setAgentAppearance: (cid, input) => localRelay.setAgentAppearance(cid, input),
+      // WS3: persist the assignment to ctx.state agent scope (the single
+      // source of truth), update the runtime map, then push the company's
+      // appearance map to the relay applier. The write succeeds even when
+      // the relay push fails — `applied` reports the push outcome and the
+      // next reconcile/write re-applies it.
+      applyAgentCharacterAssignment: async (cid, input) => {
+        await persistAgentCharacterAssignment(ctx, input.agentId, input.assignment);
+        const rt = localRuntime.getCompany(cid);
+        if (rt) {
+          rt.characterAssignments[input.agentId] = input.assignment;
+          rt.agentNames[input.agentId] = input.agentName;
+        }
+        const entries: AgentAppearanceSyncEntry[] = rt
+          ? resolvedAppearances(rt)
+          : [{ agentId: input.agentId, agentName: input.agentName, ...input.assignment }];
+        const applied = await localRelay.syncAppearances(cid, entries);
+        if (!applied) {
+          ctx.logger.warn("Appearance persisted but relay sync push failed", {
+            companyId: cid,
+            agentId: input.agentId,
+          });
+        }
+        return { ok: true, assignment: input.assignment, applied };
+      },
     });
 
     localRuntime.startTimers();
@@ -557,7 +692,13 @@ const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime 
       // EventMapper) but never re-ingests a snapshot on its own — see
       // resyncCompany's doc comment in relay.ts for the live-event race this
       // closes. A no-op when the reconfigure left the company disabled.
-      await relay?.resyncCompany(companyId);
+      // Re-push the per-agent appearance map along with the resync so a
+      // rebuilt relay applier immediately seats everyone correctly.
+      const rtForResync = runtime?.getCompany(companyId);
+      await relay?.resyncCompany(
+        companyId,
+        rtForResync ? resolvedAppearances(rtForResync) : undefined,
+      );
     } catch (err) {
       // Best-effort: a config change must never crash the worker.
       const msg = err instanceof Error ? err.message : String(err);
