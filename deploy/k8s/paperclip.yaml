@@ -70,6 +70,14 @@ spec:
               value: "private"
             - name: PAPERCLIP_PUBLIC_URL
               value: "http://localhost:3100"
+            # The pixel-agents pod reaches the API at its in-cluster Service
+            # DNS name (PAPERCLIP_PIXEL_API_BASE_URL in pixel-agents.yaml —
+            # the click-menu reply forwarder's target). The host allowlist
+            # rejects unknown Host headers with 403, so the Service DNS name
+            # must be explicitly allowed (additive with the PUBLIC_URL
+            # hostname).
+            - name: PAPERCLIP_ALLOWED_HOSTNAMES
+              value: "paperclip.paperclip-pixels.svc.cluster.local"
             - name: PAPERCLIP_HOME
               value: "/paperclip"
             - name: PAPERCLIP_INSTANCE_ID

@@ -1,39 +1,40 @@
 /**
- * In-plugin bridge relay (spec PAPERCLIP_PIXELS-2, §2, §21).
+ * In-plugin bridge relay (spec PAPERCLIP_PIXELS-2, §2, §21, WS2-C).
  *
- * Connects the canonical bridge contract produced by this worker to a Pixel
- * Agents server's real, unmodified hook endpoint (`POST /api/hooks/claude`).
- * The relay owns one {@link BridgeTransport} per company, fed the same
- * canonical `BridgeInputEvent`s the worker already applies to its
- * `BridgeStore` and the same authoritative snapshots it bootstraps/reconciles
- * from. Each transport maps events into Pixel Agents `AgentEvent`s (plus the
- * rich sidecar) and pushes them through an {@link HttpPushSink}, which
- * serializes them into the real Claude hook JSON body Pixel Agents' single
- * shipped provider (`claudeProvider`) already accepts unmodified — see
- * `@paperclip-pixel/pixel-agents-provider`'s `transport.ts` for the full wire
- * boundary rationale. No Pixel Agents source change is required.
+ * Feeds the canonical bridge contract produced by this worker to the
+ * Paperclip plugin's embedding surface inside Pixel Agents — the first-class
+ * WS2-C path. The relay owns one {@link PluginFeedMapper} + one
+ * {@link PluginFeedHttpSink} per company: the mapper translates canonical
+ * `BridgeInputEvent`s and authoritative snapshots into plugin feed operations
+ * (thin wrappers around the WS2-A1 agent/team data source), and the sink POSTs
+ * them to the embedding surface's `POST /api/plugin-feed` endpoint, where they
+ * are applied through the registered plugin's sanctioned
+ * `declareAgents`/`updateAgentStatus`/`updateAgentActivity`/`removeAgents`
+ * source. The retired impersonation path — serializing events into the Claude
+ * hook JSON body and POSTing them to `/api/hooks/claude` — is gone; so is the
+ * `saveAgentSeats` seat-driving push (seat assignments ride `declareAgents`).
  *
  * Configuration is operator-set, company-scoped plugin config (the worker env
  * is scrubbed by the host, so env vars are not available here). Config fields:
- *   - `pixelAgentsUrl`         — base URL of the running `paperclip-pixel-relay`
- *                                companion CLI (never Pixel Agents directly —
- *                                see `bin/paperclip-pixel-relay.js`). Must be
- *                                `https:` when a token is configured. Defaults
- *                                to `http://127.0.0.1:8081` (the relay's own
+ *   - `pixelAgentsUrl`         — base URL of the embedding surface serving
+ *                                `POST /api/plugin-feed` (the companion
+ *                                sidecar that owns the Pixel Agents server
+ *                                process; historically the relay CLI's own
+ *                                default bind). Must be `https:` when a token
+ *                                is configured. Defaults to
+ *                                `http://127.0.0.1:8081` (the companion's
  *                                default bind, for the common same-machine
  *                                case) when unset — any topology where they
  *                                run on separate hosts/pods MUST set this
  *                                explicitly, fully overridable per company.
  *   - `pixelAgentsTokenRef`    — secret reference resolving to a bearer token
- *                                sent to the relay (optional; never stored as
- *                                a plaintext value). Only relevant if the
- *                                relay was started with `--shared-secret` —
- *                                Pixel Agents' own token never touches
- *                                Paperclip, the relay handles that itself.
- *   - `pixelAgentsProviderId`  — provider id in the hook path (default
- *                                `claude`, the only id Pixel Agents' route
- *                                currently dispatches on)
+ *                                sent with each feed push (optional; never
+ *                                stored as a plaintext value).
  *   - `pixelAgentsRelayEnabled`— explicit on/off (default on)
+ *   - `paperclipApiBaseUrl` / `paperclipApiTokenRef` — the Paperclip API the
+ *                                tool-activity poller reads run logs from
+ *                                (and the reply forwarder routes click-menu
+ *                                replies through, on the embedding side).
  */
 
 import type { EnvSecretRefBinding, PluginContext } from "@paperclipai/plugin-sdk";
@@ -42,22 +43,20 @@ import type {
   BridgeInputEvent,
 } from "./core/index.js";
 import {
-  BridgeTransport,
-  HttpPushSink,
-  CLAUDE_WIRE_PROVIDER_ID,
-  type FetchLike,
-} from "./pixel-agents-provider/index.js";
+  PluginFeedHttpSink,
+  PluginFeedMapper,
+  type FeedAppearanceEntry,
+  type FeedFetchLike,
+} from "./pixel-agents-plugin/index.js";
 import { bootstrapSnapshot } from "./snapshot.js";
 import { ToolActivityPoller, type LogFetchLike } from "./tool-activity-poller.js";
 
 /**
- * Generic-package default: `paperclip-pixel-relay` binds `127.0.0.1:8081` by
- * default too (see the CLI's own `--host` default), so this matches the most
- * common "try it out" topology — Paperclip, the relay, and Pixel Agents all
- * on one machine. Any deployment where they live on separate hosts/pods
- * (e.g. this repo's own `deploy/k8s/`, where the relay runs in the Pixel
- * Agents pod, not the Paperclip one) MUST set `pixelAgentsUrl` explicitly —
- * fully overridable per company.
+ * Generic-package default: the companion sidecar binds `127.0.0.1:8081` by
+ * default too, so this matches the most common "try it out" topology —
+ * Paperclip, the companion, and Pixel Agents all on one machine. Any
+ * deployment where they live on separate hosts/pods (e.g. this repo's own
+ * `deploy/k8s/`) MUST set `pixelAgentsUrl` explicitly — fully overridable.
  */
 export const DEFAULT_PIXEL_AGENTS_URL = "http://127.0.0.1:8081";
 
@@ -72,11 +71,13 @@ export const DEFAULT_PIXEL_AGENTS_URL = "http://127.0.0.1:8081";
 export const DEFAULT_PAPERCLIP_API_BASE_URL = "http://127.0.0.1:3100";
 
 /**
- * One agent's fully-resolved appearance, as pushed to the relay for
+ * One agent's fully-resolved appearance, as handed to the relay for
  * application in Pixel Agents. Carries the frozen per-agent assignment
  * record (see `core/domain/characters.ts`) plus the agent's display name —
- * the relay needs the name to find the agent's Pixel Agents seat, but the
- * name is deliberately NOT part of the persisted assignment contract.
+ * the relay needs the name for the declaration's office label, but the name
+ * is deliberately NOT part of the persisted assignment contract. Applied
+ * through the sanctioned seat path (`declareAgents` palette/hueShift), never
+ * `saveAgentSeats`.
  */
 export interface AgentAppearanceSyncEntry {
   agentId: string;
@@ -88,28 +89,27 @@ export interface AgentAppearanceSyncEntry {
 }
 
 /** Resolved per-company relay configuration. */
-export interface RelayCompanyConfig {  enabled: boolean;
+export interface RelayCompanyConfig {
+  enabled: boolean;
   pixelAgentsUrl: string;
   pixelAgentsUiUrl: string;
   /** Resolved bearer token (never the persisted ref). */
   pixelAgentsToken?: string;
-  providerId: string;
   /** Base URL for the tool-activity poller's Paperclip API calls. */
   paperclipApiBaseUrl: string;
   /** Resolved bearer token for the tool-activity poller, if configured (never the persisted ref). */
   paperclipApiToken?: string;
 }
 
-/** Company-scoped runtime state: a transport plus its underlying push sink. */
+/** Company-scoped runtime state: a feed mapper plus its underlying push sink. */
 interface CompanyRelay {
-  transport: BridgeTransport;
-  sink: HttpPushSink;
+  mapper: PluginFeedMapper;
+  sink: PluginFeedHttpSink;
   config: RelayCompanyConfig;
   /** Present only when paperclipApiTokenRef resolved to a token (see configure()). */
   toolActivityPoller?: ToolActivityPoller;
 }
 
-/** Names of the operator-config fields the relay reads. */
 /**
  * Names of the operator-config fields that the relay reads from plugin config.
  * These are the same fields defined in `relayConfigSchema` and validated in
@@ -119,7 +119,6 @@ export const RELAY_CONFIG_FIELDS = [
   "pixelAgentsUrl",
   "pixelAgentsUiUrl",
   "pixelAgentsTokenRef",
-  "pixelAgentsProviderId",
   "pixelAgentsRelayEnabled",
   "paperclipApiBaseUrl",
   "paperclipApiTokenRef",
@@ -172,23 +171,20 @@ export function parseRelayConfig(
   const url = configuredUrl.length > 0 ? configuredUrl : DEFAULT_PIXEL_AGENTS_URL;
   const explicitEnabled = raw.pixelAgentsRelayEnabled;
   const enabled = explicitEnabled !== false;
-  const providerId = typeof raw.pixelAgentsProviderId === "string" && raw.pixelAgentsProviderId.trim().length > 0
-    ? raw.pixelAgentsProviderId.trim()
-    : CLAUDE_WIRE_PROVIDER_ID;
   const pixelAgentsUiUrl = typeof raw.pixelAgentsUiUrl === "string" && raw.pixelAgentsUiUrl.trim().length > 0
     ? raw.pixelAgentsUiUrl.trim()
     : "http://localhost:8090";
   const configuredApiUrl = typeof raw.paperclipApiBaseUrl === "string" ? raw.paperclipApiBaseUrl.trim() : "";
   const paperclipApiBaseUrl = configuredApiUrl.length > 0 ? configuredApiUrl : DEFAULT_PAPERCLIP_API_BASE_URL;
-  return { enabled, pixelAgentsUrl: url, pixelAgentsUiUrl, providerId, paperclipApiBaseUrl };
+  return { enabled, pixelAgentsUrl: url, pixelAgentsUiUrl, paperclipApiBaseUrl };
 }
 
 /**
  * Extract the operator-bound secret reference for the tool-activity poller's
  * Paperclip API token, if any. Mirrors {@link extractTokenRef} exactly; kept
  * separate because the two tokens authenticate against different servers
- * (Pixel Agents' relay vs. Paperclip's own API) and an operator may configure
- * either without the other.
+ * (the Pixel Agents companion vs. Paperclip's own API) and an operator may
+ * configure either without the other.
  */
 export function extractApiTokenRef(
   raw: Record<string, unknown>,
@@ -210,7 +206,7 @@ export function extractApiTokenRef(
 }
 
 /**
- * `LogFetchLike` companion to `rawFetch()` above (same DELIBERATE
+ * `LogFetchLike` companion to `rawFetch()` below (same DELIBERATE
  * ctx.http.fetch bypass, same trust-boundary reasoning: this is a call to
  * Paperclip's own API on the same operator's infrastructure, not a
  * multi-tenant destination `ctx.http.fetch`'s SSRF filter needs to protect
@@ -241,18 +237,16 @@ function rawLogFetch(): LogFetchLike {
  * unconditionally on every call; the private-IP check is a single hard-coded
  * function with no configurability at all.
  *
- * That makes `ctx.http.fetch` categorically unable to reach
- * `paperclip-pixel-relay` in every topology this package documents —
- * including its own advertised default (`http://127.0.0.1:8081`; loopback is
- * on the blocklist) and this repo's own multi-container/k8s deployments
- * (Compose/Kubernetes DNS always resolves to private-range addresses). This
- * is not a deployment misconfiguration and there is no configuration fix for
- * it: upstream Paperclip would need to add an allowlist mechanism, which does
- * not exist as of this host version. Confirmed live: every push attempt
- * through `ctx.http.fetch` failed with
- * `"All resolved IPs for <host> are in private/reserved ranges"`, and no
- * character ever appeared in Pixel Agents for real Paperclip agent activity
- * as a result.
+ * That makes `ctx.http.fetch` categorically unable to reach the companion
+ * sidecar in every topology this package documents — including its own
+ * advertised default (`http://127.0.0.1:8081`; loopback is on the blocklist)
+ * and this repo's own multi-container/k8s deployments (Compose/Kubernetes DNS
+ * always resolves to private-range addresses). This is not a deployment
+ * misconfiguration and there is no configuration fix for it: upstream
+ * Paperclip would need to add an allowlist mechanism, which does not exist as
+ * of this host version. Confirmed live: every push attempt through
+ * `ctx.http.fetch` failed with
+ * `"All resolved IPs for <host> are in private/reserved ranges"`.
  *
  * What using the Node global `fetch` here instead of `ctx.http.fetch` gives
  * up, specifically:
@@ -263,33 +257,33 @@ function rawLogFetch(): LogFetchLike {
  *     An admin inspecting this plugin's network activity through Paperclip's
  *     own logs/UI would see nothing for these pushes.
  *   - The host's SSRF backstop for this one code path. If `pixelAgentsUrl`
- *     were ever set to something other than the intended relay, there is no
- *     longer a host-level check stopping the request from going out.
+ *     were ever set to something other than the intended companion, there is
+ *     no longer a host-level check stopping the request from going out.
  *
  * Why this is an acceptable, narrow tradeoff here and not a general escape
  * hatch: `pixelAgentsUrl` is operator-set, company-scoped plugin config —
  * settable only by a board/instance admin, the exact same trust boundary that
  * already controls this plugin's installation and configuration. This is a
- * same-operator sidecar link (the relay that operator deployed alongside
- * Paperclip), never a destination influenced by event payloads, agent
- * output, or any other less-trusted input. The multi-tenant "protect the
- * platform from someone else's plugin" threat model `ctx.http.fetch`'s SSRF
- * filter defends against does not apply to a company bridging its own
- * infrastructure to itself.
+ * same-operator sidecar link (the companion that operator deployed alongside
+ * Paperclip), never a destination influenced by event payloads, agent output,
+ * or any other less-trusted input. The multi-tenant "protect the platform
+ * from someone else's plugin" threat model `ctx.http.fetch`'s SSRF filter
+ * defends against does not apply to a company bridging its own infrastructure
+ * to itself.
  *
- * Scope discipline: `rawFetch` is used ONLY to construct the `HttpPushSink`
+ * Scope discipline: `rawFetch` is used ONLY to construct the plugin feed sink
  * for `config.pixelAgentsUrl` below. Do not reuse it for any other outbound
  * call in this codebase without re-reading this comment block and updating
  * it to cover the new call site's trust reasoning.
  * ============================================================================
  */
-function rawFetch(): FetchLike {
+function rawFetch(): FeedFetchLike {
   return async (url, init) => {
     const parsed = new URL(url);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       // Keep the one part of ctx.http.fetch's validation that costs nothing
       // to retain even outside the host's gate.
-      throw new Error(`Refusing non-http(s) protocol for relay push: ${parsed.protocol}`);
+      throw new Error(`Refusing non-http(s) protocol for feed push: ${parsed.protocol}`);
     }
     const res = await fetch(url, {
       method: init.method,
@@ -297,6 +291,16 @@ function rawFetch(): FetchLike {
       body: init.body,
     });
     return { ok: res.ok, status: res.status, statusText: res.statusText };
+  };
+}
+
+/** Convert a resolved appearance entry to the feed mapper's entry shape. */
+function toFeedAppearance(entry: AgentAppearanceSyncEntry): FeedAppearanceEntry {
+  return {
+    agentId: entry.agentId,
+    agentName: entry.agentName,
+    palette: entry.palette,
+    hueShift: entry.hueShift,
   };
 }
 
@@ -321,9 +325,9 @@ export class BridgeRelay {
 
   /**
    * (Re)configure the relay for a specific company based on raw operator config.
-   * If a transport already exists for the company it is disposed before the new
-   * configuration is applied. When the resulting config is disabled the relay is
-   * not created and a log entry is emitted.
+   * If a mapper+sink pair already exists for the company it is disposed before
+   * the new configuration is applied. When the resulting config is disabled the
+   * relay is not created and a log entry is emitted.
    *
    * The bearer token is resolved from the operator-bound `pixelAgentsTokenRef`
    * secret reference via `ctx.secrets.resolve` (requires `secrets.read-ref`).
@@ -339,7 +343,7 @@ export class BridgeRelay {
     const config = parseRelayConfig(raw);
     const existing = this.companies.get(companyId);
     if (!config.enabled) {
-      existing?.transport.dispose();
+      existing?.sink.dispose();
       existing?.toolActivityPoller?.stop();
       this.companies.delete(companyId);
       this.ctx.logger.info("Bridge relay disabled for company", { companyId });
@@ -354,7 +358,7 @@ export class BridgeRelay {
           configPath: "pixelAgentsTokenRef",
         });
       } catch (err) {
-        existing?.transport.dispose();
+        existing?.sink.dispose();
         existing?.toolActivityPoller?.stop();
         this.companies.delete(companyId);
         this.ctx.logger.warn("Bridge relay token resolution failed; relay disabled for company", {
@@ -366,8 +370,8 @@ export class BridgeRelay {
     }
     // Unlike pixelAgentsTokenRef above, a resolution failure here disables
     // only the tool-activity poller (an additive enhancement), never the
-    // core relay -- names, rooms, and busy/idle status keep working with the
-    // synthetic "PaperclipWork" label exactly as before this feature existed.
+    // core relay -- names, rooms, and busy/idle status keep working exactly
+    // as before this feature existed.
     let apiToken: string | undefined;
     const apiTokenRef = extractApiTokenRef(raw);
     if (apiTokenRef) {
@@ -398,7 +402,7 @@ export class BridgeRelay {
     // if the host's own record of this plugin's manifest does not declare
     // `http.outbound` — never push regardless of `pixelAgentsUrl`.
     if (!this.ctx.manifest.capabilities.includes("http.outbound")) {
-      existing?.transport.dispose();
+      existing?.sink.dispose();
       this.companies.delete(companyId);
       this.ctx.logger.warn(
         "Bridge relay disabled for company: host-validated manifest does not declare http.outbound",
@@ -411,7 +415,6 @@ export class BridgeRelay {
       && existing.config.enabled === config.enabled
       && existing.config.pixelAgentsUrl === config.pixelAgentsUrl
       && existing.config.pixelAgentsUiUrl === config.pixelAgentsUiUrl
-      && existing.config.providerId === config.providerId
       && existing.config.pixelAgentsToken === authToken
       && existing.config.paperclipApiBaseUrl === config.paperclipApiBaseUrl
       && existing.config.paperclipApiToken === apiToken
@@ -419,13 +422,12 @@ export class BridgeRelay {
       this.ctx.logger.debug("Bridge relay config unchanged for company", { companyId });
       return;
     }
-    existing?.transport.dispose();
+    existing?.sink.dispose();
     existing?.toolActivityPoller?.stop();
     this.companies.delete(companyId);
-    const sink = new HttpPushSink({
+    const sink = new PluginFeedHttpSink({
       baseUrl: config.pixelAgentsUrl,
       authToken,
-      providerId: config.providerId,
       // See rawFetch()'s doc comment above: ctx.http.fetch cannot reach this
       // operator-configured, same-operator sidecar destination (the host's
       // private-IP SSRF block has no override). Deliberate, narrowly-scoped
@@ -434,14 +436,25 @@ export class BridgeRelay {
       // per-call enforcement, re-done here since rawFetch never asks the host.
       fetch: rawFetch(),
     });
-    const transport = new BridgeTransport({ agentEventSink: sink });
-    let toolActivityPoller: ToolActivityPoller | undefined;
+    const mapper = new PluginFeedMapper();
+    const entry: CompanyRelay = {
+      mapper,
+      sink,
+      config: { ...config, pixelAgentsToken: authToken, paperclipApiToken: apiToken },
+    };
     if (apiToken) {
-      toolActivityPoller = new ToolActivityPoller({
+      const toolActivityPoller = new ToolActivityPoller({
         apiBaseUrl: config.paperclipApiBaseUrl,
         apiToken,
         fetch: rawLogFetch(),
-        sink,
+        sink: {
+          reportToolActivity: (cid, agentId, caption) => {
+            // Map the real tool description onto the agent's caption through
+            // the feed (sanctioned updateAgentActivity), replacing the
+            // generic run caption for that agent.
+            void entry.sink.push(cid, entry.mapper.mapToolActivity(agentId, caption));
+          },
+        },
         onError: (runId, err) => {
           this.ctx.logger.debug("Tool-activity poll failed", {
             companyId,
@@ -451,25 +464,20 @@ export class BridgeRelay {
         },
       });
       toolActivityPoller.start(TOOL_ACTIVITY_POLL_INTERVAL_MS);
+      entry.toolActivityPoller = toolActivityPoller;
     }
-    this.companies.set(companyId, {
-      transport,
-      sink,
-      config: { ...config, pixelAgentsToken: authToken, paperclipApiToken: apiToken },
-      toolActivityPoller,
-    });
+    this.companies.set(companyId, entry);
     this.ctx.logger.info("Bridge relay configured for company", {
       companyId,
       pixelAgentsUrl: config.pixelAgentsUrl,
-      providerId: config.providerId,
-      toolActivityPollingEnabled: !!toolActivityPoller,
+      toolActivityPollingEnabled: !!entry.toolActivityPoller,
     });
   }
 
   /**
    * Begin tracking a run for the tool-activity poller (a real tool call
-   * detected in its raw log is forwarded as a toolStart event, replacing the
-   * synthetic "PaperclipWork" placeholder for that agent). A no-op when the
+   * detected in its raw log becomes the agent's activity caption, replacing
+   * the generic "Task: …" run caption for that agent). A no-op when the
    * company has no poller configured (no paperclipApiTokenRef resolved).
    */
   trackActiveRun(companyId: string, agentId: string, runId: string): void {
@@ -482,44 +490,33 @@ export class BridgeRelay {
   }
 
   /**
-   * Force a full re-sync for a company: clears the transport's event-mapper
-   * session state (so every agent is treated as never-before-seen again) and
-   * immediately re-ingests a freshly bootstrapped snapshot.
+   * Force a full re-sync for a company: clears the feed mapper's state (so
+   * every agent is treated as never-before-declared again) and immediately
+   * re-ingests a freshly bootstrapped snapshot.
    *
-   * Exists to close two related gaps, both confirmed live 2026-08-31:
+   * Exists for the same two gaps the retired transport had, both confirmed
+   * live 2026-08-31:
    *
-   * 1. `configure()` rebuilding the transport (e.g. on an operator config
+   * 1. `configure()` rebuilding the mapper/sink (e.g. on an operator config
    *    change, or a disable/re-enable cycle) does NOT itself re-ingest a
    *    snapshot — that only happens in `setupCompany`'s one-time initial call
-   *    or the next scheduled `bridge-reconcile` job (every 5 min, per
-   *    `JOB_KEYS.reconciliation`'s cadence). In that window, any *live* event
-   *    for an already-active agent can reach the fresh, name-cache-cold
-   *    `EventMapper` before a snapshot ever does, and `spawnIfUnseen`'s
-   *    documented fallback (event-mapper.ts) then permanently labels that
-   *    agent with its raw id instead of its real name for the transport's
-   *    lifetime. Calling this right after a reconfigure closes that window.
-   * 2. `EventMapper.mapSnapshot`/`mapEvent` mark an agent's session `seen`
-   *    optimistically, before knowing whether the mapped `sessionStart` push
-   *    actually reached Pixel Agents (`HttpPushSink.emit` is fire-and-forget;
-   *    a transient failure is recorded in `lastPushError` but never retried).
-   *    A single bad push during that initial burst — confirmed live during a
-   *    concurrent container restart — permanently strands the agent:
-   *    `mapSnapshot`'s "already seen" branch only ever sends incremental
-   *    `toolStart`/`toolEnd` updates afterward, which Pixel Agents silently
-   *    drops for a session it never actually registered. Resetting the
-   *    mapper here (called periodically from the reconciliation job, see
-   *    worker.ts) re-sends a full `sessionStart` + confirming pair for every
-   *    agent, self-healing within a bounded time instead of never. Re-sending
-   *    for an agent Pixel Agents already knows about is a harmless no-op on
-   *    its side (its session router recognizes an already-resolved session
-   *    and returns early).
+   *    or the next scheduled `bridge-reconcile` job (every 5 min). Calling
+   *    this right after a reconfigure closes that window.
+   * 2. The sink is fire-and-forget (a transient failure is recorded in
+   *    `lastPushError` but never retried), and the mapper diffs against its
+   *    own pushed-state tracking — so a single bad push during the initial
+   *    burst would otherwise strand that agent until the next full resync.
+   *    Resetting the mapper here (called periodically from the reconciliation
+   *    job, see worker.ts) re-declares every agent and re-pushes statuses,
+   *    self-healing within a bounded time. Re-declaring an agent the host
+   *    already knows is an idempotent upsert on its side.
    *
    * A no-op when the company has no configured relay.
    *
    * @param companyId - Identifier of the company to re-sync.
-   * @param appearances - Optional per-agent appearance map to re-push after
-   *   the resync, so a freshly rebuilt relay applier seats everyone without
-   *   waiting for the next explicit write. Skipped when omitted or empty.
+   * @param appearances - Optional per-agent appearance map to re-apply after
+   *   the resync, so a freshly rebuilt embedding surface seats everyone
+   *   without waiting for the next explicit write. Skipped when omitted or empty.
    */
   async resyncCompany(
     companyId: string,
@@ -528,12 +525,11 @@ export class BridgeRelay {
     const entry = this.companies.get(companyId);
     if (!entry) return;
     try {
-      entry.transport.eventMapper.reset();
+      entry.mapper.reset();
       const result = await bootstrapSnapshot(this.ctx, companyId);
-      entry.transport.ingestSnapshot(result.snapshot);
-      // Re-push the per-agent appearance map so a freshly (re)configured
-      // relay applier picks up the current assignments from plugin state
-      // without waiting for the next explicit write.
+      this.ingestSnapshot(companyId, result.snapshot);
+      // Re-apply the per-agent appearance map so a freshly (re)configured
+      // embedding surface immediately seats everyone correctly.
       if (appearances && appearances.length > 0) {
         await this.syncAppearances(companyId, appearances);
       }
@@ -545,54 +541,38 @@ export class BridgeRelay {
     }
   }
 
-  /** Feed an authoritative snapshot (bootstrap / reconciliation). */
   /**
-   * Ingest an authoritative snapshot for the specified company.
-   * The snapshot is passed to the underlying {@link BridgeTransport} which
-   * updates its internal state and propagates any required side‑effects.
+   * Ingest an authoritative snapshot for the specified company: the feed
+   * mapper turns it into (re-)declarations plus status/caption repairs,
+   * pushed through the company's sink if the relay is enabled.
    *
    * @param companyId - The target company identifier.
    * @param snapshot - Snapshot data to ingest.
    */
   ingestSnapshot(companyId: string, snapshot: AuthoritativeSnapshotInput): void {
     const relay = this.companies.get(companyId);
-    if (relay) relay.transport.ingestSnapshot(snapshot);
+    if (relay) void relay.sink.push(companyId, relay.mapper.mapSnapshot(snapshot));
   }
 
-  /** Feed a continuous canonical bridge event. */
   /**
-   * Ingest a single canonical bridge event for the given company.
-   * The event is forwarded to the company's {@link BridgeTransport} which
-   * maps it to a {@link HttpPushSink} payload and pushes it to the Pixel Agents
-   * server if the relay is enabled.
+   * Ingest a single canonical bridge event for the given company: mapped to
+   * plugin feed operations and pushed to the embedding surface if the relay
+   * is enabled.
    *
    * @param companyId - Identifier of the company.
    * @param event - The bridge event to process.
    */
   ingestEvent(companyId: string, event: BridgeInputEvent): void {
     const relay = this.companies.get(companyId);
-    if (relay) relay.transport.ingestEvent(event);
+    if (relay) void relay.sink.push(companyId, relay.mapper.mapEvent(event));
   }
 
   /** Most recent push error for a company, if any (cleared on a successful push). */
-  /**
-   * Retrieve the most recent push error message for a company, if any.
-   * The error is cleared automatically when a successful push occurs.
-   *
-   * @param companyId - Company identifier.
-   * @returns The error string or `undefined` when no error is present.
-   */
   lastPushError(companyId: string): string | undefined {
     return this.companies.get(companyId)?.sink.lastPushError;
   }
 
   /** Whether a relay is configured (enabled) for a company. */
-  /**
-   * Determine whether a relay is currently configured (enabled) for a company.
-   *
-   * @param companyId - Identifier of the company.
-   * @returns `true` if the relay is active; otherwise `false`.
-   */
   isConfigured(companyId: string): boolean {
     return this.companies.has(companyId);
   }
@@ -606,22 +586,18 @@ export class BridgeRelay {
   }
 
   /**
-   * Push the company's complete per-agent appearance map to the relay's
-   * `POST /api/appearance-sync` endpoint (WS3). Plugin `ctx.state` agent
-   * scope is the single source of truth; the relay is a stateless applier
-   * that turns the pushed map into Pixel Agents `saveAgentSeats` messages
-   * (and keeps a write-through cache only so its own restart re-applies
-   * seats without waiting for the next push).
+   * Apply the company's complete per-agent appearance map (WS3) through the
+   * sanctioned seat path: the feed mapper records the map and emits
+   * `declareAgents` upserts carrying each agent's palette/hueShift, which the
+   * WS2-A1 host persists through its own seat adapter — replacing the retired
+   * `saveAgentSeats` seat-driving push. Plugin `ctx.state` agent scope
+   * remains the single source of truth; the embedding surface is a stateless
+   * applier.
    *
-   * Uses the same narrowly-scoped raw `fetch` as the hook push sink — see
-   * `rawFetch()`'s doc comment: the destination is the operator-configured,
-   * same-operator relay sidecar, a boundary `ctx.http.fetch`'s private-IP
-   * SSRF filter categorically cannot reach.
-   *
-   * @returns `true` when the relay accepted the sync; `false` on any failure
-   * (relay not configured for the company, unreachable, or non-2xx — logged
-   * by the caller, never thrown: an appearance write must not fail because
-   * the relay is momentarily down; the next sync re-applies it).
+   * @returns `true` when the company's relay exists and the operations were
+   * enqueued; `false` when the relay is not configured for the company (the
+   * next sync re-applies it — an appearance write must not fail because the
+   * feed is momentarily down).
    */
   async syncAppearances(
     companyId: string,
@@ -629,33 +605,16 @@ export class BridgeRelay {
   ): Promise<boolean> {
     const relay = this.companies.get(companyId);
     if (!relay) return false;
-    try {
-      const fetchLike = rawFetch();
-      const res = await fetchLike(`${relay.config.pixelAgentsUrl}/api/appearance-sync`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(relay.config.pixelAgentsToken
-            ? { authorization: `Bearer ${relay.config.pixelAgentsToken}` }
-            : {}),
-        },
-        body: JSON.stringify({ companyId, assignments }),
-      });
-      return res.ok;
-    } catch {
-      return false;
+    if (assignments.length > 0) {
+      void relay.sink.push(companyId, relay.mapper.setAppearances(assignments.map(toFeedAppearance)));
     }
+    return true;
   }
 
   /** Dispose all company relays (called on shutdown). */
-  /**
-   * Dispose all active company relays and clear internal state.
-   * Called during worker shutdown to ensure all outbound connections are
-   * terminated cleanly.
-   */
   disposeAll(): void {
     for (const relay of this.companies.values()) {
-      relay.transport.dispose();
+      relay.sink.dispose();
       relay.toolActivityPoller?.stop();
     }
     this.companies.clear();

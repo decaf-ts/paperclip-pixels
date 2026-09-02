@@ -290,8 +290,11 @@ describe("worker trust boundary (criterion 8)", () => {
   // bare global fetch. That is no longer true by design. Paperclip's host
   // `ctx.http.fetch` unconditionally rejects any private/reserved-range
   // destination with no override of any kind, which makes it categorically
-  // unable to reach `paperclip-pixel-relay` in any topology this package
-  // documents, including its own advertised `127.0.0.1` default. The relay
+  // unable to reach the plugin feed endpoint's embedding surface (the
+  // in-process module serving POST /api/plugin-feed inside the Pixel Agents
+  // server, successor of the retired `paperclip-pixel-relay` sidecar) in any
+  // topology this package documents, including its own advertised
+  // `127.0.0.1` default. The relay
   // now uses the Node global `fetch` directly for this one, fixed,
   // operator-configured destination, and re-implements the one part of the
   // host's enforcement that still applies (see the next test).
@@ -304,21 +307,14 @@ describe("worker trust boundary (criterion 8)", () => {
 
     expect(rawFetch).toHaveBeenCalled();
     // Every outbound call goes to the operator-configured destination via the
-    // Node global fetch: hook pushes to the hook endpoint, WS3 appearance
-    // pushes to the appearance-sync endpoint (same origin).
+    // Node global fetch: one POST per plugin-feed batch (the snapshot batch
+    // and the appearance-map batch from setupCompany).
     expect(relayFetchCalls.length).toBeGreaterThan(0);
     for (const call of relayFetchCalls) {
-      expect(call.url.startsWith("https://pa.example/")).toBe(true);
+      expect(call.url).toBe("https://pa.example/api/plugin-feed");
       expect(call.method).toBe("POST");
+      expect(call.headers["content-type"]).toBe("application/json");
     }
-    expect(hookCalls().length).toBeGreaterThan(0);
-    for (const call of hookCalls()) {
-      expect(call.url).toBe("https://pa.example/api/hooks/claude");
-    }
-    // Tester tightening: the whole new-call surface is exactly the two relay
-    // kinds (hook pushes + appearance-sync pushes) — no third kind of raw
-    // fetch, so the finer hook assertions above truly cover the whole set.
-    expect(hookCalls().length + appearanceSyncCalls().length).toBe(relayFetchCalls.length);
   });
 
   it("refuses outbound HTTP through the harness when http.outbound is not declared", async () => {
@@ -344,14 +340,14 @@ describe("worker trust boundary (criterion 8)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Relay wiring (SAA-229 coverage gap). The relay mirrors bridge state to a
-// Pixel Agents hook endpoint. As of 2026-08-31 this goes through the Node
-// global `fetch` directly, not the capability-gated `ctx.http.fetch` surface
-// — see src/relay.ts's "DELIBERATE ctx.http.fetch BYPASS" comment and the
-// "worker trust boundary" suite above for why. These tests spy on
-// `globalThis.fetch`, configure the harness's `ctx.config`, and assert on the
-// captured push envelopes end-to-end through `setup`, the event handler, the
-// config lifecycle, health, and shutdown hooks.
+// Relay wiring (SAA-229 coverage gap). The relay mirrors bridge state to the
+// embedding surface's plugin feed. As of 2026-09-01 (WS2-C) every push is one
+// POSTed feed batch (`{ schemaVersion, companyId, operations }`) to
+// `POST /api/plugin-feed` via the Node global `fetch` — see src/relay.ts's
+// "DELIBERATE ctx.http.fetch BYPASS" comment and the "worker trust boundary"
+// suite above. These tests spy on `globalThis.fetch`, configure the harness's
+// `ctx.config`, and assert on the captured feed batches end-to-end through
+// `setup`, the event handler, the config lifecycle, health, and shutdown.
 // ---------------------------------------------------------------------------
 
 let relayFetchCalls: Array<{ url: string; method: string; headers: Record<string, string>; body: string }>;
@@ -377,17 +373,17 @@ function spyRelayFetch(): MockInstance<typeof fetch> {
   );
 }
 
-// WS3: the relay now carries two outbound surfaces to the same
-// operator-configured destination — the original Claude-hook pushes and the
-// per-agent appearance-sync pushes (plugin ctx.state is the source of truth;
-// the relay is the applier). Existing assertions about hook bodies must
-// filter to hook calls only.
-function hookCalls(): typeof relayFetchCalls {
-  return relayFetchCalls.filter((c) => /\/api\/hooks\/[a-z0-9-]+$/.test(c.url));
+/** Parse the captured feed calls into their batch bodies (all of them are feed batches). */
+function feedBatches(): Array<{ schemaVersion: number; companyId: string; operations: Array<Record<string, unknown>> }> {
+  return relayFetchCalls.map((c) => JSON.parse(c.body));
 }
 
-function appearanceSyncCalls(): typeof relayFetchCalls {
-  return relayFetchCalls.filter((c) => c.url.endsWith("/api/appearance-sync"));
+/** All declareAgents declarations across the given batches, flattened. */
+function declaredAgents(batches: ReturnType<typeof feedBatches>): Array<Record<string, unknown>> {
+  return batches
+    .flatMap((b) => b.operations)
+    .filter((op) => op.op === "declareAgents")
+    .flatMap((op) => op.agents as Array<Record<string, unknown>>);
 }
 
 describe("worker relay wiring (SAA-229 coverage gap)", () => {
@@ -397,12 +393,12 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
     return (health as { details?: Record<string, unknown> }).details ?? {};
   }
 
-  it("setupCompany configures the relay from ctx.config and spawns sessionStart + an idle confirmation per agent via ingestSnapshot", async () => {
+  it("setupCompany configures the relay from ctx.config and pushes declare + idle status per agent, then the appearance map", async () => {
     // Both seedStandardWorld() agents are idle (no activeRuns), so each gets
-    // a SessionStart plus an immediate Stop/turnEnd confirmation — without
-    // the second event Pixel Agents never promotes the session past
-    // "pending" and it never renders as a character (see event-mapper.ts's
-    // mapSnapshot doc comment).
+    // a declaration plus an honest waiting status in the snapshot batch —
+    // through the A1 host's sanctioned agent source, so each agent renders
+    // as a character immediately (the retired wire needed a synthetic
+    // SessionStart+Stop pair per idle agent; the feed declares directly).
     const { harness } = seedStandardWorld();
     harness.setConfig({ pixelAgentsUrl: "https://pa.example" });
     spyRelayFetch();
@@ -410,56 +406,48 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
     await flushRelay();
 
     expect(harness.logs.some((l) => l.level === "info" && l.message === "Bridge relay configured for company")).toBe(true);
-    // WS3: setupCompany also pushes the per-agent appearance map (from
-    // ctx.state agent scope) to the relay applier exactly once.
-    const syncCalls = appearanceSyncCalls();
-    expect(syncCalls).toHaveLength(1);
-    expect(syncCalls[0].method).toBe("POST");
-    const syncBody = JSON.parse(syncCalls[0].body);
-    expect(syncBody.assignments.map((a: { agentId: string }) => a.agentId).sort()).toEqual([AGENT_CEO_ID, AGENT_DEV_ID]);
-    for (const assignment of Object.values(syncBody.assignments) as Array<Record<string, unknown>>) {
-      expect(typeof assignment.characterId).toBe("string");
-      expect(Number.isInteger(assignment.palette)).toBe(true);
-      expect(Number.isInteger(assignment.hueShift)).toBe(true);
-      expect(typeof assignment.updatedAt).toBe("string");
-    }
-    const hookPushes = hookCalls();
-    expect(hookPushes).toHaveLength(4);
-    for (const call of hookPushes) {
-      expect(call.url).toBe("https://pa.example/api/hooks/claude");
+
+    // Exactly two feed batches: the snapshot batch (declare + waiting status
+    // per agent), then the appearance batch (declare upserts carrying each
+    // agent's palette/hueShift — the sanctioned seat path, WS3).
+    expect(relayFetchCalls).toHaveLength(2);
+    for (const call of relayFetchCalls) {
+      expect(call.url).toBe("https://pa.example/api/plugin-feed");
       expect(call.method).toBe("POST");
-      expect(call.headers["content-type"]).toBe("application/json");
       expect(call.headers.authorization).toBeUndefined();
-      const body = JSON.parse(call.body);
-      expect(["SessionStart", "Stop"]).toContain(body.hook_event_name);
-      expect(typeof body.session_id).toBe("string");
-      expect(body.session_id.length).toBeGreaterThan(0);
     }
-    const bySession = new Map<string, string[]>();
-    for (const call of hookPushes) {
-      const body = JSON.parse(call.body);
-      const list = bySession.get(body.session_id) ?? [];
-      list.push(body.hook_event_name);
-      bySession.set(body.session_id, list);
+    const batches = feedBatches();
+    for (const batch of batches) {
+      expect(batch.schemaVersion).toBe(1);
+      expect(batch.companyId).toBe(COMPANY_ID);
     }
-    expect([...bySession.keys()].sort()).toEqual([
-      "paperclip-bridge:company-acme:agent-ceo",
-      "paperclip-bridge:company-acme:agent-dev",
-    ]);
-    for (const events of bySession.values()) {
-      expect(events).toEqual(["SessionStart", "Stop"]);
+
+    // Snapshot batch: one declaration + one waiting status per agent.
+    const [snapshotBatch, appearanceBatch] = batches;
+    const snapshotDeclares = declaredAgents([snapshotBatch]);
+    expect(snapshotDeclares.map((a) => a.key).sort()).toEqual([AGENT_CEO_ID, AGENT_DEV_ID]);
+    expect(snapshotDeclares.map((a) => a.name).sort()).toEqual(["CEO Agent", "Dev Agent"]);
+    const snapshotStatuses = snapshotBatch.operations.filter((op) => op.op === "updateAgentStatus");
+    expect(snapshotStatuses).toHaveLength(2);
+    for (const status of snapshotStatuses) {
+      expect(status.status).toBe("waiting");
+      expect(status.awaitingInput).toBe(false);
+      expect([AGENT_CEO_ID, AGENT_DEV_ID]).toContain(status.key);
     }
-    // The friendly display name (fixtures.ts's makeCeoAgent/makeAgent set
-    // real names) shows up as cwd's basename, Pixel Agents' own label source.
-    const sessionStartBodies = relayFetchCalls
-      .map((c) => JSON.parse(c.body))
-      .filter((b) => b.hook_event_name === "SessionStart");
-    expect(sessionStartBodies.map((b) => b.cwd).sort()).toEqual(
-      [
-        "/paperclip/company-acme/CEO Agent",
-        "/paperclip/company-acme/Dev Agent",
-      ].sort(),
-    );
+    // First-sight declarations carry no seat yet (the appearance map batch
+    // right after is what seats everyone).
+    for (const declared of snapshotDeclares) {
+      expect(declared.palette).toBeUndefined();
+      expect(declared.hueShift).toBeUndefined();
+    }
+
+    // Appearance batch: declare upserts carrying the resolved seat per agent.
+    const seatedDeclares = declaredAgents([appearanceBatch]);
+    expect(seatedDeclares.map((a) => a.key).sort()).toEqual([AGENT_CEO_ID, AGENT_DEV_ID]);
+    for (const declared of seatedDeclares) {
+      expect(Number.isInteger(declared.palette)).toBe(true);
+      expect(Number.isInteger(declared.hueShift)).toBe(true);
+    }
   });
 
   it("boots with the relay enabled by default (this deployment's bundled sidecar) when no relay config is present", async () => {
@@ -515,15 +503,18 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
     );
     await flushRelay();
 
-    // The unseen agent spawns sessionStart + toolStart("PaperclipWork", §21.4).
-    expect(relayFetchCalls.length).toBe(baseline + 2);
-    const [sessionStartCall, toolStartCall] = relayFetchCalls.slice(-2);
-    const sessionStartBody = JSON.parse(sessionStartCall.body);
-    expect(sessionStartBody.session_id).toBe("paperclip-bridge:company-acme:agent-relay-late");
-    expect(sessionStartBody.hook_event_name).toBe("SessionStart");
-    const toolStartBody = JSON.parse(toolStartCall.body);
-    expect(toolStartBody.hook_event_name).toBe("PreToolUse");
-    expect(toolStartBody.tool_name).toBe("PaperclipWork");
+    // The unseen agent spawns one feed batch: declaration + run caption +
+    // active status (the retired wire needed a sessionStart + toolStart
+    // pair; the feed carries all three operations in one body).
+    expect(relayFetchCalls.length).toBe(baseline + 1);
+    const forwardBatch = JSON.parse(relayFetchCalls[relayFetchCalls.length - 1].body);
+    expect(forwardBatch.companyId).toBe(COMPANY_ID);
+    expect(forwardBatch.operations).toHaveLength(3);
+    const [declare, activity, status] = forwardBatch.operations;
+    expect(declare.op).toBe("declareAgents");
+    expect(declare.agents[0]).toMatchObject({ key: "agent-relay-late", name: "agent-relay-late" });
+    expect(activity).toEqual({ op: "updateAgentActivity", key: "agent-relay-late", activity: "Task: Paperclip work" });
+    expect(status).toEqual({ op: "updateAgentStatus", key: "agent-relay-late", status: "active" });
 
     // Store behavior unchanged: the store path still applies events and serves
     // the authoritative snapshot (the relay addition never replaces it).
@@ -579,36 +570,41 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
     await def.onConfigChanged!({ pixelAgentsUrl: "https://pa.example" }, { companyId: COMPANY_ID });
     await flushRelay();
 
-    const newCalls = hookCalls().filter((c) => relayFetchCalls.indexOf(c) >= baseline);
-    const bySession = new Map<string, string[]>();
-    for (const call of newCalls) {
-      const body = JSON.parse(call.body);
-      const list = bySession.get(body.session_id) ?? [];
-      list.push(body.hook_event_name);
-      bySession.set(body.session_id, list);
+    // The enable path re-syncs immediately through the feed: a fresh mapper
+    // re-declares every agent (snapshot batch), then re-applies the
+    // per-agent appearance map so the rebuilt embedding surface seats
+    // everyone immediately (WS3, through the sanctioned declareAgents seat
+    // path). Exactly two batches, no more.
+    const newCalls = relayFetchCalls.slice(baseline);
+    expect(newCalls).toHaveLength(2);
+    for (const call of newCalls) expect(call.url).toBe("https://pa.example/api/plugin-feed");
+    const batches = newCalls.map((c) => JSON.parse(c.body));
+    // Every agent is re-declared twice across the two batches — once by the
+    // snapshot batch (fresh mapper, no seat yet) and once by the appearance
+    // batch (seated upsert)...
+    const redeclared = declaredAgents(batches);
+    expect(redeclared.map((a) => a.key).sort()).toEqual(
+      [AGENT_CEO_ID, AGENT_CEO_ID, AGENT_DEV_ID, AGENT_DEV_ID].sort(),
+    );
+    // ...and the appearance batch's declarations carry each agent's seat.
+    const [snapshotBatch, appearanceBatch] = batches;
+    const seated = declaredAgents([appearanceBatch]);
+    expect(seated.map((a) => a.key).sort()).toEqual([AGENT_CEO_ID, AGENT_DEV_ID]);
+    for (const declared of seated) {
+      expect(Number.isInteger(declared.palette)).toBe(true);
+      expect(Number.isInteger(declared.hueShift)).toBe(true);
     }
-    expect([...bySession.keys()].sort()).toEqual([
-      "paperclip-bridge:company-acme:agent-ceo",
-      "paperclip-bridge:company-acme:agent-dev",
-    ]);
-    for (const events of bySession.values()) {
-      expect(events).toEqual(["SessionStart", "Stop"]);
-    }
-    // The enable-reconfigure also re-pushes the appearance map to the relay
-    // applier exactly once (WS3), so the rebuilt applier seats everyone
-    // immediately. (Tester tightening: the pre-review version asserted only
-    // the hook pushes here.)
-    const newSyncCalls = relayFetchCalls.slice(baseline).filter((c) => c.url.endsWith("/api/appearance-sync"));
-    expect(newSyncCalls).toHaveLength(1);
-    const syncBody = JSON.parse(newSyncCalls[0].body);
-    expect(syncBody.assignments.map((a: { agentId: string }) => a.agentId).sort()).toEqual([AGENT_CEO_ID, AGENT_DEV_ID]);
+    // The snapshot batch also repairs statuses to honest idle.
+    const statuses = snapshotBatch.operations.filter((op) => op.op === "updateAgentStatus");
+    expect(statuses).toHaveLength(2);
+    for (const status of statuses) expect(status.status).toBe("waiting");
   });
 
   it("the reconciliation job periodically self-heals by resyncing the mapper every RESYNC_EVERY_N_RECONCILES ticks", async () => {
-    // A sessionStart push that silently fails once (HttpPushSink is
+    // A declaration push that silently fails once (the feed sink is
     // fire-and-forget) otherwise strands that agent invisible for the rest of
     // the worker's lifetime: mapSnapshot only ever sends incremental
-    // toolStart/toolEnd updates for an agent it already believes is "seen".
+    // status/caption updates for an agent it already believes is "seen".
     // Confirmed live 2026-08-31 during a concurrent container restart. The
     // reconciliation job now forces a full resyncCompany (fresh mapper, fresh
     // snapshot) every Nth tick as a bounded-time self-heal.
@@ -619,7 +615,8 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
     // assertion is independent of test execution order. Nothing else about
     // the seeded world changes between ticks, so every non-resync tick pushes
     // nothing (mapSnapshot's already-seen/no-state-change branch is a no-op);
-    // the one resync tick re-sends a full SessionStart+Stop pair per agent.
+    // the one resync tick re-declares every agent (seated — the appearance
+    // map survives reset()) in a single feed batch.
     const { harness } = seedStandardWorld();
     harness.setConfig({ pixelAgentsUrl: "https://pa.example" });
     spyRelayFetch();
@@ -633,32 +630,27 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
       await flushRelay();
     }
 
-    const newCalls = relayFetchCalls.slice(baseline).filter((c) => /\/api\/hooks\/[a-z0-9-]+$/.test(c.url));
-    expect(newCalls).toHaveLength(4);
-    // The one resync tick also re-pushes the appearance map to the relay
-    // applier (WS3); ordinary reconcile ticks push nothing extra.
-    const newSyncCalls = relayFetchCalls.slice(baseline).filter((c) => c.url.endsWith("/api/appearance-sync"));
-    expect(newSyncCalls).toHaveLength(1);
-    // Tester tightening: hooks + the one appearance-sync push are the
-    // exhaustive new-call surface across these reconcile ticks — no third
-    // kind of outbound fetch goes unnoticed.
-    const unaccounted = relayFetchCalls
-      .slice(baseline)
-      .filter((c) => !(/\/api\/hooks\/[a-z0-9-]+$/.test(c.url) || c.url.endsWith("/api/appearance-sync")));
-    expect(unaccounted).toHaveLength(0);
-    const bySession = new Map<string, string[]>();
+    // Exactly the one resync tick's single feed batch. The mapper retains
+    // the company's appearance map across reset(), so the re-declaration in
+    // the snapshot batch already carries each agent's seat — the follow-up
+    // appearance push diffs to nothing and emits no second batch. Ordinary
+    // reconcile ticks push nothing extra.
+    const newCalls = relayFetchCalls.slice(baseline);
+    expect(newCalls).toHaveLength(1);
     for (const call of newCalls) {
-      const body = JSON.parse(call.body);
-      const list = bySession.get(body.session_id) ?? [];
-      list.push(body.hook_event_name);
-      bySession.set(body.session_id, list);
+      expect(call.url).toBe("https://pa.example/api/plugin-feed");
+      expect(call.method).toBe("POST");
     }
-    expect([...bySession.keys()].sort()).toEqual([
-      "paperclip-bridge:company-acme:agent-ceo",
-      "paperclip-bridge:company-acme:agent-dev",
-    ]);
-    for (const events of bySession.values()) {
-      expect(events).toEqual(["SessionStart", "Stop"]);
+    const [resyncBatch] = newCalls.map((c) => JSON.parse(c.body));
+    const redeclared = declaredAgents([resyncBatch]);
+    expect(redeclared.map((a) => a.key).sort()).toEqual([AGENT_CEO_ID, AGENT_DEV_ID]);
+    const statuses = resyncBatch.operations.filter((op) => op.op === "updateAgentStatus");
+    expect(statuses).toHaveLength(2);
+    for (const status of statuses) expect(status.status).toBe("waiting");
+    // The retained appearance map means the re-declarations are seated.
+    for (const declared of redeclared) {
+      expect(Number.isInteger(declared.palette)).toBe(true);
+      expect(Number.isInteger(declared.hueShift)).toBe(true);
     }
   });
 

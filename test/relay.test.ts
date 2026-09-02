@@ -25,22 +25,29 @@ import {
  * whitespace-only string ref is trimmed away by `extractTokenRef`, so no auth
  * header is ever sent for it.
  *
- * TRANSPORT NOTE (reversed 2026-08-31, deliberately — see src/relay.ts's
- * "DELIBERATE ctx.http.fetch BYPASS" comment block): `BridgeRelay` used to
- * construct an `HttpPushSink` routed through the SDK-gated `ctx.http.fetch`
- * surface. It now uses the Node global `fetch` directly instead, because
- * Paperclip's host `ctx.http.fetch` unconditionally rejects any
- * private/reserved-range destination (including `127.0.0.1`, this package's
- * own advertised default) with no override of any kind. The fake context's
- * `http.fetch` field below is kept only because `BridgeRelay` still holds a
- * `PluginContext` and other code paths may reference `ctx.http` — the actual
- * push tests in this file mock the Node global `fetch` (see `makeCtx`'s
+ * TRANSPORT NOTE (updated 2026-09-01 for WS2-C — see src/relay.ts's
+ * "DELIBERATE ctx.http.fetch BYPASS" comment block): `BridgeRelay` pushes
+ * plugin feed batches (`{ schemaVersion, companyId, operations }`) to the
+ * embedding surface's `POST /api/plugin-feed` endpoint via the Node global
+ * `fetch`, because Paperclip's host `ctx.http.fetch` unconditionally rejects
+ * any private/reserved-range destination (including `127.0.0.1`, this
+ * package's own advertised default) with no override of any kind. The fake
+ * context's `http.fetch` field below is kept only because `BridgeRelay` still
+ * holds a `PluginContext` and other code paths may reference `ctx.http` — the
+ * actual push tests in this file mock the Node global `fetch` (see `makeCtx`'s
  * `httpFetch` param, which now backs a `globalThis.fetch` spy, not
  * `ctx.http.fetch`). The fake context's `manifest.capabilities` includes
- * `http.outbound` by default so `BridgeRelay.configure()`'s own
- * capability re-check (its replacement for the host's per-call enforcement
- * that the bypass skips) passes; tests exercising the fail-closed path pass
- * a context built with that capability removed instead.
+ * `http.outbound` by default so `BridgeRelay.configure()`'s own capability
+ * re-check (its replacement for the host's per-call enforcement that the
+ * bypass skips) passes; tests exercising the fail-closed path pass a context
+ * built with that capability removed instead.
+ *
+ * WIRE NOTE (WS2-C): the retired Claude-hook push (one JSON body per
+ * synthesized hook event, 2 calls per first-sight run) is gone. Each
+ * ingest/sync call now produces exactly ONE POST to `/api/plugin-feed`
+ * carrying the mapped feed operations in order (declare before status before
+ * activity). Re-pinned tests below assert that batch shape; deeper mapper
+ * semantics are delegated to the Tester child issue for SAA-536.
  */
 
 const COMPANY_ID = "company-acme";
@@ -208,7 +215,6 @@ describe("parseRelayConfig", () => {
     const cfg = parseRelayConfig({ pixelAgentsUrl: "  https://pa.example  " });
     expect(cfg.enabled).toBe(true);
     expect(cfg.pixelAgentsUrl).toBe("https://pa.example");
-    expect(cfg.providerId).toBe("claude");
   });
 
   it("is disabled when pixelAgentsRelayEnabled is explicitly false", () => {
@@ -236,27 +242,6 @@ describe("parseRelayConfig", () => {
     expect(
       parseRelayConfig({ pixelAgentsUrl: "https://pa.example", pixelAgentsRelayEnabled: false }).enabled,
     ).toBe(false);
-  });
-
-  it("defaults the provider id to claude (the only id Pixel Agents' route currently dispatches on)", () => {
-    expect(parseRelayConfig({ pixelAgentsUrl: "https://pa.example" }).providerId).toBe("claude");
-  });
-
-  it("trims a custom provider id", () => {
-    const cfg = parseRelayConfig({
-      pixelAgentsUrl: "https://pa.example",
-      pixelAgentsProviderId: "  my-provider  ",
-    });
-    expect(cfg.providerId).toBe("my-provider");
-  });
-
-  it("falls back to the default provider id for empty/whitespace-only values", () => {
-    expect(
-      parseRelayConfig({ pixelAgentsUrl: "https://pa.example", pixelAgentsProviderId: "" }).providerId,
-    ).toBe("claude");
-    expect(
-      parseRelayConfig({ pixelAgentsUrl: "https://pa.example", pixelAgentsProviderId: "   " }).providerId,
-    ).toBe("claude");
   });
 
   it("does not carry the bearer token (tokens are resolved from pixelAgentsTokenRef at configure time)", () => {
@@ -335,51 +320,39 @@ describe("BridgeRelay", () => {
     ).toBe(true);
   });
 
-  it("ingestEvent (canonical agent.run.started) pushes sessionStart + toolStart as real Claude hook bodies", async () => {
+  it("ingestEvent (canonical agent.run.started) pushes one feed batch: declare + activity + active status", async () => {
     const relay = new BridgeRelay(makeCtx().ctx);
     await relay.configure(COMPANY_ID, { pixelAgentsUrl: "https://pa.example" });
 
     relay.ingestEvent(COMPANY_ID, runStarted(COMPANY_ID, AGENT_A, "run-1"));
     await flush();
 
-    // First sight of the agent: a leading sessionStart, then the §21.4
-    // toolStart("PaperclipWork") for the run itself — both pushed to the
-    // real, unmodified Pixel Agents claude hook endpoint.
-    expect(calls).toHaveLength(2);
-    const [sessionStartCall, toolStartCall] = calls;
-    expect(sessionStartCall.url).toBe("https://pa.example/api/hooks/claude");
-    expect(sessionStartCall.method).toBe("POST");
-    expect(sessionStartCall.headers["content-type"]).toBe("application/json");
-    expect(sessionStartCall.headers.authorization).toBeUndefined();
-    const sessionStartBody = JSON.parse(sessionStartCall.body);
-    expect(sessionStartBody.hook_event_name).toBe("SessionStart");
-    expect(sessionStartBody.session_id).toBe("paperclip-bridge:company-acme:agent-a");
-    expect(sessionStartBody).not.toHaveProperty("transcript_path");
-
-    const toolStartBody = JSON.parse(toolStartCall.body);
-    expect(toolStartBody).toEqual({
-      hook_event_name: "PreToolUse",
-      session_id: "paperclip-bridge:company-acme:agent-a",
-      tool_name: "PaperclipWork",
-      tool_input: {},
-    });
-  });
-
-  it("honors a custom pixelAgentsProviderId in the hook path (body shape is unaffected)", async () => {
-    const relay = new BridgeRelay(makeCtx().ctx);
-    await relay.configure(COMPANY_ID, {
-      pixelAgentsUrl: "https://pa.example",
-      pixelAgentsProviderId: "my-provider",
-    });
-
-    relay.ingestEvent(COMPANY_ID, runStarted(COMPANY_ID, AGENT_A, "run-1"));
-    await flush();
-
-    expect(calls).toHaveLength(2);
-    for (const call of calls) {
-      expect(call.url).toBe("https://pa.example/api/hooks/my-provider");
-      expect(JSON.parse(call.body)).not.toHaveProperty("providerId");
-    }
+    // First sight of the agent: ONE ordered batch to the plugin feed
+    // endpoint — the declaration (spawn/upsert), the run caption, and the
+    // active status. The retired wire needed two hook-body POSTs for this;
+    // the feed carries all three operations in one body, applied in order.
+    expect(calls).toHaveLength(1);
+    const call = calls[0];
+    expect(call.url).toBe("https://pa.example/api/plugin-feed");
+    expect(call.method).toBe("POST");
+    expect(call.headers["content-type"]).toBe("application/json");
+    expect(call.headers.authorization).toBeUndefined();
+    const batch = JSON.parse(call.body);
+    expect(batch.schemaVersion).toBe(1);
+    expect(batch.companyId).toBe(COMPANY_ID);
+    expect(batch.operations).toHaveLength(3);
+    const [declare, activity, status] = batch.operations;
+    expect(declare.op).toBe("declareAgents");
+    expect(declare.agents).toHaveLength(1);
+    expect(declare.agents[0].key).toBe(AGENT_A);
+    expect(declare.agents[0].name).toBe(AGENT_A);
+    // Per-agent unique team name: the no-grouping semantics of the retired
+    // transcript hack, through the sanctioned declaration field. It must be
+    // a stable, non-empty, per-agent-unique string ( Tester child pins the
+    // exact uniqueness contract across agents).
+    expect(declare.agents[0].teamName).toMatch(/^paperclip-bridge-[0-9a-f]+$/);
+    expect(activity).toEqual({ op: "updateAgentActivity", key: AGENT_A, activity: "Task: Paperclip work" });
+    expect(status).toEqual({ op: "updateAgentStatus", key: AGENT_A, status: "active" });
   });
 
   it("resolves a string token reference and sends an authorization: Bearer header", async () => {
@@ -397,7 +370,7 @@ describe("BridgeRelay", () => {
     relay.ingestEvent(COMPANY_ID, runStarted(COMPANY_ID, AGENT_A, "run-1"));
     await flush();
 
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(1);
     for (const call of calls) expect(call.headers.authorization).toBe("Bearer token-value-1");
   });
 
@@ -446,7 +419,7 @@ describe("BridgeRelay", () => {
     relay.ingestEvent(COMPANY_ID, runStarted(COMPANY_ID, AGENT_A, "run-1"));
     await flush();
 
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(1);
     for (const call of calls) expect(call.headers.authorization).toBeUndefined();
   });
 
@@ -471,7 +444,7 @@ describe("BridgeRelay", () => {
 
     relay.ingestEvent(COMPANY_ID, runStarted(COMPANY_ID, AGENT_A, "run-1"));
     await flush();
-    expect(calls).toHaveLength(2); // sessionStart + toolStart
+    expect(calls).toHaveLength(1); // one feed batch (declare + activity + status)
   });
 
   it("an identical enabled reconfigure preserves the transport and its ordered push queue", async () => {
@@ -485,59 +458,46 @@ describe("BridgeRelay", () => {
 
     relay.ingestEvent(COMPANY_ID, runStarted(COMPANY_ID, AGENT_A, "run-1"));
     await flush();
-    // The original transport remains live and emits exactly once per mapped
-    // AgentEvent (sessionStart + toolStart), with no queue cancellation.
-    expect(calls).toHaveLength(2);
+    // The original transport remains live and emits exactly one feed batch
+    // per mapped ingest, with no queue cancellation.
+    expect(calls).toHaveLength(1);
   });
 
-  it("ingestSnapshot with two agents pushes sessionStart + an idle confirmation per agent", async () => {
-    // Each newly-seen agent gets a SessionStart AND an immediate confirming
-    // event (Stop/turnEnd here, since snapshot()'s fixture agents are idle —
-    // no activeRuns). Without the second event Pixel Agents never promotes
-    // the session past "pending", so it never renders as a character at all
-    // (confirmed live 2026-08-31: this was silently true for every idle
-    // agent, which is most agents most of the time).
+  it("ingestSnapshot with two agents pushes one batch: declare + idle status per agent", async () => {
+    // Every newly-seen agent gets a declaration AND an honest idle status
+    // (waiting, not awaitingInput) in one ordered batch — through the A1
+    // host's sanctioned agent source, so each agent renders as a character
+    // immediately (the retired wire needed a synthetic SessionStart+Stop
+    // pair per idle agent for this; the feed declares them directly).
     const relay = new BridgeRelay(makeCtx().ctx);
     await relay.configure(COMPANY_ID, { pixelAgentsUrl: "https://pa.example" });
 
     relay.ingestSnapshot(COMPANY_ID, snapshot(COMPANY_ID, [AGENT_A, AGENT_B]));
     await flush();
 
-    expect(calls).toHaveLength(4);
-    for (const call of calls) {
-      expect(call.url).toBe("https://pa.example/api/hooks/claude");
-      const body = JSON.parse(call.body);
-      expect(["SessionStart", "Stop"]).toContain(body.hook_event_name);
-      expect(typeof body.session_id).toBe("string");
-      expect(body.session_id.length).toBeGreaterThan(0);
+    expect(calls).toHaveLength(1);
+    const call = calls[0];
+    expect(call.url).toBe("https://pa.example/api/plugin-feed");
+    const batch = JSON.parse(call.body);
+    expect(batch.companyId).toBe(COMPANY_ID);
+    expect(batch.operations).toHaveLength(4); // 2 agents x (declare + idle status)
+
+    const declares = batch.operations.filter((op: { op: string }) => op.op === "declareAgents");
+    const statuses = batch.operations.filter((op: { op: string }) => op.op === "updateAgentStatus");
+    expect(declares.map((d: { agents: Array<{ key: string }> }) => d.agents[0].key).sort())
+      .toEqual([AGENT_A, AGENT_B]);
+    // Per-agent unique team names (no synthetic grouping across agents).
+    const teamNames = declares.map((d: { agents: Array<{ teamName: string }> }) => d.agents[0].teamName);
+    expect(new Set(teamNames).size).toBe(2);
+    for (const name of teamNames) expect(name).toMatch(/^paperclip-bridge-[0-9a-f]+$/);
+    // Idle agents are declared waiting and NOT awaitingInput, in the same
+    // batch, after their declarations.
+    expect(statuses).toHaveLength(2);
+    for (const status of statuses) {
+      expect(status.status).toBe("waiting");
+      expect(status.awaitingInput).toBe(false);
+      expect([AGENT_A, AGENT_B]).toContain(status.key);
     }
-    const bySession = new Map<string, string[]>();
-    for (const call of calls) {
-      const body = JSON.parse(call.body);
-      const list = bySession.get(body.session_id) ?? [];
-      list.push(body.hook_event_name);
-      bySession.set(body.session_id, list);
-    }
-    expect([...bySession.keys()].sort()).toEqual(
-      [
-        "paperclip-bridge:company-acme:agent-a",
-        "paperclip-bridge:company-acme:agent-b",
-      ].sort(),
-    );
-    for (const events of bySession.values()) {
-      expect(events).toEqual(["SessionStart", "Stop"]);
-    }
-    // The friendly display name (snapshot()'s fixture sets name: id) shows up
-    // as cwd's basename, which is what Pixel Agents uses as its label.
-    const sessionStartBodies = calls
-      .map((c) => JSON.parse(c.body))
-      .filter((b) => b.hook_event_name === "SessionStart");
-    expect(sessionStartBodies.map((b) => b.cwd).sort()).toEqual(
-      [
-        "/paperclip/company-acme/agent-a",
-        "/paperclip/company-acme/agent-b",
-      ].sort(),
-    );
   });
 
   it("does not push for a sidecar-only event (agent.status_changed to a non-offline status) — FR-14", async () => {
@@ -557,15 +517,14 @@ describe("BridgeRelay", () => {
     const relay = new BridgeRelay(makeCtx().ctx);
     await relay.configure(COMPANY_ID, { pixelAgentsUrl: "https://pa.example" });
 
-    // Two pushes fire for a first-sight run.started (sessionStart + toolStart,
-    // §21.4) — queue a failure for both so the last-seen error reflects it.
-    responses.push({ ok: false, status: 500, statusText: "Server Error" });
+    // One feed batch fires for a first-sight run.started (declare + activity
+    // + status) — queue a failure for it so the last-seen error reflects it.
     responses.push({ ok: false, status: 500, statusText: "Server Error" });
     relay.ingestEvent(COMPANY_ID, runStarted(COMPANY_ID, AGENT_A, "run-1"));
     await flush();
-    expect(relay.lastPushError(COMPANY_ID)).toBe("push failed: 500 Server Error");
+    expect(relay.lastPushError(COMPANY_ID)).toBe("feed push failed: 500 Server Error");
 
-    // A different unseen agent so the mapper emits a fresh sessionStart.
+    // A different unseen agent so the mapper emits a fresh declaration batch.
     relay.ingestEvent(COMPANY_ID, runStarted(COMPANY_ID, AGENT_B, "run-2"));
     await flush();
     expect(relay.lastPushError(COMPANY_ID)).toBeUndefined();
@@ -622,21 +581,30 @@ describe("BridgeRelay", () => {
       ];
     }
 
-    it("pushes the full appearance map to POST /api/appearance-sync and reports success", async () => {
+    it("pushes the appearance map as declare upserts carrying palette/hueShift and reports success", async () => {
+      // WS2-C: seat application rides the sanctioned path — declareAgents
+      // upserts carrying each agent's palette/hueShift in one feed batch —
+      // replacing the retired POST /api/appearance-sync seat-driving push.
       const relay = new BridgeRelay(makeCtx().ctx);
       await relay.configure(COMPANY_ID, { pixelAgentsUrl: "https://pa.example" });
 
       await expect(relay.syncAppearances(COMPANY_ID, syncEntries())).resolves.toBe(true);
       expect(calls).toHaveLength(1);
       const call = calls[0];
-      expect(call.url).toBe("https://pa.example/api/appearance-sync");
+      expect(call.url).toBe("https://pa.example/api/plugin-feed");
       expect(call.method).toBe("POST");
       expect(call.headers["content-type"]).toBe("application/json");
       // No bearer token configured for this relay: no authorization header.
       expect(call.headers.authorization).toBeUndefined();
-      const body = JSON.parse(call.body);
-      expect(body.companyId).toBe(COMPANY_ID);
-      expect(body.assignments).toEqual(syncEntries());
+      const batch = JSON.parse(call.body);
+      expect(batch.companyId).toBe(COMPANY_ID);
+      const declared = batch.operations
+        .filter((op: { op: string }) => op.op === "declareAgents")
+        .flatMap((op: { agents: Array<Record<string, unknown>> }) => op.agents);
+      expect(declared.map((a: { key: string }) => a.key).sort()).toEqual([AGENT_A, AGENT_B]);
+      const byKey = new Map(declared.map((a: { key: string }) => [a.key, a]));
+      expect(byKey.get(AGENT_A)).toMatchObject({ palette: 0, hueShift: 0 });
+      expect(byKey.get(AGENT_B)).toMatchObject({ palette: 6, hueShift: 45 });
     });
 
     it("sends the configured bearer token when one was resolved from the secret ref", async () => {
@@ -653,24 +621,18 @@ describe("BridgeRelay", () => {
       resolve.mockRestore();
     });
 
-    it("returns false (never throws) when the relay is not configured, unreachable, or rejects", async () => {
+    it("returns false (never throws) when the relay is not configured for the company", async () => {
       const { ctx } = makeCtx(() => "");
       const relay = new BridgeRelay(ctx);
       await relay.configure(COMPANY_ID, { pixelAgentsUrl: "https://pa.example" });
 
-      // Unconfigured company.
+      // Unconfigured company: the write reports false — the next sync
+      // re-applies it; an appearance write must not fail because the feed
+      // is momentarily down. (Delivery failures of an enqueued batch land
+      // in lastPushError, not in this return value — the sink is ordered
+      // fire-and-forget.)
       await expect(relay.syncAppearances("company-ghost", syncEntries())).resolves.toBe(false);
       expect(calls).toHaveLength(0);
-
-      // Non-2xx relay response.
-      responses.push({ ok: false, status: 400, statusText: "Bad Request" });
-      await expect(relay.syncAppearances(COMPANY_ID, syncEntries())).resolves.toBe(false);
-      expect(calls).toHaveLength(1);
-
-      // Transport failure (unreachable relay) — must never throw on a write.
-      calls = [];
-      responses.push(new Error("connection refused"));
-      await expect(relay.syncAppearances(COMPANY_ID, syncEntries())).resolves.toBe(false);
     });
   });
 
@@ -682,15 +644,12 @@ describe("BridgeRelay", () => {
     await relay.configure(COMPANY_ID, { pixelAgentsUrl: "not-a-url" });
     expect(relay.isConfigured(COMPANY_ID)).toBe(true);
 
-    // First-sight run.started fires two pushes (sessionStart + toolStart).
-    responses.push(new Error("Invalid URL"));
-    responses.push(new Error("Invalid URL"));
-
+    // The sink's protocol guard (new URL(...)) rejects before fetch is called.
     expect(() =>
       relay.ingestEvent(COMPANY_ID, runStarted(COMPANY_ID, AGENT_A, "run-1")),
     ).not.toThrow();
     await flush();
 
-    expect(relay.lastPushError(COMPANY_ID)).toBe("push error: Invalid URL");
+    expect(relay.lastPushError(COMPANY_ID)).toBe("feed push error: Invalid URL");
   });
 });

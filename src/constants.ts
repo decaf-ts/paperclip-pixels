@@ -139,13 +139,15 @@ export const MANIFEST_CAPABILITIES = [
   "agent.sessions.send",
   "agent.sessions.close",
   // Required to resolve the operator-bound `pixelAgentsTokenRef` secret
-  // reference into the bearer token used by the relay's HttpPushSink. The raw
-  // token is never persisted in plugin config; only the secret_ref binding is.
+  // reference into the bearer token used by the relay's plugin feed sink. The
+  // raw token is never persisted in plugin config; only the secret_ref
+  // binding is.
   "secrets.read-ref",
-  // The relay's outbound push to the Pixel Agents hook endpoint is routed
-  // through the SDK-gated `ctx.http.fetch` (never the Node global fetch), so
-  // the host's capability validator and audit tracing cover it like any other
-  // outbound request. Push is operator-gated per company (see relay.ts).
+  // The relay's outbound feed push to the embedding surface deliberately uses
+  // the Node global fetch (see relay.ts's "DELIBERATE ctx.http.fetch BYPASS"
+  // block: the host's private-IP SSRF filter cannot reach the operator's own
+  // sidecar), so this capability is re-checked against ctx.manifest at
+  // configure time instead of per call — fail-closed, never pushed without it.
   "http.outbound",
   "ui.page.register",
   "ui.sidebar.register",

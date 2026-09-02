@@ -23,18 +23,19 @@ referenced here, not duplicated:
   plugin UI surfaces (sidebar row, host auto-rendered settings form, character
   picker) are documented in the companion handbook
   [`workdocs/ai/architecture-handbook.md`](../architecture-handbook.md);
-  this handbook keeps the translation-layer + relay architecture below. The
-  earlier bundling + in-plugin `BridgeRelay` portion predates that record: it
+  this handbook keeps the translation-layer + relay architecture below.
+  The earlier bundling + in-plugin `BridgeRelay` portion predates that record: it
   was delivered as the SAA-229 gate-reviewed commit and is documented here at
-  the architecture level. **Superseded (this revision):** the relay no longer
-  waits on an upstream `pixel-agents` per-`providerId` dispatch change (spike
-  SAA-175 §5/§6) — it reaches the live, unmodified Pixel Agents runtime today
-  by serializing into the real Claude hook JSON body `claudeProvider`
-  (Pixel Agents' one shipped provider) already accepts, landing on Pixel
-  Agents' own pre-existing "hooks-only external provider" adoption path. Live-
-  verified: a pushed event produces `[Pixel Agents] Hook: Agent N - detected
-  hooks-only external session (...)` and a real, animated character. See
-  §"Bridge Relay subsystem" below for the wire contract.
+  the architecture level. **Superseded (WS2, PAPERCLIP_PIXELS-2):** the
+  Claude-hook impersonation path is retired. The relay no longer serializes
+  events into the real Claude hook JSON body for `POST /api/hooks/claude`;
+  the bridge is now a **first-class Pixel Agents plugin** — the worker pushes
+  plugin feed operations to an embedding module loaded in-process in the
+  Pixel Agents server through the fork's generic `--plugin` loader, and
+  click-menu replies route back through the plugin's existing Paperclip
+  intake/feedback actions. See §"Bridge Relay subsystem" below and companion
+  handbook §5.6 for the plugin host, the four contribution points, and the
+  retirement of the three impersonation hacks.
 - **Delivery plan:** [`workdocs/ai/project/plan.md`](./plan.md).
 - **Project constitution / locked invariants:** project-root [`AGENTS.md`](../../../AGENTS.md).
 
@@ -65,7 +66,7 @@ it does not replace them.
 - 06. Deployment Architecture (build pipeline + deploy bundle flow)
 - 08. Security Architecture (FR-9 trust boundary + relay outbound boundary)
 - 09. Architecture Decisions and Risks
-- 10. Interfaces (manifest UI surface + bridge contract + relay config & hook endpoint)
+- 10. Interfaces (manifest UI surface + bridge contract + relay config & plugin feed endpoint)
 
 Sections 07 (Data Architecture) and the optional Operational/Observability and
 System-Component-Equivalency sections are intentionally omitted at this stage:
@@ -110,9 +111,9 @@ all business state; the bridge owns only a derived, restart-safe cache.
 | --- | --- |
 | Platform type | Paperclip host plugin (worker + embedded UI) plus a standalone Pixel Agents adapter |
 | Primary technologies | TypeScript, pnpm/npm workspaces, `@paperclipai/plugin-sdk`, React (UI bundle, host-injected), esbuild (worker + UI bundling via SDK-blessed presets), `tsc` (type declarations), Docker (deploy) |
-| Core capabilities | Raw event projection, rolling-window temporal metrics, behavioral proxies with confidence/provenance, company intake + individual-agent feedback, live UI updates, optional in-plugin relay of mapped events to a Pixel Agents server hook endpoint (`PAPERCLIP_PIXELS-2`) |
-| Deployment models | Host image reusing the published Paperclip base + a self-contained, pre-built plugin `dist/` (no runtime dep vendoring); standalone Pixel Agents CLI image |
-| Integration interfaces | Public Paperclip Plugin SDK only (`ctx.data`/`ctx.actions`/`ctx.streams`/`ctx.events`/`ctx.state`); host-mounted UI bundle; optional operator-configured outbound HTTP to `POST /api/hooks/<providerId>` on a Pixel Agents server |
+| Core capabilities | Raw event projection, rolling-window temporal metrics, behavioral proxies with confidence/provenance, company intake + individual-agent feedback, live UI updates, optional in-plugin relay of canonical events to the bridge's first-class plugin embedding surface inside a Pixel Agents server (`PAPERCLIP_PIXELS-2`) |
+| Deployment models | Host image reusing the published Paperclip base + a self-contained, pre-built plugin `dist/` (no runtime dep vendoring); standalone Pixel Agents CLI image with the bridge embedding module loaded via the fork's `--plugin` loader |
+| Integration interfaces | Public Paperclip Plugin SDK only (`ctx.data`/`ctx.actions`/`ctx.streams`/`ctx.events`/`ctx.state`); host-mounted UI bundle; optional operator-configured outbound HTTP to the embedding surface's `POST /api/plugin-feed` |
 | Data zones | Paperclip (authoritative, external) · bridge derived cache (`ctx.state`, restart-safe) · host UI runtime (React, host-injected) · operator-configured Pixel Agents server (outbound relay target) |
 
 ---
@@ -132,10 +133,11 @@ all business state; the bridge owns only a derived, restart-safe cache.
 | `proactiveCompanyScopes` | The set of companies a worker is authorized to act on outside a host-issued invocation; seeded at worker start so background `streams.emit` notifications pass the invocation-scope guard |
 | Host | The Paperclip application that loads the plugin worker and mounts the UI bundle |
 | Slot | A host UI extension point (`page` or `sidebar`) declared in the manifest and bound to a named export of the UI bundle |
-| Bridge relay | The optional in-plugin subsystem (`BridgeRelay`, `PAPERCLIP_PIXELS-2`) that pushes mapped canonical bridge events to a Pixel Agents server hook endpoint, one `BridgeTransport` + `HttpPushSink` per company |
-| `instanceConfigSchema` | The operator-editable, company-scoped plugin config schema (manifest) the relay reads; fields `pixelAgentsUrl`, `pixelAgentsTokenRef` (a `secret-ref` binding, never a plaintext value), `pixelAgentsProviderId`, `pixelAgentsRelayEnabled` |
-| `BridgeTransport` | Per-company transport in `@paperclip-pixel/pixel-agents-provider` that maps canonical `BridgeInputEvent`s / snapshots to `AgentEvent`s plus a rich sidecar and pushes them through an `AgentEventSink` |
-| `HttpPushSink` | `AgentEventSink` that POSTs each mapped envelope (`{ providerId, sessionId, event }`) to `<baseUrl>/api/hooks/<providerId>`, optionally with a bearer token |
+| Bridge relay | The optional in-plugin subsystem (`BridgeRelay`, `PAPERCLIP_PIXELS-2`) that pushes canonical bridge events to the Pixel Agents side, one `PluginFeedMapper` + `PluginFeedHttpSink` per company |
+| `instanceConfigSchema` | The operator-editable, company-scoped plugin config schema (manifest) the relay reads; fields `pixelAgentsUrl`, `pixelAgentsUiUrl`, `pixelAgentsTokenRef` (a `secret-ref` binding, never a plaintext value), `pixelAgentsRelayEnabled`, `paperclipApiBaseUrl`, `paperclipApiTokenRef`, `dialogPanePrivacyOptIn` (default OFF) |
+| `PluginFeedMapper` | Per-company stateful translator in `src/pixel-agents-plugin/feed-mapper.ts` that maps canonical `BridgeInputEvent`s / snapshots / appearance maps into plugin feed operations (`declareAgents`, `removeAgents`, `updateAgentStatus`, `updateAgentActivity`) |
+| `PluginFeedHttpSink` | Ordered HTTP sink in `src/pixel-agents-plugin/feed-sink.ts` that POSTs feed-operation batches (`{ schemaVersion: 1, companyId, operations }`) to the embedding surface's `POST /api/plugin-feed`, optionally with a bearer token |
+| Embedding surface | `src/pixel-agents-plugin/embedding.ts` (bundled to `dist/pixel-agents-embedding.cjs`): the module the deployed Pixel Agents server loads through the fork's generic `--plugin` loader — registers the Paperclip plugin in-process through the fork's plugin host and serves the feed endpoint on its own sidecar listener (default `127.0.0.1:8081`, fail-closed bearer auth) |
 
 ---
 
@@ -149,18 +151,19 @@ graph LR
   subgraph Bridge["Paperclip-Pixel bridge"]
     WK[plugin worker]
     UI[Pixel Office UI bundle]
-    RL[BridgeRelay<br/>per-company transport + HTTP sink]
+    RL[BridgeRelay<br/>per-company feed mapper + HTTP sink]
   end
   subgraph Presentations
     PA[Pixel Agents adapter/runtime]
-    PAS[Pixel Agents server<br/>hook endpoint]
+    PAS[Pixel Agents server<br/>embedding surface: first-class plugin<br/>+ POST /api/plugin-feed]
   end
   HOST[Paperclip host app]
   PC -->|"public Plugin SDK only<br/>(events, reconciliation)"| WK
   WK -->|ctx.data / ctx.actions / ctx.streams| UI
   WK -->|canonical bridge contract| PA
   WK -->|"same canonical events/snapshots"| RL
-  RL -->|"POST /api/hooks/&lt;providerId&gt;<br/>(operator-configured, optional)"| PAS
+  RL -->|"POST /api/plugin-feed<br/>feed-operation batches<br/>(operator-configured, optional)"| PAS
+  PAS -->|"click-menu replies: performAction proxy<br/>agent.reply-to-feedback / company.send-message"| PC
   HOST -->|loads worker, mounts UI bundle| WK
   HOST -->|injects React + SDK UI hooks| UI
 ```
@@ -178,16 +181,21 @@ graph LR
 - **Pixel Agents.** Consumes the canonical bridge contract through a
   minimal source-level adapter; owns all visual/spatial state. The bridge
   supplies business context only.
-- **Pixel Agents server (relay target, `PAPERCLIP_PIXELS-2`).** An
-  operator-configured outbound HTTP target (default: the same-machine/same-pod
-  `paperclip-pixel-relay` companion CLI, not Pixel Agents directly — see
-  below). When the relay is enabled for a company, the worker's `BridgeRelay`
-  POSTs mapped events, serialized as the **real Claude hook JSON body**
-  (`hook_event_name`, `session_id`, etc.) to `<pixelAgentsUrl>/api/hooks/claude`
-  — reaching the live, **unmodified** Pixel Agents runtime today via its own
-  pre-existing "hooks-only external provider" adoption path (built for
-  non-Claude CLIs like OpenCode/Copilot). No upstream Pixel Agents change is
-  required or waited on.
+- **Pixel Agents server (feed target, `PAPERCLIP_PIXELS-2` WS2).** An
+  operator-configured outbound HTTP target: the embedding surface running
+  in-process in the Pixel Agents server (registered through the fork's
+  plugin host via the generic `--plugin` loader), serving
+  `POST /api/plugin-feed` on its own sidecar listener (default
+  `127.0.0.1:8081`, fail-closed bearer auth). When the relay is enabled for
+  a company, the worker's `BridgeRelay` POSTs feed-operation batches —
+  `declareAgents` / `removeAgents` / `updateAgentStatus` /
+  `updateAgentActivity`, with palette/hueShift seats riding the declarations
+  — which the embedding surface applies through the plugin's sanctioned
+  agent/team source. Click-menu replies flow back through the plugin's
+  registered actions to the Paperclip performAction proxy (the existing
+  intake/feedback actions only — never direct issue creation). The retired
+  impersonation path — Claude-hook JSON serialization against
+  `/api/hooks/claude` — is gone (WS2-C; see companion handbook §5.6).
 
 **Trust boundaries.** There are two trust boundaries: (1) all Paperclip
 domain access routes through the worker bridge; UI components never call
@@ -240,9 +248,13 @@ spec §2; not relaxed without CTO approval):
 One published npm package, `@decaf-ts/paperclip-pixels`, at the repo root
 (spec §7, §8 recommended a three-workspace-package split; superseded — three
 packages with `workspace:*` references plain npm couldn't resolve, for no
-benefit, since only one was ever published. `paperclip/`/`pixel-agents/` are
-git submodules only — reference/future-upstream-PR material, never modified,
-never a build dependency). Internally, three logical subsystems:
+benefit, since only one was ever published. `paperclip/` is a git submodule
+kept as reference-only material — never modified, never a build dependency.
+`pixel-agents/` is a git submodule maintained as a deliberate **fork**
+(baseline upstream tag `v1.4.1`, local tag `fork-baseline-v1.4.1`) under the
+fork's `FORK.md` no-upstream-PR policy, with every fork-side change logged in
+its `DIVERGENCE.md`; it is modified unilaterally in the fork and is never a
+build dependency). Internally, three logical subsystems:
 
 1. **`src/core/`** — snapshot loader, event normalizer + idempotent reducer,
    entity/run/concurrency projection, temporal windows, behavioral proxy
@@ -254,16 +266,18 @@ never a build dependency). Internally, three logical subsystems:
    snapshot bootstrap, SDK client calls, `ctx.state` persistence,
    `ctx.data`/`ctx.actions`/`ctx.streams` handlers, the embedded Pixel Office
    UI surface (worker + UI bundle), and — as of `PAPERCLIP_PIXELS-2` — the
-   in-plugin `BridgeRelay` (`src/relay.ts`) that forwards the same canonical
-   events/snapshots to the `paperclip-pixel-relay` companion CLI.
-3. **`src/pixel-agents-provider/`** — consumes the bridge contract, maps
-   only semantically valid current events to current `AgentEvent` semantics
-   **and serializes them into the real Claude hook JSON body** Pixel Agents'
-   one shipped provider (`claudeProvider`) already accepts, retains richer
-   behavior in a sidecar. As of `PAPERCLIP_PIXELS-2` it also exports the relay
-   primitives (`BridgeTransport`, `HttpPushSink`, `CLAUDE_WIRE_PROVIDER_ID`,
-   `FetchLike`) consumed by `BridgeRelay` — no longer a separate package
-   dependency, a plain relative import within the same `src/` tree.
+   in-plugin `BridgeRelay` (`src/relay.ts`) that pushes feed operations to
+   the embedding surface inside the Pixel Agents server.
+3. **`src/pixel-agents-plugin/`** — the bridge as a **first-class Pixel
+   Agents plugin** (WS2-C): the embeddable module the fork's `--plugin`
+   loader starts inside the Pixel Agents server process (plugin manifest +
+   reply actions registered through the real WS2-A1 host API, the
+   `POST /api/plugin-feed` handler with fail-closed bearer auth, and the
+   reply forwarder into the existing Paperclip intake/feedback actions),
+   plus the push-side primitives (`PluginFeedMapper`, `PluginFeedHttpSink`,
+   the feed wire contract) consumed by `BridgeRelay` — plain relative
+   imports within the same `src/` tree. The retired
+   `src/pixel-agents-provider/` (Claude-hook wire format) is deleted.
 
 ```mermaid
 graph TD
@@ -273,16 +287,16 @@ graph TD
     RL[BridgeRelay<br/>src/relay.ts]
   end
   CORE[src/core<br/>reducer + proxies]
-  PA[src/pixel-agents-provider<br/>BridgeTransport + HttpPushSink]
-  RELAY[paperclip-pixel-relay CLI<br/>bin/paperclip-pixel-relay.js<br/>same pod/host as Pixel Agents]
-  PAS["Pixel Agents (unmodified)<br/>POST /api/hooks/claude"]
+  PA[src/pixel-agents-plugin<br/>PluginFeedMapper + PluginFeedHttpSink]
+  EMB["embedding module<br/>dist/pixel-agents-embedding.cjs<br/>in-process in the Pixel Agents server"]
+  PAS["Pixel Agents fork<br/>plugin host + POST /api/plugin-feed :8081"]
   WK --> CORE
   WK -->|"ctx.data/actions/streams"| UIB
   WK -->|"canonical bridge contract"| PA
   WK -->|"same canonical events/snapshots"| RL
   RL --> PA
-  PA -->|"real Claude hook JSON (operator-gated)"| RELAY
-  RELAY -->|"+ correct bearer token, read locally"| PAS
+  PA -->|"feed-operation batches<br/>(operator-gated, bearer shared secret)"| EMB
+  EMB -->|"sanctioned agent/team source<br/>+ performAction reply proxy"| PAS
 ```
 
 **UI wiring subsystem (this layer's focus).** The plugin UI is built and
@@ -291,12 +305,17 @@ exposed as two artifacts from this package's `src/`:
 - **Worker** — bundled by esbuild (`scripts/build.mjs` using
   `createPluginBundlerPresets` from `@paperclipai/plugin-sdk/bundlers`) into
   a self-contained `dist/worker.js` (+ `dist/manifest.js`). It inlines
-  `src/core`, `src/pixel-agents-provider`, `@paperclipai/plugin-sdk`,
+  `src/core`, `src/pixel-agents-plugin`, `@paperclipai/plugin-sdk`,
   `@paperclipai/shared`, and `zod`, externalizing only `node:*` built-ins, so
   the forked worker process never has to resolve them from an install
   location at runtime. It implements the bridge handlers, the company-scoped
   stream, and — as of `PAPERCLIP_PIXELS-2` — owns the `BridgeRelay` (see
-  "Bridge Relay subsystem" below).
+  "Bridge Relay subsystem" below). The same `npm run build` also emits
+  `dist/pixel-agents-embedding.cjs` — a self-contained CJS bundle of
+  `src/pixel-agents-plugin/embedding.ts` (everything inlined except node
+  built-ins) that the deployed Pixel Agents server loads through the fork's
+  `--plugin` loader; it never runs in a Paperclip plugin worker, so it uses
+  plain esbuild options rather than the SDK presets.
 - **UI bundle** — bundled by esbuild (`scripts/build-ui.mjs`) from
   `src/ui/index.tsx` to `dist/ui/index.js`. Re-exports the two slot
   components: `PixelOfficePage` (page slot) and `PixelOfficeSidebar`
@@ -408,32 +427,40 @@ the spec record and `src/ui/bridge-contract.ts`.
 
 `src/relay.ts` adds an optional, operator-gated, **per-company** relay that
 forwards the same canonical events and snapshots the worker already produces
-for the UI to a Pixel Agents server's hook endpoint. It is additive to the
-UI bridge: enabling/disabling the relay never changes what the UI receives.
+for the UI to the bridge's embedding surface inside the Pixel Agents server.
+It is additive to the UI bridge: enabling/disabling the relay never changes
+what the UI receives.
 
 **Shape.** `BridgeRelay` owns a `Map<companyId, CompanyRelay>`, where each
-`CompanyRelay` is a `BridgeTransport` (from
-`@paperclip-pixel/pixel-agents-provider`, the same mapper used by the
-standalone adapter) wired to an `HttpPushSink`. The sink POSTs each mapped
-envelope — `{ providerId, sessionId, event }` — to
-`<baseUrl>/api/hooks/<providerId>` (default `paperclip-bridge`), optionally
-with a bearer `Authorization` header. The sink's outbound push is routed
-through the **SDK-gated `ctx.http.fetch`** (declared `http.outbound`
-capability; host-managed tracing/audit applies) and adapted to the provider's
-injectable `FetchLike` so the provider stays free of node globals — the Node
-global `fetch` is never used.
+`CompanyRelay` is a `PluginFeedMapper` wired to a `PluginFeedHttpSink`
+(from `src/pixel-agents-plugin/`). The mapper is a stateful translator from
+canonical `BridgeInputEvent`s, authoritative snapshots, and the per-agent
+appearance map into plugin feed operations; the sink POSTs strictly ordered
+batches — `{ schemaVersion: 1, companyId, operations }` of `declareAgents` /
+`removeAgents` / `updateAgentStatus` / `updateAgentActivity` — to
+`<baseUrl>/api/plugin-feed`, optionally with a bearer `Authorization` header,
+fire-and-forget with `lastPushError` capture. The sink's outbound push is
+routed through the **SDK-gated `ctx.http.fetch`** (declared `http.outbound`
+capability; host-managed tracing/audit applies) and adapted to the sink's
+injectable `FeedFetchLike` so the plugin package stays free of node globals —
+the Node global `fetch` is never used. There is no Claude-hook vocabulary on
+this wire: no `hook_event_name`, no `session_id`, no synthetic transcripts,
+no `saveAgentSeats` (the three retired impersonation hacks; WS2-C).
 
 **Config source.** Configuration is operator-set, **company-scoped** plugin
 config, read via `ctx.config.get(companyId)` and declared in the manifest's
 `instanceConfigSchema` (`relayConfigSchema` in `src/manifest.ts`). The worker
 env is scrubbed by the host, so env vars are not available — config is the
-only path. Fields: `pixelAgentsUrl` (required to enable; must be `https:` when
-a token is configured), `pixelAgentsTokenRef` (optional `secret-ref` binding,
-resolved at `configure` time via `ctx.secrets.resolve` — declared
-`secrets.read-ref`; the raw token is never persisted or logged),
-`pixelAgentsProviderId` (default `paperclip-bridge`, regex `^[a-z0-9-]+$`),
-`pixelAgentsRelayEnabled` (default on when a URL is set). The relay enables
-itself as soon as a non-empty URL is present unless explicitly disabled. If
+only path. Fields: `pixelAgentsUrl` (required to enable; the embedding
+surface's feed-listener base URL; must be `https:` when a token is
+configured), `pixelAgentsTokenRef` (optional `secret-ref` binding resolving
+to the feed shared secret, resolved at `configure` time via
+`ctx.secrets.resolve` — declared `secrets.read-ref`; the raw token is never
+persisted or logged), `pixelAgentsRelayEnabled` (default on when a URL is
+set), plus `pixelAgentsUiUrl`, `paperclipApiBaseUrl`, `paperclipApiTokenRef`
+and the privacy opt-in `dialogPanePrivacyOptIn` (default OFF — the retired
+`pixelAgentsProviderId` hook-path field is gone). The relay enables itself as
+soon as a non-empty URL is present unless explicitly disabled. If
 `pixelAgentsTokenRef` resolution fails, the relay stays disabled for that
 company (fail-securely).
 
@@ -442,38 +469,49 @@ company (fail-securely).
 - **`setup()`** — constructs one module-level `BridgeRelay` (the host forks
   one worker process per plugin instance). Each bootstrapped company calls
   `relay.configure(companyId, companyConfig)` then
-  `relay.ingestSnapshot(companyId, snapshot)` to seed the sidecar and spawn a
-  character per agent. The worker declares `multiCompanyConfig: true` to opt
+  `relay.ingestSnapshot(companyId, snapshot)` to declare every agent through
+  the sanctioned source. The worker declares `multiCompanyConfig: true` to opt
   in to per-company `onConfigChanged` delivery instead of single-tenant
   collapse/restart.
 - **Event loop** — every canonical `BridgeInputEvent` the worker applies to
   its `BridgeStore` is also forwarded via `relay.ingestEvent(companyId, bridgeEvent)`,
   a no-op when the company has no relay configured.
 - **Reconciliation job** — `relay.ingestSnapshot(...)` is re-fed after each
-  authoritative reconciliation so the relay sidecar resyncs and re-spawns
-  agents that appeared since the last pass.
+  authoritative reconciliation so the feed mapper resyncs and re-declares
+  agents that appeared since the last pass; `relay.syncAppearances(...)`
+  re-applies the per-agent appearance map (palette/hueShift ride the
+  declarations) at bootstrap, resync, and each assignment write.
 - **`onConfigChanged(newConfig, { companyId })`** — reconfigures only the
-  affected company's relay (disposes the prior transport, rebuilds from the
+  affected company's relay (disposes the prior mapper + sink, rebuilds from the
   new config; disables itself if the URL is gone). Errors are caught and
   logged — a config change must never crash the worker.
 - **`onValidateConfig(config)`** — validates `pixelAgentsUrl` is an
   http(s) URL, **rejects `http:` whenever `pixelAgentsTokenRef` is configured**
   (cleartext must never carry a token; `http:` is allowed only when
   token-less), `pixelAgentsTokenRef` a `secret_ref` binding or non-empty
-  string, `pixelAgentsProviderId` matches `^[a-z0-9-]+$`, and
-  `pixelAgentsRelayEnabled` a boolean.
+  string, and `pixelAgentsRelayEnabled` a boolean.
 - **`onHealth()`** — reports `companies` (bootstrapped) and `relayCompanies`
   (active relay count) in `details`.
-- **`onShutdown()`** — `relay.disposeAll()` disposes every company transport.
+- **`onShutdown()`** — `relay.disposeAll()` disposes every company mapper + sink.
 
-**Upstream dependency: none.** The relay pushes events serialized as the real
-Claude hook JSON body (`hook_event_name`, `session_id`, `tool_name`, etc.),
-targeting Pixel Agents' one shipped provider (`claudeProvider`) directly at
-`/api/hooks/claude`. No upstream Pixel Agents change, past or pending, is
-required — confirmed live: a pushed event produces
-`[Pixel Agents] Hook: Agent N - detected hooks-only external session (...)`
-and a real, animated character, against a pristine (`git diff origin/main`
-empty) Pixel Agents checkout.
+**First-class plugin path (WS2).** The receiving end is the embedding
+surface: `src/pixel-agents-plugin/embedding.ts`, bundled to
+`dist/pixel-agents-embedding.cjs` and loaded by the fork's generic
+`--plugin <module>` startup loader inside the Pixel Agents server process.
+It registers the Paperclip plugin through the real WS2-A1 host API
+(manifest + reply actions + roster re-declaration on start), serves
+`POST /api/plugin-feed` on its own sidecar listener (default
+`127.0.0.1:8081`; fail-closed bearer auth — constant-time SHA-256 digest
+compare, 401 on unauthenticated or wrong-token, token never in the URL, and
+the module refuses to start without `PAPERCLIP_PIXEL_FEED_TOKEN`), and wires
+click-menu replies through the `HttpReplyForwarder` into the plugin's
+**existing** Paperclip actions via the host's performAction proxy
+(`agent.reply-to-feedback` / `company.send-message` only — no
+issue-creation code anywhere on the path; without
+`PAPERCLIP_PIXEL_API_TOKEN` replies fail closed with
+`forwarderNotConfigured`). The plugin host, the four contribution points,
+and the `--plugin` loader are documented in companion handbook §5.6; the
+fork-side wire contract lives in the fork's `core/asyncapi.yaml`.
 
 ---
 
@@ -493,13 +531,19 @@ node scripts/build.mjs && node scripts/build-ui.mjs
    `@paperclipai/plugin-sdk/bundlers` (`createPluginBundlerPresets`):
    - Entries: `src/worker.ts` → `dist/worker.js`, `src/manifest.ts` →
      `dist/manifest.js` (ESM, sourcemap on, `minify: false`).
-   - **Inlined** into each bundle: `src/core`, `src/pixel-agents-provider`,
+   - **Inlined** into each bundle: `src/core`, `src/pixel-agents-plugin`,
      `@paperclipai/plugin-sdk`, `@paperclipai/shared` (consumed as TS
      source), and `zod`. The forked worker process therefore never has to
      resolve these from an install location at runtime — the bundle is
      self-contained.
    - **Externalized:** `node:*` built-ins only (per the plugin loader
      contract). The worker loads in plain Node with no `tsx` loader.
+   - The same script additionally bundles the **embedding module**:
+     `src/pixel-agents-plugin/embedding.ts` →
+     `dist/pixel-agents-embedding.cjs` (plain esbuild options, CJS so the
+     fork CLI's dynamic import resolves it trivially, everything inlined
+     except node built-ins — this bundle never runs in a Paperclip plugin
+     worker, so no SDK preset applies).
    - `tsc -p tsconfig.json` is no longer the worker build step. It is kept
      for type declarations (`build:types` runs `--emitDeclarationOnly`) and
      typechecking (`typecheck` runs `--noEmit`). The worker `tsconfig.json`
@@ -564,24 +608,32 @@ docker build -t pixel-agents:local         -f deploy/docker/Dockerfile.pixel-age
 - **Plugin bundling** is performed by `deploy/docker/build-plugin-bundle.sh`,
   which assembles a self-contained copy of the plugin at a target directory.
   Because the worker/manifest bundles are esbuild-bundled (inlining
-  `core`/`pixel-agents-provider`/`sdk`/`shared`/`zod`), the script just copies
-  the root `package.json` and the **whole `dist/` tree** (`cp -R .../dist`).
-  No vendoring of dependency files under `node_modules/`, no separate `zod`
-  install, no exports-rewriting step. The layout produced is just:
+  `core`/`pixel-agents-plugin`/`sdk`/`shared`/`zod`), the script just copies
+  the root `package.json`, the **whole `dist/` tree** (`cp -R .../dist`), and
+  — since WS2-D — the **`assets/characters/` catalog** the worker reads at
+  runtime. No vendoring of dependency files under `node_modules/`, no
+  separate `zod` install, no exports-rewriting step. The layout produced is
+  just:
   ```text
   <target>/
     package.json   (the @decaf-ts/paperclip-pixels root package.json)
     dist/          (worker.js, manifest.js, ui/index.js -- all self-contained)
+    assets/characters/  (catalog.json + char_*.png — the WS3 catalog)
   ```
   Because `dist/` contains `worker.js`, `manifest.js`, and `ui/index.js`,
   the UI bundle ships inside the same `dist/` as the worker — the host finds
   it via the manifest's `entrypoints.ui` (`"./dist/ui"`). No separate UI
   shipping step is needed. The Dockerfile correspondingly only `COPY`s the
-  root `package.json` + `dist/` (nothing from `paperclip/` or `pixel-agents/`
-  beyond their own Dockerfile stages).
+  root `package.json` + `dist/` + `assets/characters/` (nothing from
+  `paperclip/` or `pixel-agents/` beyond their own Dockerfile stages).
 - **Pixel Agents image** (`Dockerfile.pixel-agents`) builds the standalone
-  CLI from the `pixel-agents` submodule; it ships no Dockerfile of its own
-  beyond this one.
+  CLI from the `pixel-agents` submodule (which ships no Dockerfile of its
+  own) **and vendors the bridge embedding module**: it `COPY`s
+  `dist/pixel-agents-embedding.cjs` (built by the repo-root `npm run build`
+  — which must therefore run before either image is built) and starts the
+  CLI with `--plugin /opt/paperclip-pixel-embedding/pixel-agents-embedding.cjs`,
+  exposing `8080` (UI/WS) and `8081` (plugin feed). The retired
+  `bin/paperclip-pixel-relay.js` sidecar vendoring is gone.
 
 > Repo layout note: the project-root `docs/` directory is a gitignored
 > publish output (the `npm run drawings`/`uml` scripts copy
@@ -596,7 +648,7 @@ docker build -t pixel-agents:local         -f deploy/docker/Dockerfile.pixel-age
 | Layer | Description | Key mechanisms |
 | --- | --- | --- |
 | Trust boundary (UI ↔ worker) | All Paperclip domain access routes through the worker; the UI never calls Paperclip HTTP routes directly (FR-9, §28.2) | UI bundle externalizes React + SDK UI hooks; UI reaches the worker only via `ctx.data`/`ctx.actions`/`ctx.streams` |
-| Relay outbound boundary (`PAPERCLIP_PIXELS-2`) | The relay's outbound HTTP to the Pixel Agents server is operator-gated per company, push-only, routed through the SDK-gated `ctx.http.fetch` (declared `http.outbound`), and carries only mapped bridge envelopes; the worker never accepts inbound from that server | `instanceConfigSchema` gates `pixelAgentsUrl`/`pixelAgentsRelayEnabled`; relay disabled by default when no URL; `onValidateConfig` enforces http(s) URL + rejects `http:` with a token + provider id regex; bearer token is operator-bound via a `secrets.read-ref`-gated secret reference, never a plaintext config value |
+| Relay outbound boundary (`PAPERCLIP_PIXELS-2`) | The relay's outbound HTTP to the embedding surface is operator-gated per company, push-only, routed through the SDK-gated `ctx.http.fetch` (declared `http.outbound`), and carries only plugin feed batches; the worker never accepts inbound from that server | `instanceConfigSchema` gates `pixelAgentsUrl`/`pixelAgentsRelayEnabled`; relay disabled by default when no URL; `onValidateConfig` enforces http(s) URL + rejects `http:` with a token; bearer token is operator-bound via a `secrets.read-ref`-gated secret reference, never a plaintext config value; the feed endpoint mirrors the gate fail-closed (constant-time digest compare, 401, no token-in-URL, refuses to start without `PAPERCLIP_PIXEL_FEED_TOKEN`) |
 | Least-privilege manifest | Request only required capabilities (FR-10, §14, §28.1) | `capabilities` array in `manifest.ts`; read-only visualization needs no mutation caps; feedback needs no `issues.create` |
 | Input validation | All `ctx.data`/`ctx.actions`/`ctx.streams` payloads validated with Zod; host-authenticated actor identity, not user-supplied actor IDs (FR-11, §28.4) | Zod schemas on every handler; `onValidateConfig` validates relay config fields |
 | Secrets | No resolved secrets in plugin state — retain references, resolve at call time; never log secrets/full sensitive prompts by default (FR-12, §28.3, NFR-7) | `ctx.state` holds references only; the relay token is resolved per company from the operator-bound `pixelAgentsTokenRef` (`ctx.secrets.resolve`, `secrets.read-ref`), lives only in memory for the sink's lifetime, and is never logged or persisted |
@@ -638,32 +690,36 @@ HTTP path from the worker to an operator-configured Pixel Agents server.
   non-empty `pixelAgentsUrl` (unless `pixelAgentsRelayEnabled` is explicitly
   `false`). Each company is configured independently; enabling company A's
   relay never affects company B.
-- **Push-only, through the gated HTTP surface.** The worker only POSTs mapped
-  envelopes to `<baseUrl>/api/hooks/<providerId>`; it never opens a listener and
-  never accepts inbound requests from that server. There is no inbound surface
-  to attack from the Pixel Agents server side. The push is routed through the
-  SDK-gated `ctx.http.fetch` behind the declared `http.outbound` capability —
-  the host's capability validator and outbound tracing/audit cover it; the Node
-  global `fetch` is never used.
+- **Push-only, through the gated HTTP surface.** The worker only POSTs
+  feed-operation batches to `<baseUrl>/api/plugin-feed`; it never opens a
+  listener and never accepts inbound requests from that server. There is no
+  inbound surface to attack from the Pixel Agents server side. The push is
+  routed through the SDK-gated `ctx.http.fetch` behind the declared
+  `http.outbound` capability — the host's capability validator and outbound
+  tracing/audit cover it; the Node global `fetch` is never used.
 - **Config is the only path.** The worker env is scrubbed by the host, so
   env vars are unavailable inside the plugin; the relay reads its URL/token
   only from operator plugin config via `ctx.config.get(companyId)`. The bearer
   token is operator-bound as a `pixelAgentsTokenRef` secret reference, resolved
   at `configure` time via `ctx.secrets.resolve` (`secrets.read-ref`), sent only
-  on the outbound hook POST, lives only in memory, and is never logged or
+  on the outbound feed POST, lives only in memory, and is never logged or
   persisted.
 - **Validated config.** `onValidateConfig` enforces that `pixelAgentsUrl` is
   an http(s) URL — and **rejects `http:` whenever a token ref is configured**
   (cleartext must never carry a bearer token; token-less `http:` is allowed for
   isolated sidecar deployments) — `pixelAgentsUrl` must therefore be `https:`
-  when a token is used. It also enforces `pixelAgentsProviderId` matches
-  `^[a-z0-9-]+$`, the token ref is a `secret_ref` binding or non-empty string,
-  and the enable flag is boolean — rejecting malformed operator input before it
-  reaches the relay.
+  when a token is used. It also enforces the token ref is a `secret_ref`
+  binding or non-empty string, and the enable flag is boolean — rejecting
+  malformed operator input before it reaches the relay. The receiving feed
+  endpoint enforces its own half of the boundary fail-closed: bearer shared
+  secret compared constant-time over SHA-256 digests, 401 on
+  unauthenticated/wrong-token, a token never accepted via URL, and the
+  embedding module refuses to start without `PAPERCLIP_PIXEL_FEED_TOKEN`
+  configured.
 - **Failure isolation.** `onConfigChanged` and `setup()` catch and log relay
   errors; a relay misconfiguration or push failure must never crash the
-  worker or break the UI bridge. `HttpPushSink.lastPushError` surfaces the
-  most recent push error per company (cleared on a successful push) for
+  worker or break the UI bridge. `PluginFeedHttpSink.lastPushError` surfaces
+  the most recent push error per company (cleared on a successful push) for
   health/observability.
 
 ### New-work invariant (security-critical)
@@ -765,10 +821,13 @@ worker-runtime defects (see `deploy/README.md` "Known limitations").
 SDK-blessed presets (`scripts/build.mjs` → `createPluginBundlerPresets`).
 Runtime deps (`@paperclip-pixel/core`, `@paperclipai/plugin-sdk`,
 `@paperclipai/shared` consumed as TS source, `zod`,
-`@paperclip-pixel/pixel-agents-provider`) are **inlined**; only `node:*`
+`src/pixel-agents-plugin`) are **inlined**; only `node:*`
 built-ins are externalized. `tsc` is demoted to type declarations
 (`build:types`) and typechecking (`typecheck`), adding `"types": ["node"]` +
-`@types/node` so Node globals like `fetch` typecheck.
+`@types/node` so Node globals like `fetch` typecheck. Since WS2-D the same
+script also emits the self-contained `dist/pixel-agents-embedding.cjs`
+(plain esbuild, CJS, node built-ins external) for the fork's `--plugin`
+loader.
 
 **Pros / Cons**
 
@@ -784,40 +843,40 @@ make the deploy shape `package.json` + `dist/` only.
 ### ADR-05 — In-plugin per-company BridgeRelay (PAPERCLIP_PIXELS-2)
 
 **Context & problem.** The bridge already produces canonical events/snapshots
-for the UI. To also drive a Pixel Agents server, those same events must reach
-its `POST /api/hooks/<providerId>` endpoint — without a second event pipeline,
-without an inbound listener, and without breaking the per-company model.
+for the UI. To also drive the Pixel Agents office, those same events must
+reach the bridge's embedding surface inside the Pixel Agents server — without
+a second event pipeline, without an inbound listener, and without breaking
+the per-company model.
 
 **Alternatives considered**
 
 | Option | Description |
 | --- | --- |
-| Separate relay process outside the plugin | Rejected: duplicates event subscription/bootstrap, splits the canonical pipeline, second deployable to operate |
+| Separate relay process outside the plugin | Rejected: duplicates event subscription/bootstrap, splits the canonical pipeline, second deployable to operate (the retired `paperclip-pixel-relay` CLI was exactly this) |
 | Push from the UI bundle | Rejected: violates FR-9 (UI has no Paperclip path) and only fires while the UI is open |
 | **In-plugin `BridgeRelay` fed the same canonical events** | Chosen |
 
 **Decision.** Add `BridgeRelay` in `src/relay.ts`, constructed once in
-`setup()`, owning one `BridgeTransport` + `HttpPushSink` per company (reusing
-the same `@paperclip-pixel/pixel-agents-provider` mapper the standalone
-adapter uses). The worker forwards every canonical `BridgeInputEvent` and
-each authoritative snapshot to the relay alongside applying them to its
-`BridgeStore`; the relay is a no-op for companies with no config. Config is
-operator-set, company-scoped plugin config (`instanceConfigSchema`), not env
-(host scrubs env). `multiCompanyConfig: true` opts into per-company
-`onConfigChanged` so config edits reconfigure only the affected company
-without a worker restart.
+`setup()`, owning one `PluginFeedMapper` + `PluginFeedHttpSink` per company
+(from `src/pixel-agents-plugin/`). The worker forwards every canonical
+`BridgeInputEvent`, each authoritative snapshot, and the per-agent appearance
+map to the relay alongside applying them to its `BridgeStore`; the relay is a
+no-op for companies with no config. Config is operator-set, company-scoped
+plugin config (`instanceConfigSchema`), not env (host scrubs env).
+`multiCompanyConfig: true` opts into per-company `onConfigChanged` so config
+edits reconfigure only the affected company without a worker restart.
 
 **Pros / Cons**
 
 | Pros | Cons |
 | --- | --- |
 | One canonical event pipeline; relay is additive and no-op when disabled | Adds an outbound HTTP path (second boundary, see §08) requiring operator config |
-| Reuses the provider mapper; provider-agnostic | Reaching the live Pixel Agents runtime still needs the upstream per-`providerId` dispatch change (spike SAA-175) |
+| Feed operations are thin wrappers around the sanctioned agent/team source — no impersonation vocabulary on the wire | The embedding surface needs its own env-configured shared secret (`PAPERCLIP_PIXEL_FEED_TOKEN`) mirrored into `pixelAgentsTokenRef` |
 | Per-company config + lifecycle hooks; failures are isolated and logged | — |
 
-**Summary.** The relay reuses the canonical pipeline and the provider mapper,
-is operator-gated per company, and is provider-agnostic until the upstream
-dispatch change lands.
+**Summary.** The relay reuses the canonical pipeline, is operator-gated per
+company, and speaks the first-class plugin feed (WS2) — the earlier
+Claude-hook serialization and its upstream-dispatch dependency are retired.
 
 ### ADR-06 — Background stream emits and the host invocation-scope guard
 
@@ -970,57 +1029,76 @@ via `ctx.config.get(companyId)` and through the delivered `newConfig` in
 
 | Field | Type | Required | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `pixelAgentsUrl` | string (`format: uri`) | to enable | — | Base URL of the Pixel Agents server (e.g. `https://pixel-agents:8080`); must be `https:` when a token ref is configured; relay enables itself when set |
-| `pixelAgentsTokenRef` | string (`format: secret-ref`) | no | — | `secret_ref` binding resolved to the bearer token via `ctx.secrets.resolve`; never a plaintext value; `x-paperclip-advanced` |
-| `pixelAgentsProviderId` | string (`^[a-z0-9-]+$`) | no | `paperclip-bridge` | Provider id in the hook path; `x-paperclip-advanced` |
-| `pixelAgentsRelayEnabled` | boolean | no | on when URL set | Explicit on/off; `x-paperclip-advanced` |
+| `pixelAgentsUrl` | string (`format: uri`) | to enable | — | Base URL of the embedding surface's feed listener (e.g. `http://pixel-agents:8081`); must be `https:` when a token ref is configured; relay enables itself when set |
+| `pixelAgentsUiUrl` | string (`format: uri`) | no | — | Browser URL of the company's Pixel Agents instance (the embedded office iframe), regardless of relay state |
+| `pixelAgentsTokenRef` | string (`format: secret-ref`) | no | — | `secret_ref` binding resolved to the feed shared secret via `ctx.secrets.resolve`; the same value the embedding side sets as `PAPERCLIP_PIXEL_FEED_TOKEN`; never a plaintext value |
+| `pixelAgentsRelayEnabled` | boolean | no | on when URL set | Explicit on/off |
+| `paperclipApiBaseUrl` | string | no | loopback default | Paperclip API base for the tool-activity poller (`GET /api/heartbeat-runs/:runId/log`) |
+| `paperclipApiTokenRef` | string (`format: secret-ref`) | no | — | Board API key (secret ref) for the tool-activity poller |
+| `dialogPanePrivacyOptIn` | boolean | no | `false` | Per-company opt-in for the conversation dialog pane (WS4 conversation-extract feed); default OFF — when off, the pane shows only a redacted/truncated extract, never full sensitive prompts (CEO decision 2) |
 
+The retired `pixelAgentsProviderId` hook-path field is gone (WS2-C).
 `onValidateConfig` enforces the URL is http(s) — **rejecting `http:` whenever
 `pixelAgentsTokenRef` is configured** so a bearer token never travels over
-cleartext — the provider id matches the regex, the token ref is a `secret_ref`
-binding or non-empty string when present, and the enable flag is a boolean.
+cleartext — the token ref is a `secret_ref` binding or non-empty string when
+present, and the enable flag is a boolean.
 The relay is disabled by default; it activates only when a company has a
 non-empty `pixelAgentsUrl` (unless explicitly disabled), and stays disabled if
 the token ref fails to resolve (fail-secure).
 
-### IF004 — Pixel Agents hook endpoint (relay outbound, PAPERCLIP_PIXELS-2)
+### IF004 — Plugin feed endpoint (relay outbound, PAPERCLIP_PIXELS-2 WS2)
 
-When enabled for a company, the relay POSTs mapped event envelopes to the
-operator-configured Pixel Agents server:
+When enabled for a company, the relay POSTs feed-operation batches to the
+operator-configured embedding surface inside the Pixel Agents server:
 
 ```mermaid
 sequenceDiagram
     participant W as worker (plugin)
     participant R as BridgeRelay
-    participant T as BridgeTransport
-    participant S as HttpPushSink
-    participant PA as Pixel Agents server
+    participant M as PluginFeedMapper
+    participant S as PluginFeedHttpSink
+    participant E as Embedding surface (POST /api/plugin-feed)
+    participant H as Fork plugin host (in-process)
     Note over W: applies canonical event to BridgeStore (for UI)
     W->>R: ingestEvent(companyId, BridgeInputEvent)
-    R->>T: ingestEvent(event)
-    T->>S: push(AgentEvent envelope)
-    S->>PA: POST <baseUrl>/api/hooks/<providerId>
-    Note over S,PA: { providerId, sessionId, event }<br/>optional Authorization: Bearer <token>
-    PA-->>S: acknowledge
-    S-->>T: ok / lastPushError cleared
+    R->>M: ingestEvent(event) / ingestSnapshot / syncAppearances
+    M->>S: push(feed operations)
+    S->>E: POST <baseUrl>/api/plugin-feed<br/>{ schemaVersion: 1, companyId, operations }
+    Note over S,E: optional Authorization: Bearer <token><br/>(shared secret, constant-time verified)
+    E->>H: sanctioned agent/team source<br/>declareAgents / updateAgentStatus / updateAgentActivity / removeAgents
+    E-->>S: acknowledge
+    S-->>M: ok / lastPushError cleared
 ```
 
-- **Endpoint:** `POST <pixelAgentsUrl>/api/hooks/<providerId>` (default
-  `paperclip-bridge`).
-- **Envelope:** `{ providerId, sessionId, event }` — the same shape the
-  standalone adapter produces, so the provider is shared.
+- **Endpoint:** `POST <pixelAgentsUrl>/api/plugin-feed` — the embedding
+  surface's own sidecar listener (default `127.0.0.1:8081`; env
+  `PAPERCLIP_PIXEL_FEED_HOST/PORT/TOKEN`).
+- **Batch:** `{ schemaVersion: 1, companyId, operations }` — thin, honest
+  wrappers around the WS2-A1 agent/team data source, applied in order and
+  validated all-or-nothing. No Claude-hook vocabulary exists on this wire
+  (the three impersonation hacks are retired; WS2-C).
 - **Auth:** optional bearer token resolved per company from the
   `pixelAgentsTokenRef` secret reference (`ctx.secrets.resolve`), sent as
   `Authorization: Bearer <token>` only on the outbound POST; never logged.
-  Pushes flow through the SDK-gated `ctx.http.fetch` (declared
-  `http.outbound`).
-- **Snapshots:** `ingestSnapshot` seeds/re-syncs the sidecar (spawns a
-  character per agent) at bootstrap and after each authoritative
-  reconciliation.
+  The receiving side compares constant-time over SHA-256 digests, answers
+  401 fail-closed, never accepts a token via URL, and refuses to start
+  without `PAPERCLIP_PIXEL_FEED_TOKEN`. Pushes flow through the SDK-gated
+  `ctx.http.fetch` (declared `http.outbound`).
+- **Replies:** click-menu selections ride the fork's privileged
+  `invokePluginAction` path to the plugin's registered actions, which the
+  `HttpReplyForwarder` routes into the plugin's **existing** Paperclip
+  actions via the performAction proxy (`POST /api/plugins/:pluginId/actions/:key`
+  → `agent.reply-to-feedback` / `company.send-message`) — never direct issue
+  creation; without `PAPERCLIP_PIXEL_API_TOKEN` replies fail closed with
+  `forwarderNotConfigured`.
+- **Snapshots:** `ingestSnapshot` re-declares every agent at bootstrap and
+  after each authoritative reconciliation; `syncAppearances` re-applies the
+  per-agent appearance map (palette/hueShift ride the declarations).
 - **Health:** `onHealth()` reports `companies` (bootstrapped) and
-  `relayCompanies` (active relay count); `HttpPushSink.lastPushError` exposes
-  the most recent per-company push error (cleared on success).
-- **Upstream dependency:** the route accepts and acknowledges envelopes today;
-  reaching the live Pixel Agents runtime requires the upstream per-`providerId`
-  dispatch change (spike SAA-175 §5/§6) so the `paperclip-bridge` provider is
-  normalized instead of the single injected `claudeProvider`.
+  `relayCompanies` (active relay count); `PluginFeedHttpSink.lastPushError`
+  exposes the most recent per-company push error (cleared on success).
+- **Fork-side contract:** the plugin host, the four contribution points
+  (click menu, label policy, widgets, character behavior hooks), the
+  `--plugin` loader, and the `core/asyncapi.yaml` wire contract are
+  documented in companion handbook §5.6 "Pixel Agents fork plugin
+  architecture" and the PAPERCLIP_PIXELS-2 domain record.

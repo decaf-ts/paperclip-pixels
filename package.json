@@ -1,7 +1,7 @@
 {
   "name": "@decaf-ts/paperclip-pixels",
   "version": "0.6.0",
-  "description": "Paperclip <-> Pixel Agents bridge: a Paperclip plugin (manifest, event subscriptions, snapshot bootstrap, worker->UI bridge, action policy) plus the paperclip-pixel-relay companion CLI for Pixel Agents.",
+  "description": "Paperclip <-> Pixel Agents bridge: a Paperclip plugin (manifest, event subscriptions, snapshot bootstrap, worker->UI bridge, action policy) plus the in-process Pixel Agents embedding module (plugin feed endpoint + click-menu reply forwarder) for the Pixel Agents fork's --plugin loader.",
   "type": "module",
   "main": "dist/worker.js",
   "types": "dist/worker.d.ts",
@@ -15,16 +15,12 @@
       "types": "./dist/manifest.d.ts"
     }
   },
-  "bin": {
-    "paperclip-pixel-relay": "bin/paperclip-pixel-relay.js"
-  },
   "paperclipPlugin": {
     "manifest": "./dist/manifest.js",
     "worker": "./dist/worker.js"
   },
   "files": [
     "dist",
-    "bin/paperclip-pixel-relay.js",
     "assets/characters",
     "scripts/link-paperclip-sdk.mjs",
     "README.md",

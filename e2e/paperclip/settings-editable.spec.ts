@@ -35,10 +35,9 @@ interface OperatorField {
 
 /** The 7 operator fields from src/manifest.ts instanceConfigSchema. */
 const OPERATOR_FIELDS: ReadonlyArray<OperatorField> = [
-  { key: "pixelAgentsUrl", label: "Pixel Agents server URL", kind: "string" },
+  { key: "pixelAgentsUrl", label: "Pixel Agents companion URL", kind: "string" },
   { key: "pixelAgentsUiUrl", label: "Pixel Agents browser URL", kind: "string" },
   { key: "pixelAgentsTokenRef", label: "Pixel Agents bearer token", kind: "secret" },
-  { key: "pixelAgentsProviderId", label: "Provider id", kind: "string" },
   { key: "pixelAgentsRelayEnabled", label: "Relay enabled", kind: "boolean" },
   {
     key: "paperclipApiBaseUrl",
@@ -49,6 +48,11 @@ const OPERATOR_FIELDS: ReadonlyArray<OperatorField> = [
     key: "paperclipApiTokenRef",
     label: "Paperclip API bearer token (for real tool descriptions)",
     kind: "secret",
+  },
+  {
+    key: "dialogPanePrivacyOptIn",
+    label: "Conversation dialog pane (privacy opt-in)",
+    kind: "boolean",
   },
 ];
 
@@ -94,12 +98,12 @@ test.describe("WS0 — plugin settings screen is the host auto-form (editable, g
     // Browser-local, never-saved edit: the save affordance turns on when an
     // operator field changes, and the reload discards the draft so the saved
     // config on this stack stays untouched.
-    const providerField: OperatorField = {
-      key: "pixelAgentsProviderId",
-      label: "Provider id",
+    const probeField: OperatorField = {
+      key: "pixelAgentsUrl",
+      label: "Pixel Agents companion URL",
       kind: "string",
     };
-    const input = fieldControl(page, providerField);
+    const input = fieldControl(page, probeField);
     const before = await input.inputValue();
     await input.fill(`${before}-e2e-probe`);
     await expect(page.getByRole("button", { name: "Save Configuration", exact: true })).toBeEnabled();
@@ -115,7 +119,7 @@ test.describe("WS0 — plugin settings screen is the host auto-form (editable, g
     // Reload discards the browser-local draft; the saved config value restores.
     await page.reload({ waitUntil: "domcontentloaded" });
     await assertSettingsScreenLoaded(page);
-    const restored = await fieldControl(page, providerField).inputValue();
+    const restored = await fieldControl(page, probeField).inputValue();
     expect(restored, "an unsaved operator field edit must not persist").toBe(before);
   });
 });

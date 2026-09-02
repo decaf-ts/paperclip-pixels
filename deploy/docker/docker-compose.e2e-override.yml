@@ -1,0 +1,29 @@
+# Override for the disposable e2e bridge stack (compose project
+# `paperclip-pixels-e2e`) on the shared docker daemon — the stack the canonical
+# `e2e/` Playwright suite runs against. Layer it on the base compose file:
+#
+#   PAPERCLIP_AUTH_SECRET=$(openssl rand -hex 32) \
+#     docker compose -p paperclip-pixels-e2e \
+#       -f deploy/docker/docker-compose.bridge-stack.yml \
+#       -f deploy/docker/docker-compose.e2e-override.yml up -d
+#
+# Differences from the base file (see SAA-465 / SAA-473 evidence):
+#   - `PAPERCLIP_PUBLIC_URL` points at the docker bridge gateway
+#     (http://172.24.0.1:3100) so browser/auth flows work when driven from the
+#     daemon host (LOGIN_ORIGIN for the e2e suite).
+#   - Postgres is published on the host at 15432 so `e2e/helpers/db.ts` can
+#     query it directly (`DB_HOST=172.24.0.1`, `DB_PORT=15432`).
+#
+# The stack is disposable and re-seedable: wiping the `pgdata` +
+# `paperclip-data` volumes gives a fresh instance (the board user is then
+# re-seeded via `POST /api/auth/sign-up/email` → board-claim → `instance_admin`).
+# See deploy/README.md "Rebuild + redeploy runbook (shared daemon, e2e stack)".
+
+services:
+  db:
+    ports:
+      - "15432:5432"
+
+  paperclip:
+    environment:
+      PAPERCLIP_PUBLIC_URL: "http://172.24.0.1:3100"

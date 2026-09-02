@@ -75,27 +75,31 @@ describe("manifest", () => {
 
   describe("relay instance config schema", () => {
     // NOTE: the SAA-229 staged manifest declared a plaintext `pixelAgentsToken`
-    // field; the current implementation declares exactly four relay fields with
+    // field; the current implementation declares exactly the relay fields with
     // `pixelAgentsTokenRef` (a `secret-ref` binding, never a plaintext value).
-    // These assertions lock in the current schema.
+    // WS2-C (2026-09-01): `pixelAgentsProviderId` is retired with the
+    // Claude-hook wire (the feed has no provider id), and
+    // `dialogPanePrivacyOptIn` (CEO decision 2) joins the schema. These
+    // assertions lock in the current schema.
     const properties = (manifest.instanceConfigSchema as {
       type?: string;
       properties?: Record<string, Record<string, unknown>>;
     }).properties ?? {};
 
-    it("declares an object instanceConfigSchema with exactly the four relay fields", () => {
+    it("declares an object instanceConfigSchema with exactly the current relay fields", () => {
       expect(manifest.instanceConfigSchema).toBeDefined();
       expect((manifest.instanceConfigSchema as { type?: string }).type).toBe("object");
       expect(Object.keys(properties).sort()).toEqual([
+        "dialogPanePrivacyOptIn",
         "paperclipApiBaseUrl",
         "paperclipApiTokenRef",
-        "pixelAgentsProviderId",
         "pixelAgentsRelayEnabled",
         "pixelAgentsTokenRef",
         "pixelAgentsUiUrl",
         "pixelAgentsUrl",
       ]);
       expect(properties.pixelAgentsToken).toBeUndefined();
+      expect(properties.pixelAgentsProviderId).toBeUndefined();
     });
 
     it("declares pixelAgentsUrl as a uri-format string", () => {
@@ -129,16 +133,15 @@ describe("manifest", () => {
       }
     });
 
-    it("declares pixelAgentsProviderId with the ^[a-z0-9-]+$ pattern and claude default", () => {
-      expect(properties.pixelAgentsProviderId).toMatchObject({
-        type: "string",
-        pattern: "^[a-z0-9-]+$",
-        default: "claude",
-      });
-    });
-
     it("declares pixelAgentsRelayEnabled as a boolean", () => {
       expect(properties.pixelAgentsRelayEnabled).toMatchObject({ type: "boolean" });
+    });
+
+    it("declares dialogPanePrivacyOptIn as an opt-in boolean defaulting to false (CEO decision 2)", () => {
+      expect(properties.dialogPanePrivacyOptIn).toMatchObject({
+        type: "boolean",
+        default: false,
+      });
     });
   });
 });

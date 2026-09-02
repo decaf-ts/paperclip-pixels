@@ -12,8 +12,9 @@ import {
 
 /**
  * Operator-editable, company-scoped configuration for the bridge relay that
- * pushes mapped AgentEvents to a Pixel Agents server's hook endpoint. The
- * relay is enabled by default once `pixelAgentsUrl` is set.
+ * pushes plugin feed operations (agent declarations, status, activity) to the
+ * Paperclip plugin's embedding surface inside Pixel Agents. The relay is
+ * enabled by default once `pixelAgentsUrl` is set.
  */
 /**
  * JSON schema defining the operator‑editable, company‑scoped configuration for
@@ -25,16 +26,16 @@ const relayConfigSchema: JsonSchema = {
   properties: {
     pixelAgentsUrl: {
       type: "string",
-      title: "Pixel Agents server URL",
+      title: "Pixel Agents companion URL",
       description:
-        "Base URL of the paperclip-pixel-relay companion (not Pixel Agents itself). Public endpoints must use https; the bundled loopback/Compose sidecar may use http. Defaults to http://127.0.0.1:8081.",
+        "Base URL of the companion sidecar that embeds the Paperclip plugin inside Pixel Agents and serves POST /api/plugin-feed. Public endpoints must use https; the bundled loopback/Compose sidecar may use http. Defaults to http://127.0.0.1:8081.",
       format: "uri",
     },
     pixelAgentsUiUrl: {
       type: "string",
       title: "Pixel Agents browser URL",
       description:
-        "Browser-reachable URL embedded in the Pixel Office page. This is normally http://localhost:8090 for the bundled Compose deployment and is distinct from the worker-to-relay URL.",
+        "Browser-reachable URL embedded in the Pixel Office page. This is normally http://localhost:8090 for the bundled Compose deployment and is distinct from the worker-to-companion URL.",
       format: "uri",
       default: "http://localhost:8090",
     },
@@ -60,14 +61,7 @@ const relayConfigSchema: JsonSchema = {
       ],
       title: "Pixel Agents bearer token",
       description:
-        "Optional secret reference resolved to the bearer token sent on each push to POST /api/hooks/<providerId>. Stored as a secret_ref binding, never as a plaintext value. Requires an https: pixelAgentsUrl. Not needed for the bundled sidecar default.",
-    },
-    pixelAgentsProviderId: {
-      type: "string",
-      pattern: "^[a-z0-9-]+$",
-      title: "Provider id",
-      description: "Provider id used in the hook path. Defaults to 'claude' — the only id Pixel Agents' unmodified route currently dispatches on.",
-      default: "claude",
+        "Optional secret reference resolved to the bearer token sent on each plugin feed push to the companion. Stored as a secret_ref binding, never as a plaintext value. Requires an https: pixelAgentsUrl. Not needed for the bundled sidecar default.",
     },
     pixelAgentsRelayEnabled: {
       type: "boolean",
@@ -78,7 +72,7 @@ const relayConfigSchema: JsonSchema = {
       type: "string",
       title: "Paperclip API base URL (for real tool descriptions)",
       description:
-        "Base URL this plugin worker calls to read a run's raw execution log (GET /api/heartbeat-runs/:runId/log), used to show real per-tool-call status (\"Reading X\"/\"Using Y\") instead of the generic \"PaperclipWork\" placeholder. Defaults to http://127.0.0.1:3100 (the worker runs in the same container as the Paperclip server in the bundled Compose deployment). Only used when paperclipApiTokenRef is also set.",
+        "Base URL this plugin worker calls to read a run's raw execution log (GET /api/heartbeat-runs/:runId/log), used to show real per-tool-call status (\"Reading X\"/\"Using Y\") instead of the generic \"Task: …\" placeholder. Defaults to http://127.0.0.1:3100 (the worker runs in the same container as the Paperclip server in the bundled Compose deployment). Also the base URL the embedding side's reply forwarder uses to route click-menu replies through this plugin's existing actions. Only used when paperclipApiTokenRef is also set.",
       format: "uri",
     },
     paperclipApiTokenRef: {
@@ -103,7 +97,14 @@ const relayConfigSchema: JsonSchema = {
       ],
       title: "Paperclip API bearer token (for real tool descriptions)",
       description:
-        "A board API key, resolved to a bearer token for GET /api/heartbeat-runs/:runId/log calls. Optional -- without it, Pixel Agents shows the generic \"PaperclipWork\" placeholder instead of a real tool name/file, but everything else (names, rooms, busy/idle status) keeps working unaffected.",
+        "A board API key, resolved to a bearer token for GET /api/heartbeat-runs/:runId/log calls. Optional -- without it, Pixel Agents shows the generic \"Task: …\" placeholder instead of a real tool name/file, but everything else (names, rooms, busy/idle status) keeps working unaffected.",
+    },
+    dialogPanePrivacyOptIn: {
+      type: "boolean",
+      title: "Conversation dialog pane (privacy opt-in)",
+      description:
+        "Per-company opt-in for the agent conversation dialog pane (WS4 conversation-extract feed). Default OFF: when off, the pane shows only a redacted/truncated extract, never full sensitive prompts (PAPERCLIP_PIXELS-1 NFR-7; locked CEO decision 2).",
+      default: false,
     },
   },
 };

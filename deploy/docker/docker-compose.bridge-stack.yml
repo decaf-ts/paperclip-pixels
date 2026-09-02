@@ -1,8 +1,9 @@
 # Docker-compose fallback for the Paperclip Pixel Agents bridge stack.
 #
 # Use this when minikube/k8s is unavailable. It mirrors the k8s manifests in
-# deploy/k8s/ one-to-one. Build the images first:
+# deploy/k8s/ one-to-one. Build the images first (repo root):
 #
+#   npm install && npm run build     # plugin bundles, incl. the embedding module
 #   docker build -t paperclip-pixel-host:local \
 #     -f deploy/docker/Dockerfile.paperclip-pixel-host .
 #   docker build -t pixel-agents:local \
@@ -10,6 +11,8 @@
 #
 # Then:
 #   PAPERCLIP_AUTH_SECRET=$(openssl rand -hex 32) \
+#   PAPERCLIP_PIXEL_FEED_TOKEN=$(openssl rand -hex 32) \
+#   PAPERCLIP_PIXEL_API_TOKEN=<board-api-key> \
 #     docker compose -f deploy/docker/docker-compose.bridge-stack.yml up
 #
 # Reach the UIs:
@@ -19,6 +22,16 @@
 # NOTE: the Paperclip host runs in `authenticated` mode. The bridge plugin is
 # installed at first boot by the loopback-bootstrap entrypoint baked into the
 # paperclip-pixel-host image (no manual admin step). See deploy/README.md.
+#
+# The pixel-agents container loads the Paperclip bridge embedding module
+# through the fork CLI's generic --plugin loader: the plugin registers
+# in-process and the feed endpoint (POST /api/plugin-feed) listens on :8081
+# (container-to-container; not published to the host). PAPERCLIP_PIXEL_FEED_TOKEN
+# is the shared secret the Paperclip side configures as its
+# pixelAgentsTokenRef secret — the feed endpoint is fail-closed and refuses
+# to start without it. PAPERCLIP_PIXEL_API_TOKEN (a board API key) powers the
+# click-menu reply forwarder; without it the rest works but replies fail
+# closed with forwarderNotConfigured.
 
 services:
   db:
@@ -53,6 +66,12 @@ services:
       PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
       PAPERCLIP_PUBLIC_URL: "http://localhost:3100"
+      # The pixel-agents container reaches the API at its compose service
+      # name (PAPERCLIP_PIXEL_API_BASE_URL=http://paperclip:3100 — the
+      # click-menu reply forwarder's target). The host allowlist rejects
+      # unknown Host headers with 403, so the in-network service name must
+      # be explicitly allowed (additive with the PUBLIC_URL hostname).
+      PAPERCLIP_ALLOWED_HOSTNAMES: "paperclip"
       PAPERCLIP_HOME: "/paperclip"
       PAPERCLIP_INSTANCE_ID: "default"
       PAPERCLIP_CONFIG: "/paperclip/instances/default/config.json"
@@ -71,8 +90,20 @@ services:
       dockerfile: deploy/docker/Dockerfile.pixel-agents
     ports:
       - "8080:8080"
-    command: ["--host", "0.0.0.0", "--port", "8080"]
+    command:
+      [
+        "--host", "0.0.0.0",
+        "--port", "8080",
+        "--plugin", "/opt/paperclip-pixel-embedding/pixel-agents-embedding.cjs",
+      ]
+    environment:
+      PAPERCLIP_PIXEL_FEED_HOST: "0.0.0.0"
+      PAPERCLIP_PIXEL_FEED_PORT: "8081"
+      PAPERCLIP_PIXEL_FEED_TOKEN: "${PAPERCLIP_PIXEL_FEED_TOKEN:?set PAPERCLIP_PIXEL_FEED_TOKEN (shared secret for the plugin feed endpoint; configure the same value as the Paperclip plugin's pixelAgentsTokenRef secret)}"
+      PAPERCLIP_PIXEL_API_BASE_URL: "http://paperclip:3100"
+      PAPERCLIP_PIXEL_API_TOKEN: "${PAPERCLIP_PIXEL_API_TOKEN:-}"
 
 volumes:
   pgdata:
   paperclip-data:
+

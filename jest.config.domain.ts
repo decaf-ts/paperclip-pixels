@@ -1,10 +1,12 @@
 /**
- * Jest config for the domain logic under `src/core/` and
- * `src/pixel-agents-provider/` (pure translation/mapping code, no DOM).
- * Separate from `jest.config.ts` (UI components, jsdom) and `vitest.config.ts`
- * (the worker/relay/actions side, which needs the real Paperclip plugin SDK
- * test harness) — this trio replaces what used to be three separate packages'
- * own configs before the `packages/*` -> root merge.
+ * Jest config for the domain logic under `src/core/` (pure translation/
+ * mapping code, no DOM). Separate from `jest.config.ts` (UI components,
+ * jsdom) and `vitest.config.ts` (the worker/relay/actions side, which needs
+ * the real Paperclip plugin SDK test harness) — this trio replaces what used
+ * to be three separate packages' own configs before the `packages/*` -> root
+ * merge. The retired `src/pixel-agents-provider/` hook-vocabulary package
+ * (WS2-C) had its own roots here; its coverage moves to the worker-side
+ * vitest suite against the plugin feed.
  */
 import type { Config } from "jest";
 
@@ -18,12 +20,12 @@ export default {
   // can't execute raw ESM `import` output.
   transform: { "^.+\\.ts$": ["ts-jest", { tsconfig: `${ROOT}/tsconfig.jest.json` }] },
   testEnvironment: "node",
-  roots: [`${ROOT}/src/core`, `${ROOT}/src/pixel-agents-provider`, `${ROOT}/test/core`, `${ROOT}/test/pixel-agents-provider`],
-  testRegex: "/test/(core|pixel-agents-provider)/.*\\.(test|spec)\\.ts$",
+  roots: [`${ROOT}/src/core`, `${ROOT}/test/core`],
+  testRegex: "/test/core/.*\\.(test|spec)\\.ts$",
   moduleFileExtensions: ["ts", "js", "json", "node"],
   moduleNameMapper: {
     "^(\\.{1,2}/.*)\\.js$": "$1",
   },
   collectCoverage: false,
-  collectCoverageFrom: ["src/core/**/*.ts", "src/pixel-agents-provider/**/*.ts"],
+  collectCoverageFrom: ["src/core/**/*.ts"],
 } satisfies Config;

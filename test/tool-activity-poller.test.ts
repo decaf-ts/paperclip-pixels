@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ToolActivityPoller, translateOpencodeTool, type LogFetchLike } from "../src/tool-activity-poller.js";
-import type { SessionAgentEvent } from "../src/pixel-agents-provider/index.js";
 
 describe("translateOpencodeTool", () => {
   it("maps read/write/edit to their Claude names with file_path from opencode's filePath", () => {
@@ -76,8 +75,11 @@ describe("ToolActivityPoller", () => {
     vi.restoreAllMocks();
   });
 
-  it("forwards a real tool call as a toolStart event carrying the translated name/input", async () => {
-    const emitted: SessionAgentEvent[] = [];
+  it("forwards a real tool call as an activity caption carrying the translated name/input", async () => {
+    // WS2-C: the sink is the plugin feed's ToolActivitySink — one caption
+    // ("Reading <path>", Pixel Agents' own display vocabulary) per tool call,
+    // replacing the retired synthetic toolStart hook event.
+    const emitted: Array<{ companyId: string; agentId: string; caption: string }> = [];
     const { fetch, calls } = makeFetch([
       { content: toolUseLine("read", "call-1", { filePath: "/x/y.ts" }) + "\n", nextOffset: 500 },
     ]);
@@ -85,7 +87,7 @@ describe("ToolActivityPoller", () => {
       apiBaseUrl: "http://127.0.0.1:3100",
       apiToken: "tok-1",
       fetch,
-      sink: { emit: (event) => { emitted.push(event); } },
+      sink: { reportToolActivity: (companyId, agentId, caption) => { emitted.push({ companyId, agentId, caption }); } },
     });
     poller.trackRun("run-1", "company-acme", "agent-dev");
 
@@ -95,10 +97,7 @@ describe("ToolActivityPoller", () => {
     expect(calls[0].url).toBe("http://127.0.0.1:3100/api/heartbeat-runs/run-1/log?offset=0&limitBytes=8000");
     expect(calls[0].headers.authorization).toBe("Bearer tok-1");
     expect(emitted).toEqual([
-      {
-        sessionId: "paperclip-bridge:company-acme:agent-dev",
-        event: { kind: "toolStart", toolId: "call-1", toolName: "Read", input: { file_path: "/x/y.ts" } },
-      },
+      { companyId: "company-acme", agentId: "agent-dev", caption: "Reading /x/y.ts" },
     ]);
   });
 
@@ -111,7 +110,7 @@ describe("ToolActivityPoller", () => {
       apiBaseUrl: "http://127.0.0.1:3100",
       apiToken: "tok-1",
       fetch,
-      sink: { emit: () => {} },
+      sink: { reportToolActivity: () => {} },
     });
     poller.trackRun("run-1", "company-acme", "agent-dev");
 
@@ -123,7 +122,7 @@ describe("ToolActivityPoller", () => {
   });
 
   it("never re-forwards the same tool call across repeated polls (dedup by callID)", async () => {
-    const emitted: SessionAgentEvent[] = [];
+    const emitted: string[] = [];
     const line = toolUseLine("bash", "call-1", { command: "ls" }) + "\n";
     const { fetch } = makeFetch([
       { content: line, nextOffset: 300 },
@@ -133,7 +132,7 @@ describe("ToolActivityPoller", () => {
       apiBaseUrl: "http://127.0.0.1:3100",
       apiToken: "tok-1",
       fetch,
-      sink: { emit: (event) => { emitted.push(event); } },
+      sink: { reportToolActivity: (_companyId, _agentId, caption) => { emitted.push(caption); } },
     });
     poller.trackRun("run-1", "company-acme", "agent-dev");
 
@@ -144,13 +143,13 @@ describe("ToolActivityPoller", () => {
   });
 
   it("ignores non-tool_use chunks (e.g. opencode's step_start) without forwarding anything", async () => {
-    const emitted: SessionAgentEvent[] = [];
+    const emitted: string[] = [];
     const { fetch } = makeFetch([{ content: stepStartLine() + "\n", nextOffset: 100 }]);
     const poller = new ToolActivityPoller({
       apiBaseUrl: "http://127.0.0.1:3100",
       apiToken: "tok-1",
       fetch,
-      sink: { emit: (event) => { emitted.push(event); } },
+      sink: { reportToolActivity: (_companyId, _agentId, caption) => { emitted.push(caption); } },
     });
     poller.trackRun("run-1", "company-acme", "agent-dev");
 
@@ -162,7 +161,7 @@ describe("ToolActivityPoller", () => {
   it("buffers a record split across two polls instead of dropping or misparsing it", async () => {
     const fullLine = toolUseLine("read", "call-1", { filePath: "/a.ts" });
     const splitPoint = Math.floor(fullLine.length / 2);
-    const emitted: SessionAgentEvent[] = [];
+    const emitted: string[] = [];
     const { fetch } = makeFetch([
       { content: fullLine.slice(0, splitPoint), nextOffset: splitPoint },
       { content: fullLine.slice(splitPoint) + "\n", nextOffset: fullLine.length + 1 },
@@ -171,7 +170,7 @@ describe("ToolActivityPoller", () => {
       apiBaseUrl: "http://127.0.0.1:3100",
       apiToken: "tok-1",
       fetch,
-      sink: { emit: (event) => { emitted.push(event); } },
+      sink: { reportToolActivity: (_companyId, _agentId, caption) => { emitted.push(caption); } },
     });
     poller.trackRun("run-1", "company-acme", "agent-dev");
 
@@ -179,7 +178,7 @@ describe("ToolActivityPoller", () => {
     expect(emitted).toEqual([]); // nothing yet -- the record isn't complete
     await poller.pollOnce();
     expect(emitted).toHaveLength(1);
-    expect((emitted[0].event as { toolName: string }).toolName).toBe("Read");
+    expect(emitted[0]).toBe("Reading /a.ts");
   });
 
   it("reports a fetch failure via onError and never throws out of pollOnce", async () => {
@@ -189,7 +188,7 @@ describe("ToolActivityPoller", () => {
       apiBaseUrl: "http://127.0.0.1:3100",
       apiToken: "tok-1",
       fetch,
-      sink: { emit: () => {} },
+      sink: { reportToolActivity: () => {} },
       onError,
     });
     poller.trackRun("run-1", "company-acme", "agent-dev");
@@ -204,7 +203,7 @@ describe("ToolActivityPoller", () => {
       apiBaseUrl: "http://127.0.0.1:3100",
       apiToken: "tok-1",
       fetch,
-      sink: { emit: () => {} },
+      sink: { reportToolActivity: () => {} },
     });
     poller.trackRun("run-1", "company-acme", "agent-dev");
     poller.untrackRun("run-1");
@@ -223,7 +222,7 @@ describe("ToolActivityPoller", () => {
       apiBaseUrl: "http://127.0.0.1:3100",
       apiToken: "tok-1",
       fetch,
-      sink: { emit: () => {} },
+      sink: { reportToolActivity: () => {} },
     });
     poller.trackRun("run-1", "company-acme", "agent-dev");
     await poller.pollOnce();

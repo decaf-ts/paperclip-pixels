@@ -12,8 +12,6 @@ export default [
       "coverage",
       "paperclip",
       "pixel-agents",
-      "tests/e2e/saa310-verify.mjs",
-      "tests/e2e/screenshot.mjs",
       ".saa*/**",
     ],
   },

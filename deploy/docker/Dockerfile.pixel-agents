@@ -1,26 +1,34 @@
 # syntax=docker/dockerfile:1
 #
-# Pixel Agents standalone server (SPA + WebSocket + hook ingest endpoint).
+# Pixel Agents standalone server (SPA + WebSocket + hook ingest endpoint)
+# with the Paperclip bridge embedding surface loaded at startup.
+#
 # The upstream submodule ships no Dockerfile, so this builds the standalone
-# CLI from source, UNMODIFIED (see deploy/README.md — this is a build
-# artifact, not a source patch). Runtime serves the React webview + /ws +
-# /api/hooks/:id + /api/health.
+# CLI from source (see deploy/README.md — this is a build artifact, not a
+# source patch). Runtime serves the React webview + /ws + /api/hooks/:id +
+# /api/health.
 #
-# Also vendors the bridge's relay CLI (bin/
-# paperclip-pixel-relay.js — our own code, zero deps, published as the
-# package's `paperclip-pixel-relay` bin) into the same image. The k8s pod
-# runs it as a SECOND container from this image with its command overridden,
-# sharing an emptyDir ~/.pixel-agents volume with the main container so it
-# can read the server's locally-generated bearer token (see the script's own
-# doc comment for why this exists).
+# The fork's generic `--plugin <module>` startup loader (server/src/plugins/
+# moduleLoader.ts) is pointed at the Paperclip bridge embedding module
+# (dist/pixel-agents-embedding.cjs — built from this repo's
+# src/pixel-agents-plugin/embedding.ts by `npm run build` at the repo root,
+# BEFORE this image is built; the runbook's step 1). The module registers the
+# Paperclip plugin through the in-process plugin host and serves the relay's
+# POST /api/plugin-feed endpoint on its own sidecar listener (default
+# 127.0.0.1:8081; bind/port/token via PAPERCLIP_PIXEL_FEED_* env — see the
+# module's doc comment). All Paperclip-specific glue lives in that module;
+# the fork itself stays provider-agnostic.
 #
-# Build (from the repo root, with the pixel-agents submodule initialized):
+# Build (from the repo root, submodules initialized, plugin repo built):
+#   npm install && npm run build        # produces dist/pixel-agents-embedding.cjs
 #   docker build -t pixel-agents:local -f deploy/docker/Dockerfile.pixel-agents .
 #
-# Run (main server):  docker run --rm -p 8080:8080 pixel-agents:local --host 0.0.0.0 --port 8080
-# (the CLI takes --host/--port flags; there is no env override.)
-# Run (relay):         docker run --rm -p 8081:8081 --entrypoint node pixel-agents:local \
-#                         /opt/relay/paperclip-pixel-relay.js --host 0.0.0.0
+# Run:  docker run --rm -p 8080:8080 \
+#         -e PAPERCLIP_PIXEL_FEED_HOST=0.0.0.0 -e PAPERCLIP_PIXEL_FEED_PORT=8081 \
+#         -e PAPERCLIP_PIXEL_FEED_TOKEN=<shared-secret> \
+#         -e PAPERCLIP_PIXEL_API_BASE_URL=http://paperclip:3100 \
+#         -e PAPERCLIP_PIXEL_API_TOKEN=<board-api-key> \
+#         pixel-agents:local
 
 FROM node:22-bookworm-slim AS builder
 WORKDIR /build
@@ -52,9 +60,11 @@ COPY --from=builder /build/dist ./dist
 COPY --from=builder /build/package.json ./package.json
 COPY --from=builder /build/node_modules ./node_modules
 
-# Bridge relay CLI (our own code — see bin/paperclip-pixel-relay.js).
-# Zero external deps, Node built-ins only.
-COPY bin/paperclip-pixel-relay.js /opt/relay/paperclip-pixel-relay.js
+# Paperclip bridge embedding module (this repo's own code, self-contained
+# bundle: node built-ins external, zero runtime deps). The retired
+# bin/paperclip-pixel-relay.js sidecar (impersonation path, WS2-C) is gone —
+# the bridge now runs in-process behind the CLI's generic --plugin loader.
+COPY dist/pixel-agents-embedding.cjs /opt/paperclip-pixel-embedding/pixel-agents-embedding.cjs
 
 # Pixel Agents persists server registry + layout under ~/.pixel-agents/.
 RUN mkdir -p /home/node/.pixel-agents && chown -R node:node /home/node /app
@@ -62,6 +72,6 @@ RUN mkdir -p /home/node/.pixel-agents && chown -R node:node /home/node /app
 USER node
 ENV HOME=/home/node
 
-EXPOSE 8080
+EXPOSE 8080 8081
 ENTRYPOINT ["node", "dist/cli.js"]
-CMD ["--host", "0.0.0.0", "--port", "8080"]
+CMD ["--host", "0.0.0.0", "--port", "8080", "--plugin", "/opt/paperclip-pixel-embedding/pixel-agents-embedding.cjs"]

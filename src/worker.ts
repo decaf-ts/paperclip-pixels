@@ -329,8 +329,9 @@ async function setupCompany(ctx: PluginContext, runtime: BridgeRuntime, companyI
     await relay.configure(companyId, companyConfig);
     relay.ingestSnapshot(companyId, result.snapshot);
     trackActiveRunsFromSnapshot(relay, companyId, result.snapshot);
-    // Push the per-agent appearance map so the relay applier seats every
-    // agent with its assigned character. Best-effort: the relay is the
+    // Apply the per-agent appearance map so every agent is declared with
+    // its assigned character (palette/hueShift ride the sanctioned
+    // declareAgents seat path). Best-effort: the embedding surface is the
     // applier, never the source of truth — a failed push is re-applied by
     // the next reconcile or write.
     const synced = await relay.syncAppearances(companyId, resolvedAppearances(rt));
@@ -500,7 +501,7 @@ const plugin = definePlugin({
 
     ctx.jobs.register(JOB_KEYS.reconciliation, async () => {
       // Every RESYNC_EVERY_N_RECONCILES-th tick, force a full relay re-sync
-      // (fresh EventMapper + fresh snapshot) instead of the normal incremental
+      // (fresh feed mapper + fresh snapshot) instead of the normal incremental
       // ingest. This is the self-healing half of resyncCompany's contract
       // (see relay.ts): a `sessionStart` push that silently failed once (the
       // sink is fire-and-forget) otherwise strands that agent invisible for
@@ -638,7 +639,7 @@ const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime 
       getLeadershipAgentId: (cid) => localRuntime.getCompany(cid)?.leadershipAgentId,
       // WS3: persist the assignment to ctx.state agent scope (the single
       // source of truth), update the runtime map, then push the company's
-      // appearance map to the relay applier. The write succeeds even when
+      // appearance map through the feed. The write succeeds even when
       // the relay push fails — `applied` reports the push outcome and the
       // next reconcile/write re-applies it.
       applyAgentCharacterAssignment: async (cid, input) => {
@@ -689,11 +690,11 @@ const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime 
     try {
       await relay?.configure(companyId, newConfig);
       // configure() rebuilds the transport (a fresh, name-cache-cold
-      // EventMapper) but never re-ingests a snapshot on its own — see
+      // feed mapper) but never re-ingests a snapshot on its own — see
       // resyncCompany's doc comment in relay.ts for the live-event race this
       // closes. A no-op when the reconfigure left the company disabled.
       // Re-push the per-agent appearance map along with the resync so a
-      // rebuilt relay applier immediately seats everyone correctly.
+      // rebuilt embedding surface immediately seats everyone correctly.
       const rtForResync = runtime?.getCompany(companyId);
       await relay?.resyncCompany(
         companyId,
@@ -754,13 +755,6 @@ const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime 
       && !isValidTokenRef(config.pixelAgentsTokenRef)
     ) {
       errors.push("pixelAgentsTokenRef must be a secret_ref binding or non-empty string when present");
-    }
-    if (
-      config.pixelAgentsProviderId != null
-      && (typeof config.pixelAgentsProviderId !== "string"
-        || !/^[a-z0-9-]+$/.test(config.pixelAgentsProviderId))
-    ) {
-      errors.push("pixelAgentsProviderId must match ^[a-z0-9-]+$ when present");
     }
     if (
       config.pixelAgentsRelayEnabled != null

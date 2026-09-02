@@ -9,7 +9,7 @@
  * Code integration shows "Reading X"/"Writing Y" by tailing Claude Code's own
  * continuously-growing transcript JSONL and parsing `tool_use` content blocks
  * live (confirmed by reading Pixel Agents' own bundle) -- a mechanism this
- * bridge's synthetic, write-once transcript can never feed, since Paperclip
+ * bridge's retired synthetic-transcript path could never feed, since Paperclip
  * never hands the plugin a real tool name or input to write into it.
  *
  * What IS available: each run's raw stdout -- opencode's own `--format json`
@@ -24,21 +24,26 @@
  * This poller tails that log for every currently-tracked active run (fed by
  * BridgeRelay.trackActiveRun/untrackActiveRun, itself driven by
  * agent.run.started/finished/failed/cancelled and by each bootstrapped
- * snapshot's activeRuns) and forwards each newly-seen tool call, translated
- * into the wire shape Pixel Agents' own `formatToolStatus` already knows how
- * to render richly (Reading/Writing/Editing/Running: for a recognized name,
- * "Using <Name>" otherwise -- both exactly what was asked for), through the
- * same sink every other mapped event already goes through. No Pixel Agents
- * change and no new Paperclip plugin capability required.
+ * snapshot's activeRuns) and forwards each newly-seen tool call as an
+ * activity caption ("Reading X"/"Writing Y"/"Using <Tool>") through the
+ * plugin feed's sanctioned `updateAgentActivity` surface (one caption per
+ * agent — the latest real activity replaces the generic run caption). No
+ * Pixel Agents change and no new Paperclip plugin capability required.
  */
 
-import type { AgentEventSink } from "./pixel-agents-provider/index.js";
-import { syntheticSessionId } from "./pixel-agents-provider/index.js";
+/**
+ * Receives each translated tool call as a human-readable activity caption,
+ * routed through the plugin feed (the relay maps it onto the agent's
+ * `updateAgentActivity` operation).
+ */
+export interface ToolActivitySink {
+  reportToolActivity(companyId: string, agentId: string, caption: string): void | Promise<void>;
+}
 
 /**
  * Minimal fetch-like function for a GET call whose JSON body is actually
- * read (unlike {@link FetchLike} in transport.ts, which only reports
- * ok/status for a fire-and-forget POST push).
+ * read (unlike the feed sink's fetch, which only reports ok/status for a
+ * fire-and-forget POST push).
  */
 export type LogFetchLike = (
   url: string,
@@ -101,12 +106,40 @@ export function translateOpencodeTool(
       return { name: "Task", input: {} };
     default: {
       // Title-Case the raw opencode name (e.g. "todowrite" -> "Todowrite") so
-      // Pixel Agents' generic fallback reads as "Using Todowrite" rather than
-      // "Using todowrite" -- cosmetic only, formatToolStatus's default case
-      // never inspects input for an unrecognized name.
+      // the caption reads as "Using Todowrite" rather than "Using
+      // todowrite" -- cosmetic only, the generic case below never inspects
+      // input for an unrecognized name.
       const titled = tool.length > 0 ? tool[0].toUpperCase() + tool.slice(1) : tool;
       return { name: titled, input: {} };
     }
+  }
+}
+
+/**
+ * Render one translated tool call as the agent's activity caption. Mirrors
+ * the display cases of Pixel Agents' own `formatToolStatus` (its rendering
+ * of Claude tool events) without importing the fork: recognized names read
+ * "Reading <path>" / "Editing <path>" / "Running <command>", anything else
+ * falls back to "Using <Name>" — never worse than the generic run caption,
+ * and exactly the "using tool XXX" shape that was asked for.
+ */
+export function formatToolCaption(
+  name: string,
+  input: Record<string, unknown>,
+): string {
+  const filePath = typeof input.file_path === "string" ? input.file_path : undefined;
+  const command = typeof input.command === "string" ? input.command : undefined;
+  switch (name) {
+    case "Read":
+      return `Reading ${filePath ?? "a file"}`;
+    case "Write":
+      return `Writing ${filePath ?? "a file"}`;
+    case "Edit":
+      return `Editing ${filePath ?? "a file"}`;
+    case "Bash":
+      return `Running ${command ?? "a command"}`;
+    default:
+      return `Using ${name}`;
   }
 }
 
@@ -134,17 +167,18 @@ export interface ToolActivityPollerOptions {
   apiBaseUrl: string;
   /** Bearer token for `GET /api/heartbeat-runs/:runId/log`. */
   apiToken: string;
-  /** Injected fetch (kept separate from Node globals for testability, matching HttpPushSink). */
+  /** Injected fetch (kept separate from Node globals for testability, matching the feed sink). */
   fetch: LogFetchLike;
-  /** Receives each translated tool call as a real (never synthetic) toolStart event. */
-  sink: AgentEventSink;
+  /** Receives each translated tool call as a real (never synthetic) activity
+   *  caption through the plugin feed. */
+  sink: ToolActivitySink;
   /** Called on any poll failure; never throws back into the caller. */
   onError?: (runId: string, error: unknown) => void;
 }
 
 /**
  * Polls every currently-tracked active run's raw log for new tool calls and
- * forwards them as toolStart events. One instance per company (matching
+ * forwards them as activity captions. One instance per company (matching
  * BridgeRelay's per-company CompanyRelay entries); `start`/`stop` own a
  * single interval timer for the whole company regardless of how many runs
  * are tracked at once.
@@ -231,10 +265,11 @@ export class ToolActivityPoller {
     cursor.lastCallId = callId;
 
     const { name, input } = translateOpencodeTool(tool, chunk.part.state?.input);
-    const result = this.options.sink.emit({
-      sessionId: syntheticSessionId(cursor.companyId, cursor.agentId),
-      event: { kind: "toolStart", toolId: callId, toolName: name, input },
-    });
+    const result = this.options.sink.reportToolActivity(
+      cursor.companyId,
+      cursor.agentId,
+      formatToolCaption(name, input),
+    );
     if (result && typeof (result as Promise<void>).then === "function") {
       (result as Promise<void>).catch((err) => this.options.onError?.(runId, err));
     }
