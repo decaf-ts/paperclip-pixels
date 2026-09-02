@@ -20,13 +20,16 @@
  *                                `POST /api/plugin-feed` (the companion
  *                                sidecar that owns the Pixel Agents server
  *                                process; historically the relay CLI's own
- *                                default bind). Must be `https:` when a token
- *                                is configured. Defaults to
+ *                                default bind). Defaults to
  *                                `http://127.0.0.1:8081` (the companion's
  *                                default bind, for the common same-machine
  *                                case) when unset — any topology where they
  *                                run on separate hosts/pods MUST set this
  *                                explicitly, fully overridable per company.
+ *                                Must be `https:` when a token is configured;
+ *                                plain `http:` is then accepted only for
+ *                                loopback hosts (`localhost`,
+ *                                `127.0.0.0/8`, `::1`).
  *   - `pixelAgentsTokenRef`    — secret reference resolving to a bearer token
  *                                sent with each feed push (optional; never
  *                                stored as a plaintext value).
@@ -154,10 +157,41 @@ export function extractTokenRef(
 }
 
 /**
+ * Thrown by {@link parseRelayConfig} when the configured transport violates
+ * the documented https-when-token contract (a feed token alongside a
+ * cleartext `http:` URL for a non-loopback host). Carries no secret
+ * material — only the offending host.
+ */
+export class RelayTransportContractError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RelayTransportContractError";
+  }
+}
+
+/**
  * Parse and validate raw operator config into a resolved relay config (without
  * the bearer token, which is resolved separately from the secret reference).
- * The relay is enabled by default as soon as a non-empty `pixelAgentsUrl` is
- * present, unless `pixelAgentsRelayEnabled` is explicitly `false`.
+ * The relay is enabled by default unless `pixelAgentsRelayEnabled` is
+ * explicitly `false`; an unset `pixelAgentsUrl` falls back to
+ * {@link DEFAULT_PIXEL_AGENTS_URL}.
+ *
+ * Also enforces the https-when-token transport contract at runtime,
+ * fail-closed: when a feed token reference is configured, a cleartext
+ * `http:` URL is accepted only for loopback hosts ({@link isLoopbackHost}) —
+ * anything else would send the bearer token over plaintext HTTP to a remote
+ * host and is rejected. This is the runtime backstop for config that
+ * predates (or bypassed) the save-time `onValidateConfig` gate; an
+ * unparseable `pixelAgentsUrl` is likewise rejected while a token is
+ * configured (tokenless config keeps its historical late push-error
+ * surface).
+ *
+ * @param raw - Raw configuration object as stored by the plugin system.
+ * @returns The resolved, validated relay configuration.
+ * @throws {RelayTransportContractError} When the relay is enabled and a feed
+ *   token reference is configured, and `pixelAgentsUrl` is either not a
+ *   valid http(s) URL or resolves to a cleartext `http:` URL for a
+ *   non-loopback host.
  */
 export function parseRelayConfig(
   raw: Record<string, unknown>,
@@ -171,12 +205,66 @@ export function parseRelayConfig(
   const url = configuredUrl.length > 0 ? configuredUrl : DEFAULT_PIXEL_AGENTS_URL;
   const explicitEnabled = raw.pixelAgentsRelayEnabled;
   const enabled = explicitEnabled !== false;
+  // Enforce the documented transport contract (SAA-557, security F1): the
+  // resolved bearer token must never travel over cleartext HTTP to a
+  // non-loopback host. `onValidateConfig` already rejects this combination at
+  // config-save time; this is the runtime fail-closed backstop for config
+  // that predates that gate or bypassed it. Loopback stays allowed so the
+  // bundled same-machine default keeps working for local development.
+  if (enabled && extractTokenRef(raw) != null) {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      // SAA-590 security review (§2): a scheme-prefixed but unparseable URL
+      // (e.g. "http:") skips the protocol check here yet can late-parse in
+      // the sink ("${baseUrl}/api/plugin-feed") to a cleartext non-loopback
+      // host and dispatch the bearer token. Reject ambiguous input rather
+      // than sanitizing it; tokenless config keeps the historical late
+      // push-error surface.
+      throw new RelayTransportContractError(
+        `pixelAgentsUrl must be a valid http(s) URL when pixelAgentsTokenRef `
+          + `is configured; refusing an ambiguous transport for the feed `
+          + `bearer token`,
+      );
+    }
+    if (
+      (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+      || (parsed.protocol === "http:" && !isLoopbackHost(parsed.hostname))
+    ) {
+      throw new RelayTransportContractError(
+        `pixelAgentsUrl must be an https: URL when pixelAgentsTokenRef is `
+          + `configured (plain http: is only allowed for loopback hosts); `
+          + `refusing to send the feed bearer token to ${parsed.protocol}//${parsed.hostname}`,
+      );
+    }
+  }
   const pixelAgentsUiUrl = typeof raw.pixelAgentsUiUrl === "string" && raw.pixelAgentsUiUrl.trim().length > 0
     ? raw.pixelAgentsUiUrl.trim()
     : "http://localhost:8090";
   const configuredApiUrl = typeof raw.paperclipApiBaseUrl === "string" ? raw.paperclipApiBaseUrl.trim() : "";
   const paperclipApiBaseUrl = configuredApiUrl.length > 0 ? configuredApiUrl : DEFAULT_PAPERCLIP_API_BASE_URL;
   return { enabled, pixelAgentsUrl: url, pixelAgentsUiUrl, paperclipApiBaseUrl };
+}
+
+/**
+ * Whether a URL hostname is a loopback address: `localhost`, any IPv4
+ * address in `127.0.0.0/8`, or IPv6 `::1`. These are the only hosts for
+ * which a cleartext `http:` `pixelAgentsUrl` may carry a configured feed
+ * token (see {@link parseRelayConfig}); everything else requires `https:`.
+ *
+ * @param hostname - URL hostname as reported by `new URL(...).hostname`
+ *   (bracketed IPv6 forms like `[::1]` are tolerated; a trailing dot is
+ *   ignored).
+ * @returns `true` when the host is a loopback address.
+ */
+export function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase().replace(/\.$/, "");
+  if (host === "localhost" || host === "::1" || host === "[::1]") return true;
+  const octets = host.split(".");
+  return octets.length === 4
+    && octets[0] === "127"
+    && octets.every((octet) => /^\d{1,3}$/.test(octet) && Number(octet) <= 255);
 }
 
 /**
@@ -336,11 +424,38 @@ export class BridgeRelay {
    * disabled for the company (fail-securely) rather than pushing unauthenticated
    * traffic.
    *
+   * A config rejected by the transport contract (see
+   * {@link RelayTransportContractError}) fails closed here as well: the
+   * rejection from {@link parseRelayConfig} is caught, any existing
+   * mapper/sink/poller for the company is disposed, and the relay is left
+   * disabled with a warning — the previous transport is never kept for a
+   * company whose new config violates the https-when-token contract. Any
+   * other parsing error still propagates to the caller.
+   *
    * @param companyId - Identifier of the company whose relay is being configured.
    * @param raw - Raw configuration object as stored by the plugin system.
    */
   async configure(companyId: string, raw: Record<string, unknown>): Promise<void> {
-    const config = parseRelayConfig(raw);
+    let config: RelayCompanyConfig;
+    try {
+      config = parseRelayConfig(raw);
+    } catch (err) {
+      // Fail securely on a rejected transport config (the https-when-token
+      // contract): never keep pushing with the previous transport for this
+      // company — dispose it and leave the relay disabled. Genuinely
+      // malformed input still propagates to the caller, whose own
+      // catch-and-warn keeps the worker alive.
+      if (!(err instanceof RelayTransportContractError)) throw err;
+      const existing = this.companies.get(companyId);
+      existing?.sink.dispose();
+      existing?.toolActivityPoller?.stop();
+      this.companies.delete(companyId);
+      this.ctx.logger.warn("Bridge relay config rejected for company; relay disabled", {
+        companyId,
+        error: err.message,
+      });
+      return;
+    }
     const existing = this.companies.get(companyId);
     if (!config.enabled) {
       existing?.sink.dispose();

@@ -28,7 +28,7 @@ const relayConfigSchema: JsonSchema = {
       type: "string",
       title: "Pixel Agents companion URL",
       description:
-        "Base URL of the companion sidecar that embeds the Paperclip plugin inside Pixel Agents and serves POST /api/plugin-feed. Public endpoints must use https; the bundled loopback/Compose sidecar may use http. Defaults to http://127.0.0.1:8081.",
+        "Base URL of the companion sidecar that embeds the Paperclip plugin inside Pixel Agents and serves POST /api/plugin-feed. Public endpoints must use https; plain http is only accepted for loopback hosts (localhost, 127.0.0.0/8, ::1). Defaults to http://127.0.0.1:8081.",
       format: "uri",
     },
     pixelAgentsUiUrl: {
@@ -61,7 +61,7 @@ const relayConfigSchema: JsonSchema = {
       ],
       title: "Pixel Agents bearer token",
       description:
-        "Optional secret reference resolved to the bearer token sent on each plugin feed push to the companion. Stored as a secret_ref binding, never as a plaintext value. Requires an https: pixelAgentsUrl. Not needed for the bundled sidecar default.",
+        "Optional secret reference resolved to the bearer token sent on each plugin feed push to the companion. Stored as a secret_ref binding, never as a plaintext value. Requires an https: pixelAgentsUrl (plain http is only accepted for loopback hosts). Not needed for the bundled sidecar default.",
     },
     pixelAgentsRelayEnabled: {
       type: "boolean",

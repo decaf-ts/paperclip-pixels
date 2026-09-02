@@ -7,7 +7,9 @@ import type {
 import {
   BridgeRelay,
   extractTokenRef,
+  isLoopbackHost,
   parseRelayConfig,
+  RelayTransportContractError,
 } from "../src/relay.js";
 
 /**
@@ -256,6 +258,160 @@ describe("parseRelayConfig", () => {
   });
 });
 
+describe("parseRelayConfig transport contract (SAA-557, security F1 regression)", () => {
+  // https-when-token enforcement: a configured feed token must never travel
+  // over cleartext http: to a non-loopback host. `onValidateConfig` rejects
+  // this combination at config-save time; parseRelayConfig is the runtime
+  // fail-closed backstop for config that predates the gate or bypassed it.
+  // These tests FAIL on the pre-SAA-557 parseRelayConfig (no enforcement).
+
+  it("throws RelayTransportContractError for http: + token ref + non-loopback host", () => {
+    expect(() =>
+      parseRelayConfig({
+        pixelAgentsUrl: "http://pa.example:8081",
+        pixelAgentsTokenRef: "secret-1",
+      }),
+    ).toThrow(RelayTransportContractError);
+    try {
+      parseRelayConfig({
+        pixelAgentsUrl: "http://pa.example:8081",
+        pixelAgentsTokenRef: "secret-1",
+      });
+    } catch (err) {
+      expect(err).toBeInstanceOf(RelayTransportContractError);
+      expect((err as Error).message).toContain("pa.example");
+    }
+  });
+
+  it("counts a secret_ref binding object as token-present and rejects http: non-loopback for it too", () => {
+    expect(() =>
+      parseRelayConfig({
+        pixelAgentsUrl: "http://pa.example:8081",
+        pixelAgentsTokenRef: { type: "secret_ref", secretId: "secret-1" } as never,
+      }),
+    ).toThrow(RelayTransportContractError);
+  });
+
+  it("still allows http: for loopback hosts when a token is configured (local dev)", () => {
+    for (const url of [
+      "http://localhost:8081",
+      "http://127.0.0.1:8081",
+      "http://127.9.8.7:8081", // 127.0.0.0/8, not just 127.0.0.1
+      "http://[::1]:8081",
+    ]) {
+      expect(() =>
+        parseRelayConfig({ pixelAgentsUrl: url, pixelAgentsTokenRef: "secret-1" }),
+      ).not.toThrow();
+    }
+  });
+
+  it("allows https: with a token for any host", () => {
+    expect(() =>
+      parseRelayConfig({
+        pixelAgentsUrl: "https://pa.example",
+        pixelAgentsTokenRef: "secret-1",
+      }),
+    ).not.toThrow();
+  });
+
+  it("keeps http: non-loopback allowed when NO token is configured", () => {
+    expect(() =>
+      parseRelayConfig({ pixelAgentsUrl: "http://pa.example:8081" }),
+    ).not.toThrow();
+  });
+
+  it("does not throw for http + token when the relay is explicitly disabled", () => {
+    // pixelAgentsRelayEnabled: false means no pushes happen at all, so the
+    // transport contract has nothing to protect — parse must not reject.
+    expect(() =>
+      parseRelayConfig({
+        pixelAgentsUrl: "http://pa.example:8081",
+        pixelAgentsTokenRef: "secret-1",
+        pixelAgentsRelayEnabled: false,
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("parseRelayConfig transport contract (SAA-590 §2 regression)", () => {
+  // The §2 bypass: a scheme-prefixed but unparseable pixelAgentsUrl (e.g.
+  // "http:") skipped the §1 protocol check in parseRelayConfig yet could
+  // late-parse in the sink ("${baseUrl}/api/plugin-feed") to a cleartext
+  // non-loopback host and dispatch the bearer token. The fix rejects ANY
+  // unparseable URL — and any non-http(s) protocol — while a token ref is
+  // configured. These tests FAIL on the pre-§2-fix parseRelayConfig (gate
+  // silently skipped on new URL failure, only http: was protocol-checked).
+
+  it("throws RelayTransportContractError for a scheme-only pixelAgentsUrl with a token ref", () => {
+    // The exact SAA-590 §2 bypass input: "http:" + token used to slip past
+    // the gate and late-parse in the sink to a cleartext non-loopback host.
+    expect(() =>
+      parseRelayConfig({ pixelAgentsUrl: "http:", pixelAgentsTokenRef: "s" }),
+    ).toThrow(RelayTransportContractError);
+    try {
+      parseRelayConfig({ pixelAgentsUrl: "http:", pixelAgentsTokenRef: "s" });
+    } catch (err) {
+      expect(err).toBeInstanceOf(RelayTransportContractError);
+      expect((err as Error).message).toContain("must be a valid http(s) URL");
+    }
+  });
+
+  it("throws for near-miss scheme-only variants of the bypass input", () => {
+    for (const url of ["http:/", "http://"]) {
+      expect(() =>
+        parseRelayConfig({ pixelAgentsUrl: url, pixelAgentsTokenRef: "s" }),
+      ).toThrow(RelayTransportContractError);
+    }
+  });
+
+  it("throws for a wholly unparseable pixelAgentsUrl with a token ref", () => {
+    expect(() =>
+      parseRelayConfig({ pixelAgentsUrl: "not-a-url", pixelAgentsTokenRef: "s" }),
+    ).toThrow(RelayTransportContractError);
+  });
+
+  it("throws for a non-http(s) protocol with a token ref, naming the refused transport", () => {
+    expect(() =>
+      parseRelayConfig({ pixelAgentsUrl: "ftp://x", pixelAgentsTokenRef: "s" }),
+    ).toThrow(RelayTransportContractError);
+    try {
+      parseRelayConfig({ pixelAgentsUrl: "ftp://x", pixelAgentsTokenRef: "s" });
+    } catch (err) {
+      expect(err).toBeInstanceOf(RelayTransportContractError);
+      expect((err as Error).message).toContain("ftp://x");
+    }
+  });
+
+  it("still parses a tokenless malformed URL without throwing (historical late push-error surface preserved)", () => {
+    // Tokenless config keeps the pre-§2 behavior: parse succeeds and the
+    // malformed URL only surfaces later as a sink push error (see the
+    // "malformed stored URL surfaces as a captured push error" test below).
+    expect(() => parseRelayConfig({ pixelAgentsUrl: "not-a-url" })).not.toThrow();
+    expect(parseRelayConfig({ pixelAgentsUrl: "not-a-url" }).pixelAgentsUrl).toBe("not-a-url");
+    expect(() => parseRelayConfig({ pixelAgentsUrl: "http:" })).not.toThrow();
+  });
+});
+
+describe("isLoopbackHost", () => {
+  it("is true for localhost, any 127.0.0.0/8 IPv4, and ::1", () => {
+    expect(isLoopbackHost("localhost")).toBe(true);
+    expect(isLoopbackHost("LOCALHOST")).toBe(true);
+    expect(isLoopbackHost("127.0.0.1")).toBe(true);
+    expect(isLoopbackHost("127.9.8.7")).toBe(true);
+    expect(isLoopbackHost("::1")).toBe(true);
+    expect(isLoopbackHost("[::1]")).toBe(true);
+  });
+
+  it("is false for non-loopback hosts and near-miss addresses", () => {
+    expect(isLoopbackHost("pa.example")).toBe(false);
+    expect(isLoopbackHost("127.0.0.1.example.com")).toBe(false);
+    expect(isLoopbackHost("128.0.0.1")).toBe(false);
+    expect(isLoopbackHost("0.0.0.0")).toBe(false);
+    expect(isLoopbackHost("::2")).toBe(false);
+    expect(isLoopbackHost("10.0.0.1")).toBe(false);
+  });
+});
+
 describe("extractTokenRef", () => {
   it("returns undefined when no token ref is present", () => {
     expect(extractTokenRef({})).toBeUndefined();
@@ -318,6 +474,85 @@ describe("BridgeRelay", () => {
         (l) => l.level === "warn" && l.message === "Bridge relay disabled for company: host-validated manifest does not declare http.outbound",
       ),
     ).toBe(true);
+  });
+
+  it("configure() fails secure on a transport-contract rejection: relay disabled, warn logged, never pushes", async () => {
+    // SAA-557: a config that parseRelayConfig rejects as a cleartext-token
+    // transport must disable the company's relay (disposing any prior
+    // transport), warn, and never push — NOT keep pushing on the old
+    // transport and NOT propagate the error to the worker hook.
+    const { ctx, logger } = makeCtx(async () => "token-value-1");
+    const relay = new BridgeRelay(ctx);
+    // Start from a valid configured transport, then feed it the violating
+    // config: the previous transport must be disposed, not retained.
+    await relay.configure(COMPANY_ID, {
+      pixelAgentsUrl: "https://pa.example",
+      pixelAgentsTokenRef: "secret-1",
+    });
+    expect(relay.isConfigured(COMPANY_ID)).toBe(true);
+
+    await expect(
+      relay.configure(COMPANY_ID, {
+        pixelAgentsUrl: "http://pa.example:8081",
+        pixelAgentsTokenRef: "secret-1",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(relay.isConfigured(COMPANY_ID)).toBe(false);
+    expect(relay.activeCompanyCount).toBe(0);
+    expect(
+      logger.calls.some(
+        (l) => l.level === "warn" && l.message === "Bridge relay config rejected for company; relay disabled",
+      ),
+    ).toBe(true);
+
+    // Never pushes: the rejected transport carries no token anywhere.
+    relay.ingestEvent(COMPANY_ID, runStarted(COMPANY_ID, AGENT_A, "run-1"));
+    relay.ingestSnapshot(COMPANY_ID, snapshot(COMPANY_ID, [AGENT_A]));
+    await flush();
+    expect(calls.filter((c) => c.url.startsWith("http://pa.example"))).toHaveLength(0);
+
+    // And the rejected company stays disabled for later ingests (no stale
+    // transport revived by a subsequent push attempt).
+    expect(relay.lastPushError(COMPANY_ID)).toBeUndefined();
+  });
+
+  it("configure() with the §2 bypass input dispatches ZERO fetches: company disabled, prior transport disposed, warn logged", async () => {
+    // SAA-590 §2: a previously-valid transport fed
+    // { pixelAgentsUrl: "http:", pixelAgentsTokenRef: "s" } used to keep the
+    // old (or worse, a late-parsing cleartext) transport and could dispatch
+    // the bearer token. Post-fix, the §2 contract rejection must fail
+    // secure exactly like the §1 one: dispose, disable, warn, never fetch.
+    const { ctx, logger } = makeCtx(async () => "token-value-1");
+    const relay = new BridgeRelay(ctx);
+    await relay.configure(COMPANY_ID, {
+      pixelAgentsUrl: "https://pa.example",
+      pixelAgentsTokenRef: "secret-1",
+    });
+    expect(relay.isConfigured(COMPANY_ID)).toBe(true);
+
+    await expect(
+      relay.configure(COMPANY_ID, {
+        pixelAgentsUrl: "http:",
+        pixelAgentsTokenRef: "s",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(relay.isConfigured(COMPANY_ID)).toBe(false);
+    expect(relay.activeCompanyCount).toBe(0);
+    expect(
+      logger.calls.some(
+        (l) => l.level === "warn" && l.message === "Bridge relay config rejected for company; relay disabled",
+      ),
+    ).toBe(true);
+
+    // ZERO fetch dispatches — neither on a late-parsing cleartext transport
+    // nor on the disposed prior one.
+    relay.ingestEvent(COMPANY_ID, runStarted(COMPANY_ID, AGENT_A, "run-1"));
+    relay.ingestSnapshot(COMPANY_ID, snapshot(COMPANY_ID, [AGENT_A]));
+    await flush();
+    expect(calls).toHaveLength(0);
+    expect(relay.lastPushError(COMPANY_ID)).toBeUndefined();
   });
 
   it("ingestEvent (canonical agent.run.started) pushes one feed batch: declare + activity + active status", async () => {

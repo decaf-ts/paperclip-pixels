@@ -453,7 +453,10 @@ config, read via `ctx.config.get(companyId)` and declared in the manifest's
 env is scrubbed by the host, so env vars are not available — config is the
 only path. Fields: `pixelAgentsUrl` (required to enable; the embedding
 surface's feed-listener base URL; must be `https:` when a token is
-configured), `pixelAgentsTokenRef` (optional `secret-ref` binding resolving
+configured — an unparseable or non-http(s) value is rejected outright, and
+plain `http:` is then accepted only for loopback hosts
+(`localhost`, `127.0.0.0/8`, `::1`), enforced fail-closed at configure
+time by `parseRelayConfig`), `pixelAgentsTokenRef` (optional `secret-ref` binding resolving
 to the feed shared secret, resolved at `configure` time via
 `ctx.secrets.resolve` — declared `secrets.read-ref`; the raw token is never
 persisted or logged), `pixelAgentsRelayEnabled` (default on when a URL is
@@ -462,7 +465,13 @@ and the privacy opt-in `dialogPanePrivacyOptIn` (default OFF — the retired
 `pixelAgentsProviderId` hook-path field is gone). The relay enables itself as
 soon as a non-empty URL is present unless explicitly disabled. If
 `pixelAgentsTokenRef` resolution fails, the relay stays disabled for that
-company (fail-securely).
+company (fail-securely); a stored config that violates the https-when-token
+transport contract (feed token + a `pixelAgentsUrl` that is unparseable,
+not http(s), or cleartext `http:` to a non-loopback host)
+is rejected the same way at configure time — `parseRelayConfig` throws
+`RelayTransportContractError` and `BridgeRelay.configure()` disposes the
+company's prior transport and leaves its relay disabled with a warning
+([SAA-557](/SAA/issues/SAA-557), security F1).
 
 **Lifecycle wiring** (`src/worker.ts`):
 
@@ -486,10 +495,17 @@ company (fail-securely).
   new config; disables itself if the URL is gone). Errors are caught and
   logged — a config change must never crash the worker.
 - **`onValidateConfig(config)`** — validates `pixelAgentsUrl` is an
-  http(s) URL, **rejects `http:` whenever `pixelAgentsTokenRef` is configured**
-  (cleartext must never carry a token; `http:` is allowed only when
-  token-less), `pixelAgentsTokenRef` a `secret_ref` binding or non-empty
-  string, and `pixelAgentsRelayEnabled` a boolean.
+  http(s) URL, **rejects `http:` when `pixelAgentsTokenRef` is configured**
+  (cleartext must never carry a token; the only save-time exceptions are the
+  bundled sidecar hostnames `localhost`, `127.0.0.1`, `::1`, and
+  `pixel-agents-relay`), `pixelAgentsTokenRef` a `secret_ref` binding or
+  non-empty string, and `pixelAgentsRelayEnabled` a boolean.
+  `parseRelayConfig` re-enforces the contract at runtime, fail-closed: with
+  a token configured, `pixelAgentsUrl` must be a valid http(s) URL and
+  cleartext `http:` is accepted only for loopback hosts
+  (`localhost`, `127.0.0.0/8`, `::1`) — anything else throws
+  `RelayTransportContractError`, and `BridgeRelay.configure()` catches it to
+  dispose the company's relay and leave it disabled.
 - **`onHealth()`** — reports `companies` (bootstrapped) and `relayCompanies`
   (active relay count) in `details`.
 - **`onShutdown()`** — `relay.disposeAll()` disposes every company mapper + sink.
@@ -648,7 +664,7 @@ docker build -t pixel-agents:local         -f deploy/docker/Dockerfile.pixel-age
 | Layer | Description | Key mechanisms |
 | --- | --- | --- |
 | Trust boundary (UI ↔ worker) | All Paperclip domain access routes through the worker; the UI never calls Paperclip HTTP routes directly (FR-9, §28.2) | UI bundle externalizes React + SDK UI hooks; UI reaches the worker only via `ctx.data`/`ctx.actions`/`ctx.streams` |
-| Relay outbound boundary (`PAPERCLIP_PIXELS-2`) | The relay's outbound HTTP to the embedding surface is operator-gated per company, push-only, routed through the SDK-gated `ctx.http.fetch` (declared `http.outbound`), and carries only plugin feed batches; the worker never accepts inbound from that server | `instanceConfigSchema` gates `pixelAgentsUrl`/`pixelAgentsRelayEnabled`; relay disabled by default when no URL; `onValidateConfig` enforces http(s) URL + rejects `http:` with a token; bearer token is operator-bound via a `secrets.read-ref`-gated secret reference, never a plaintext config value; the feed endpoint mirrors the gate fail-closed (constant-time digest compare, 401, no token-in-URL, refuses to start without `PAPERCLIP_PIXEL_FEED_TOKEN`) |
+| Relay outbound boundary (`PAPERCLIP_PIXELS-2`) | The relay's outbound HTTP to the embedding surface is operator-gated per company, push-only, routed through the SDK-gated `ctx.http.fetch` (declared `http.outbound`), and carries only plugin feed batches; the worker never accepts inbound from that server | `instanceConfigSchema` gates `pixelAgentsUrl`/`pixelAgentsRelayEnabled`; relay disabled by default when no URL; `onValidateConfig` enforces http(s) URL + rejects `http:` with a token (bundled sidecar names excepted), and `parseRelayConfig` re-enforces the contract at runtime (with a token the URL must be valid http(s) and cleartext `http:` is loopback-only; otherwise `RelayTransportContractError` disables the relay fail-closed); bearer token is operator-bound via a `secrets.read-ref`-gated secret reference, never a plaintext config value; the feed endpoint mirrors the gate fail-closed (constant-time digest compare, 401, no token-in-URL, refuses to start without `PAPERCLIP_PIXEL_FEED_TOKEN`) |
 | Least-privilege manifest | Request only required capabilities (FR-10, §14, §28.1) | `capabilities` array in `manifest.ts`; read-only visualization needs no mutation caps; feedback needs no `issues.create` |
 | Input validation | All `ctx.data`/`ctx.actions`/`ctx.streams` payloads validated with Zod; host-authenticated actor identity, not user-supplied actor IDs (FR-11, §28.4) | Zod schemas on every handler; `onValidateConfig` validates relay config fields |
 | Secrets | No resolved secrets in plugin state — retain references, resolve at call time; never log secrets/full sensitive prompts by default (FR-12, §28.3, NFR-7) | `ctx.state` holds references only; the relay token is resolved per company from the operator-bound `pixelAgentsTokenRef` (`ctx.secrets.resolve`, `secrets.read-ref`), lives only in memory for the sink's lifetime, and is never logged or persisted |
@@ -705,17 +721,23 @@ HTTP path from the worker to an operator-configured Pixel Agents server.
   on the outbound feed POST, lives only in memory, and is never logged or
   persisted.
 - **Validated config.** `onValidateConfig` enforces that `pixelAgentsUrl` is
-  an http(s) URL — and **rejects `http:` whenever a token ref is configured**
-  (cleartext must never carry a bearer token; token-less `http:` is allowed for
-  isolated sidecar deployments) — `pixelAgentsUrl` must therefore be `https:`
-  when a token is used. It also enforces the token ref is a `secret_ref`
-  binding or non-empty string, and the enable flag is boolean — rejecting
-  malformed operator input before it reaches the relay. The receiving feed
-  endpoint enforces its own half of the boundary fail-closed: bearer shared
-  secret compared constant-time over SHA-256 digests, 401 on
-  unauthenticated/wrong-token, a token never accepted via URL, and the
-  embedding module refuses to start without `PAPERCLIP_PIXEL_FEED_TOKEN`
-  configured.
+  an http(s) URL — and **rejects `http:` when a token ref is configured**
+  (cleartext must never carry a bearer token; the only save-time exceptions
+  are the bundled sidecar hostnames `localhost`, `127.0.0.1`, `::1`, and
+  `pixel-agents-relay`). `parseRelayConfig` re-enforces the contract at
+  runtime, fail-closed: with a token configured, `pixelAgentsUrl` must be a
+  valid http(s) URL and cleartext `http:` is accepted only for loopback
+  hosts (`localhost`, `127.0.0.0/8`, `::1`) — anything else throws
+  `RelayTransportContractError`, which
+  `BridgeRelay.configure()` catches to dispose the company's relay and leave
+  it disabled (the previous transport is never kept). It also enforces the
+  token ref is a `secret_ref` binding or non-empty string, and the enable
+  flag is boolean — rejecting malformed operator input before it reaches the
+  relay. The receiving feed endpoint enforces its own half of the boundary
+  fail-closed: bearer shared secret compared constant-time over SHA-256
+  digests, 401 on unauthenticated/wrong-token, a token never accepted via
+  URL, and the embedding module refuses to start without
+  `PAPERCLIP_PIXEL_FEED_TOKEN` configured.
 - **Failure isolation.** `onConfigChanged` and `setup()` catch and log relay
   errors; a relay misconfiguration or push failure must never crash the
   worker or break the UI bridge. `PluginFeedHttpSink.lastPushError` surfaces
@@ -946,6 +968,7 @@ mechanism.
 | R5 | Relay push failure or misconfiguration crashes the worker / breaks the UI bridge | High | Low | `setup()`/`onConfigChanged` catch+log relay errors; relay is no-op when disabled; UI bridge is independent of relay | Engineering | Mitigated by failure isolation (PAPERCLIP_PIXELS-2) |
 | R6 | Relay enabled for the wrong company / cross-company event bleed | High | Low | Per-company `Map<companyId, CompanyRelay>`; `onConfigChanged` is per-company; `multiCompanyConfig: true` | Engineering | Mitigated (PAPERCLIP_PIXELS-2) |
 | R7 | Background `streams.emit` dropped by the host invocation-scope guard → UI gauges only update on manual refresh | High | Medium | Worker opens both channels per company so `companyId` is stamped on every notification; host image seeds the bridge plugin's `proactiveCompanyScopes` from served companies at worker start (ADR-06, §06) | Engineering | Mitigated by dual-channel open + proactive-scope seeding |
+| R8 | Stored company config pairs the feed token with a cleartext `http:` `pixelAgentsUrl` to a non-loopback host (e.g. the documented containerized service-name topology `http://pixel-agents:8081` + `pixelAgentsTokenRef`) — the bearer token would travel unencrypted | High — credential disclosure on the feed wire | Low | Runtime fail-closed enforcement in `parseRelayConfig` ([SAA-557](/SAA/issues/SAA-557), security F1): `RelayTransportContractError` at configure time; `configure()` disposes the prior transport and leaves the relay disabled (warn-logged); `http:` stays allowed for loopback hosts so local dev is unaffected. Affected service-name topologies need TLS fronting or an explicit exception decision (adjudication pending with Security Engineer) | Engineering / Security Engineer | Mitigated — deployment remediation tracked |
 
 ---
 
@@ -1029,7 +1052,7 @@ via `ctx.config.get(companyId)` and through the delivered `newConfig` in
 
 | Field | Type | Required | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `pixelAgentsUrl` | string (`format: uri`) | to enable | — | Base URL of the embedding surface's feed listener (e.g. `http://pixel-agents:8081`); must be `https:` when a token ref is configured; relay enables itself when set |
+| `pixelAgentsUrl` | string (`format: uri`) | to enable | — | Base URL of the embedding surface's feed listener (e.g. `http://pixel-agents:8081`); must be `https:` when a token ref is configured (an unparseable or non-http(s) URL is likewise rejected with a token; plain `http:` only for loopback hosts when a token is set); relay enables itself when set |
 | `pixelAgentsUiUrl` | string (`format: uri`) | no | — | Browser URL of the company's Pixel Agents instance (the embedded office iframe), regardless of relay state |
 | `pixelAgentsTokenRef` | string (`format: secret-ref`) | no | — | `secret_ref` binding resolved to the feed shared secret via `ctx.secrets.resolve`; the same value the embedding side sets as `PAPERCLIP_PIXEL_FEED_TOKEN`; never a plaintext value |
 | `pixelAgentsRelayEnabled` | boolean | no | on when URL set | Explicit on/off |
@@ -1038,10 +1061,22 @@ via `ctx.config.get(companyId)` and through the delivered `newConfig` in
 | `dialogPanePrivacyOptIn` | boolean | no | `false` | Per-company opt-in for the conversation dialog pane (WS4 conversation-extract feed); default OFF — when off, the pane shows only a redacted/truncated extract, never full sensitive prompts (CEO decision 2) |
 
 The retired `pixelAgentsProviderId` hook-path field is gone (WS2-C).
-`onValidateConfig` enforces the URL is http(s) — **rejecting `http:` whenever
-`pixelAgentsTokenRef` is configured** so a bearer token never travels over
-cleartext — the token ref is a `secret_ref` binding or non-empty string when
-present, and the enable flag is a boolean.
+`onValidateConfig` enforces the URL is http(s) and rejects `http:` +
+`pixelAgentsTokenRef` for anything but the bundled sidecar hostnames
+(`localhost`, `127.0.0.1`, `::1`, `pixel-agents-relay`), so a bearer token
+never travels over cleartext; the token ref is a `secret_ref` binding or
+non-empty string when present, and the enable flag is a boolean. Since
+[SAA-557](/SAA/issues/SAA-557) the contract is also enforced fail-closed at
+configure time: `parseRelayConfig` throws `RelayTransportContractError` for
+an enabled relay with a token ref whose `pixelAgentsUrl` is unparseable,
+not an http(s) URL, or a cleartext `http:` URL to a non-loopback host
+(`localhost`, `127.0.0.0/8`, `::1` stay allowed for local dev), and
+`BridgeRelay.configure()` fails secure on the rejection —
+the company's prior transport is disposed and its relay left disabled
+(warn-logged). A cleartext service-name URL such as the containerized
+topology's `http://pixel-agents:8081` therefore only works **without** a
+token ref; with a token it needs TLS fronting or an explicit exception
+decision (adjudication pending with Security Engineer).
 The relay is disabled by default; it activates only when a company has a
 non-empty `pixelAgentsUrl` (unless explicitly disabled), and stays disabled if
 the token ref fails to resolve (fail-secure).

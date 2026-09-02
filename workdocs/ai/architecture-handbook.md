@@ -156,7 +156,11 @@ graph TD
   worker does, via the SDK; (2) the worker↔feed-endpoint HTTP boundary is
   bearer-token authenticated (shared secret configured as `pixelAgentsTokenRef`
   on the Paperclip side and `PAPERCLIP_PIXEL_FEED_TOKEN` on the embedding
-  side, constant-time compared, fail-closed 401, token never in the URL);
+  side, constant-time compared, fail-closed 401, token never in the URL; the
+  worker side additionally enforces the https-when-token transport contract
+  fail-closed at configure time — with a token configured, `pixelAgentsUrl`
+  must be a valid http(s) URL and plain `http:` is accepted only for
+  loopback hosts);
   (3) the bridge holds **no** websocket to Pixel Agents — it is in-process
   through the host API; (4) plugin state is reached only through `ctx.state`
   capability checks.
@@ -310,7 +314,16 @@ The Pixel-Agents side of the bridge is a first-class plugin in two halves
   POSTs strictly ordered batches (`{ schemaVersion: 1, companyId, operations }`)
   to the embedding surface's `POST /api/plugin-feed`, fire-and-forget with
   `lastPushError` capture. The push rides the documented raw-`fetch` loopback
-  exception (host SSRF-filter gap) unchanged.
+  exception (host SSRF-filter gap) unchanged. The destination is policed by
+  the https-when-token transport contract ([SAA-557](/SAA/issues/SAA-557),
+  security F1): `parseRelayConfig` throws `RelayTransportContractError` for
+  an enabled relay with a token ref whose `pixelAgentsUrl` is unparseable,
+  not an http(s) URL, or a cleartext `http:` URL to a non-loopback host,
+  and `BridgeRelay.configure()` fails secure on the rejection — the
+  company's prior transport is disposed and its relay left disabled
+  (warn-logged) instead of sending the bearer token in plaintext. Loopback
+  hosts (`localhost`, `127.0.0.0/8`, `::1`) keep plain `http:` for local
+  dev.
 - **Embedding side (in the Pixel Agents server process):**
   `src/pixel-agents-plugin/embedding.ts` (bundled to
   `dist/pixel-agents-embedding.cjs`, loaded by the fork's `--plugin` loader)
@@ -675,8 +688,17 @@ Paperclip side as the plugin's `pixelAgentsTokenRef` secret; the reply
 forwarder additionally needs `PAPERCLIP_PIXEL_API_TOKEN` (a board API key)
 and an allowlisted in-network hostname (`PAPERCLIP_ALLOWED_HOSTNAMES`).
 Any topology where the worker and the feed listener are separated must set
-`pixelAgentsUrl` explicitly per company (the k8s stack requires the one-time
-`http://pixel-agents:8081` correction). The plugin worker runs as a forked
+`pixelAgentsUrl` explicitly per company. Transport-contract consequence
+([SAA-557](/SAA/issues/SAA-557), security F1): with a feed token configured,
+a cleartext service-name URL such as the k8s stack's documented
+`http://pixel-agents:8081` is **rejected at configure time** —
+`parseRelayConfig` throws `RelayTransportContractError` for a
+token-configured relay when the URL is non-loopback `http:`, non-http(s),
+or unparseable, and the relay is disabled fail-secure (warn-logged) — so
+containerized topologies need TLS fronting in front of the feed listener or
+an explicit exception decision (adjudication pending with Security
+Engineer); only loopback hosts keep plain `http:` with a token. The plugin
+worker runs as a forked
 child of the Paperclip host, not as its own pod. Rollback is trivial by
 construction: the bridge is a non-authoritative observer — disabling the
 plugin removes the graphical surface without touching business state. Full
@@ -728,7 +750,7 @@ carries no personal or prompt content, and survives plugin upgrades through
 | Host integration | All Paperclip access via the SDK behind the manifest's capability list | Least-privilege capabilities; host-authenticated actor; `resolveCompanyScope` asserts host-scoped company on every action |
 | Action policy | New-work intake is structurally confined to company/leadership actions | `agent.reply-to-feedback` requires an existing work binding, returns `route-to-company` otherwise; no `issues.create` on the reply path — including the click-menu reply route, which forwards into those same actions through the performAction proxy |
 | Plugin state | Scoped, capability-gated (`plugin.state.read/write`) | Zod/fail-closed validation on every load; agent scope per agent id |
-| Worker↔feed-endpoint HTTP | Same-operator sidecar boundary (`POST /api/plugin-feed`) | Bearer shared secret (`pixelAgentsTokenRef` ↔ `PAPERCLIP_PIXEL_FEED_TOKEN`); constant-time compare over SHA-256 digests; 401 fail-closed; token never in the URL; 1 MB body cap; `no-store` + `nosniff`; embedding module refuses to start without a token |
+| Worker↔feed-endpoint HTTP | Same-operator sidecar boundary (`POST /api/plugin-feed`) | Bearer shared secret (`pixelAgentsTokenRef` ↔ `PAPERCLIP_PIXEL_FEED_TOKEN`); constant-time compare over SHA-256 digests; 401 fail-closed; token never in the URL; 1 MB body cap; `no-store` + `nosniff`; embedding module refuses to start without a token; https-when-token on `pixelAgentsUrl` enforced at config save (`onValidateConfig`) and fail-closed at runtime (`parseRelayConfig` throws `RelayTransportContractError` → relay disposed and disabled; with a token the URL must be valid http(s) and cleartext `http:` is loopback-only) |
 | Bridge ↔ Pixel Agents runtime | In-process, no network hop | The embedding module registers through the plugin-host API inside the server process — the bridge holds no websocket and no fork-side secret; `invokePluginAction` is privilege-gated like `setHooksEnabled` (plugin actions run first-party code) |
 | Secrets | Operator-configured `pixelAgentsTokenRef` / `paperclipApiTokenRef`; embedding env `PAPERCLIP_PIXEL_FEED_TOKEN` / `PAPERCLIP_PIXEL_API_TOKEN` | Secret references only in Paperclip config, resolved at call time; never logged, never persisted; the feed token is required (fail-closed startup), the reply-forwarder API token is optional (replies fail closed `forwarderNotConfigured` without it) |
 | Outbound HTTP | Worker pushes routed through SDK-gated `ctx.http.fetch` (audited) | One documented exception: the feed push uses a narrowly-scoped raw `fetch` because the host SSRF filter categorically blocks the loopback sidecar destination |
@@ -923,6 +945,7 @@ relay CLI, leaving registration to the operator through the same gated path.
 | R5 | Renderer hueShift mod-360 wrap re-introduces collisions if formulas change | Medium — visual identity collisions | Low | Wrap-safe formula `45 + ((c-1)*47) % 315` pinned by unit tests (Tester-verified) | Engineering | Mitigated |
 | R6 | Host plugin-SSE gap forces polling degradation | Low — UI latency | Certain (known host gap) | 20s polling fallback; documented exception, unchanged by WS3 | CTO | Tracked |
 | R7 | Extra character sheets (palette ≥ 6) not registered in a deployment — declared seats for them cannot render | Low — visual fallback; host validates palette against its merged sheet count | Medium | One-time operator registration of the sheet directory through the fork's privilege-gated external-asset path (§5.5d); bundled sheets 0–5 always render | Engineering | Tracked |
+| R8 | Documented containerized topology pairs the feed token with the cleartext service-name URL `http://pixel-agents:8081` — rejected by the runtime https-when-token gate, so the relay disables itself at configure time in those stacks | Medium — bridge feed stops for affected companies (warn-logged; the token is never sent in plaintext) | Certain for token-configured service-name topologies until remedied | TLS-front the feed listener (https `pixelAgentsUrl`) or obtain an explicit exception decision (adjudication pending with Security Engineer, [SAA-557](/SAA/issues/SAA-557)); loopback local dev unaffected | Engineering / Security Engineer | Tracked |
 
 ## 10. Interfaces
 
@@ -932,7 +955,7 @@ relay CLI, leaving registration to the operator through the same gated path.
 | IF002 | Worker data endpoints | UI → worker | SDK `ctx.data`: `bridge-snapshot`, `company-summary`, `agent-behavior`, `outstanding-feedback`, `visual-settings` |
 | IF003 | Worker actions | UI → worker → Paperclip | SDK `ctx.actions`: `company.send-message`, `agent.reply-to-feedback`, `agent.set-pixel-appearance` (Zod-validated, host-scoped) |
 | IF004 | Worker streams | Worker → UI | SDK `ctx.streams`: the shared `bridge` channel (carries company-scoped events, opened per company) and `behavior:<companyId>` channels |
-| IF005 | Plugin feed endpoint | Worker → embedding surface | `POST /api/plugin-feed` (sidecar listener, default `127.0.0.1:8081`): bearer shared secret (constant-time SHA-256 digest compare, 401 fail-closed, never token-in-URL, 1 MB cap); batches `{ schemaVersion: 1, companyId, operations }` of `declareAgents` / `removeAgents` / `updateAgentStatus` / `updateAgentActivity`, all-or-nothing validated |
+| IF005 | Plugin feed endpoint | Worker → embedding surface | `POST /api/plugin-feed` (sidecar listener, default `127.0.0.1:8081`): bearer shared secret (constant-time SHA-256 digest compare, 401 fail-closed, never token-in-URL, 1 MB cap); batches `{ schemaVersion: 1, companyId, operations }` of `declareAgents` / `removeAgents` / `updateAgentStatus` / `updateAgentActivity`, all-or-nothing validated; worker side enforces https-when-token at configure time (with a token, `pixelAgentsUrl` must be a valid http(s) URL and plain `http:` is loopback-only — otherwise `RelayTransportContractError` disables the relay) |
 | IF006 | Fork plugin-host API (bridge ↔ Pixel Agents runtime) | Embedding surface ↔ plugin host, in-process | WS2-A1/A2 host API: `registerPlugin`/`startPlugin`, `PluginContext.agents` (sanctioned agent/team source), `ctx.characterEvents`; wire contract `pluginMessage` / `pluginActionResult` / `invokePluginAction` (privilege-gated) / `requestAgentMenu`→`agentMenu` / `agentLabelPolicy` / `pluginWidgets` (`core/asyncapi.yaml`) |
 | IF007 | Click-menu reply forwarder | Embedding surface → Paperclip API | `POST /api/plugins/:pluginId/actions/:key` (the host's sanctioned performAction proxy) invoking the plugin's existing `agent.reply-to-feedback` / `company.send-message` handlers; bearer board API key (`PAPERCLIP_PIXEL_API_TOKEN`); without it replies fail closed `forwarderNotConfigured`; no issue-creation code on the path |
 | IF008 | Worker ↔ Paperclip API (tool activity) | Worker → host API | `GET /api/heartbeat-runs/:runId/log` polling for real tool-call activity |
