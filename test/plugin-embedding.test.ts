@@ -573,6 +573,10 @@ describe("register — fork plugin-module composition", () => {
       manifest: registration.manifest,
       emit: vi.fn(),
       agents: source,
+      appearance: {
+        declareCharacterCatalog: vi.fn(),
+        assignAgentAppearance: vi.fn(),
+      },
     } as unknown as PixelAgentsPluginContext);
 
     const applied = await postFeed(port, VALID_BATCH);
@@ -631,6 +635,10 @@ describe("register — fork plugin-module composition", () => {
         updateAgentActivity: vi.fn(),
         updateAgentLabelPolicy: vi.fn(),
       } satisfies PluginAgentSource,
+      appearance: {
+        declareCharacterCatalog: vi.fn(),
+        assignAgentAppearance: vi.fn(),
+      },
     } as unknown as PixelAgentsPluginContext);
     await postFeed(port, VALID_BATCH); // 200 path
 

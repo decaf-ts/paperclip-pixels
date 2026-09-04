@@ -117,11 +117,42 @@ export interface PluginContributions {
   widgets?: PluginWidgetDeclaration[];
 }
 
+/** Verbatim shape of WS4-A's `PluginCharacterSheetDeclaration`
+ * (appearanceSource.ts). Array position (not the optional id) defines the
+ * sheet's integer index; `file` must be absolute and inside an
+ * operator-granted external asset directory. */
+export interface PluginCharacterSheetDeclaration {
+  /** Plugin-unique stable sheet id (optional; index is positional). */
+  id?: string;
+  /** Absolute path to a character sprite sheet PNG (112×96, 3 direction
+   *  rows × 7 frames of 16×32 — the `char_N.png` layout). */
+  file: string;
+}
+
+/** Verbatim shape of WS4-A's `PluginAppearanceSource` (appearanceSource.ts):
+ * the first-class appearance path — declare an ordered sheet catalog, then
+ * assign each declared agent an integer index into it. Manifest-gated by
+ * `sources.appearance`; every call is refused fail-closed when undeclared
+ * or when the embedding surface wired no asset gate. */
+export interface PluginAppearanceSource {
+  /** Idempotent replace of the plugin's whole catalog (all-or-nothing:
+   *  one invalid or ungranted sheet refuses the call and keeps the previous
+   *  catalog). Broadcasts `pluginCharactersLoaded` on success. */
+  declareCharacterCatalog(sheets: PluginCharacterSheetDeclaration[]): void;
+  /** Assign (or, with null, revert) one declared agent's appearance.
+   *  Broadcasts `agentAppearance`; revert degrades the agent back to
+   *  built-in palette rendering. */
+  assignAgentAppearance(key: string, sheetIndex: number | null): void;
+}
+
 /** Verbatim shape of A1's `PluginSourceDeclarations` (manifest.ts). */
 export interface PluginSourceDeclarations {
   /** The agent/team data source: declareAgents / updateAgentStatus /
    *  updateAgentActivity / removeAgents. Undeclared usage is refused. */
   agents?: boolean;
+  /** WS4-A: the appearance source (declareCharacterCatalog /
+   *  assignAgentAppearance). Undeclared usage is refused. */
+  appearance?: boolean;
 }
 
 /** Verbatim shape of A1's `PluginManifest` (manifest.ts). */
@@ -155,6 +186,9 @@ export interface PixelAgentsPluginContext {
   readonly manifest: PixelAgentsPluginManifest;
   emit(messageType: string, payload: Record<string, unknown>): boolean;
   readonly agents: PluginAgentSource;
+  /** WS4-A: present on every context; every call is refused fail-closed
+   *  unless the manifest declares `sources.appearance`. */
+  readonly appearance: PluginAppearanceSource;
 }
 
 /** Verbatim shape of A1's `PluginActionHandler` (pluginHost.ts). */

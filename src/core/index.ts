@@ -56,6 +56,18 @@ export {
   validateAssignmentInput,
 } from "./domain/characters.js";
 
+// Conversation-extract shaping for the dialog pane (spec
+// PAPERCLIP_PIXELS-2, WS4-C; NFR-7 / CEO decision 2 guardrails).
+export {
+  DIALOG_EXTRACT_MAX_CHARS_REDACTED,
+  DIALOG_EXTRACT_MAX_CHARS_OPT_IN,
+  DIALOG_LINE_MAX_CHARS,
+  redactSensitiveText,
+  collapseWhitespace,
+  dialogExtract,
+  clampDialogLine,
+} from "./domain/dialog.js";
+
 // Decoupled input contracts (spec §12).
 export type {
   CompanyInput,

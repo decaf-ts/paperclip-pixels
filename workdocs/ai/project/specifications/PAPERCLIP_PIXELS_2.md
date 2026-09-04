@@ -16,7 +16,7 @@ jiraIssueId: "none"
 jiraUpdatedAt: "none"
 jiraSyncState: "disabled"
 createdAt: "2026-09-01T03:22:52Z"
-updatedAt: "2026-09-02T03:18:00Z"
+updatedAt: "2026-09-03T01:20:00Z"
 ---
 
 # PAPERCLIP_PIXELS-2: Pixel Agents Plugin Architecture (Fork) + Paperclip Plugin Character/Settings/Assets
@@ -30,8 +30,8 @@ updatedAt: "2026-09-02T03:18:00Z"
 | Priority | medium |
 | Assignee | CEO |
 | Parent | none (domain root) |
-| Blocked by | SAA-454, SAA-455, SAA-456, SAA-457, SAA-458, SAA-459 (workstream parents; observed 2026-09-02T03:18:00Z — SAA-454/455/456 closed `done`, WS1 committed as fork `c634c15`; SAA-457/458/459 still `blocked`, with WS2's SAA-458 blocked only on its last leaf SAA-549 (WS2-D embedding surface), which is implementation-complete and Tester-e2e-verified and now closes on its two remaining children: this completion documentation milestone SAA-552 and the Tester re-pin SAA-551 (`in_progress`; the one stale manifest pin at `test/plugin-registration.test.ts:113-115` plus new embedding-surface suites); the WS2-A leaves SAA-533/534, the WS2-C leaf SAA-536, and the WS2-B leaf SAA-535 are all closed `done`) |
-| Observed at | 2026-09-02T03:18:00Z |
+| Blocked by | SAA-454, SAA-455, SAA-456, SAA-457, SAA-458, SAA-459 (workstream parents; observed 2026-09-03T01:18:00Z — SAA-454/455/456/458 closed `done` (WS1 committed as fork `c634c15`; WS2 closed with its fork-side plugin host + contribution points + webview consumers committed as `ade5601` — including the [SAA-532](/SAA/issues/SAA-532) client-contract tests and divergence row — and its plugin-repo bridge/embedding content committed as `f92c058` plus the https-transport relay-feed fix `4489e28`, all read-back-verified); SAA-457 (WS5) and SAA-459 (WS4) still `blocked`, with SAA-459's fork leaves [SAA-585](/SAA/issues/SAA-585)/[SAA-587](/SAA/issues/SAA-587) `done` (their fork-side appearance work uncommitted atop `ade5601` for the [SAA-459](/SAA/issues/SAA-459) close-gate commit) and SAA-459 blocked only on its plugin-repo leaf [SAA-588](/SAA/issues/SAA-588) (WS4-C), which is implementation-complete and acceptance-verified ([SAA-620](/SAA/issues/SAA-620) done: 3 new suites, 2 production bugs found and fixed, final ladder green — vitest 21 files / 437 passed / 0 expected-fail) and closes on this completion documentation milestone [SAA-624](/SAA/issues/SAA-624); WS5's SAA-457 is blocked on SAA-459) |
+| Observed at | 2026-09-03T01:18:00Z |
 
 Paperclip is authoritative for all lifecycle fields in this snapshot. The product
 scope is board-authored and locked, living verbatim in the parent issue
@@ -67,7 +67,10 @@ bridge-port `completion` milestone [SAA-544](/SAA/issues/SAA-544) (delivery
   Developer; Tester verdict [SAA-545](/SAA/issues/SAA-545), zero
   implementation defects), and the WS2-D embedding-surface `completion`
   milestone [SAA-552](/SAA/issues/SAA-552) (delivery issue
-  [SAA-549](/SAA/issues/SAA-549), reporting agent Back-End Developer).
+  [SAA-549](/SAA/issues/SAA-549), reporting agent Back-End Developer), and
+  the WS4-C appearance-API + dialog-pane-feed `completion` milestone
+  [SAA-624](/SAA/issues/SAA-624) (delivery issue [SAA-588](/SAA/issues/SAA-588),
+  reporting agent Back-End Developer).
 
 ## Overview
 
@@ -389,7 +392,28 @@ sequenceDiagram
   [SAA-548](/SAA/issues/SAA-548) with intended parent state `done`. SAA-458
   is now blocked on [SAA-535](/SAA/issues/SAA-535) alone (observed
   2026-09-02T01:05:00Z) and holds the WS2 single-commit gate at workstream
-  close (CTO owner).
+  close (CTO owner). Since closed: [SAA-458](/SAA/issues/SAA-458) is `done`
+  (observed 2026-09-03T01:08:00Z), with its plugin-repo bridge/embedding
+  content committed as `f92c058` and the https-transport relay-feed fix as
+  `4489e28` (read-back-verified on `master`).
+- [SAA-459](/SAA/issues/SAA-459) — WS4 bridge deepening — in delivery
+  (observed 2026-09-03T01:18:00Z): its fork leaves are closed — WS4-A
+  ([SAA-585](/SAA/issues/SAA-585), first-class appearance API + per-agent
+  sprite/asset sync) `done` and WS4-B ([SAA-587](/SAA/issues/SAA-587),
+  webview consumption of plugin-defined appearance) `done` (their fork-side
+  appearance change set — `server/src/plugins/appearanceSource.ts` /
+  `appearanceAssetGate.ts`, `webview-ui/src/office/engine/agentAppearance.ts`,
+  plus `pluginAppearance` server/webview suites and standalone e2e — sits
+  uncommitted atop the WS2 fork commit `ade5601` for the
+  [SAA-459](/SAA/issues/SAA-459) close-gate commit, read-back-verified); its
+  plugin-repo leaf WS4-C ([SAA-588](/SAA/issues/SAA-588)) is
+  implementation-complete and acceptance-verified (Tester
+  [SAA-620](/SAA/issues/SAA-620) done: 3 new suites, 2 production bugs found
+  and fixed, final ladder green — vitest 21 files / 437 passed / 0
+  expected-fail) and closes on this completion documentation milestone
+  [SAA-624](/SAA/issues/SAA-624); [SAA-459](/SAA/issues/SAA-459)
+  then closes with its workstream gate. [SAA-457](/SAA/issues/SAA-457) (WS5, final
+  phase gate) remains blocked on [SAA-459](/SAA/issues/SAA-459).
 - Board decisions pending before/during decomposition (owners: board/Product
   Manager): dialog-pane privacy guardrail, Paperclip-agent context gauge (proxy
   vs omitted). **Resolved:** random-default strategy — locked as CEO decision 4
@@ -460,7 +484,7 @@ per `git-ops`.
 
 ## Acceptance Criteria
 
-- [ ] **Plugin architecture:** Pixel Agents hosts the bridge as a first-class
+- [x] **Plugin architecture:** Pixel Agents hosts the bridge as a first-class
       plugin (no hook-impersonation, synthetic transcripts, or WS
       seat-driving); contribution points exist for character behavior, widgets,
       click menu, panels/overlays, and label policy.
@@ -516,11 +540,19 @@ per `git-ops`.
       webview tests, zero implementation defects) — every WS2 contribution
       point now has both a server side and a webview consumer, and the webview
       contributes no policy, widget registration, or menu of its own
-      (fail-closed). Remains unchecked: the embedding-surface wiring (CTO
-      companion follow-up) before the bridge is live in the Pixel Agents
-      server process; the criterion check rides the WS2 close on
-      [SAA-458](/SAA/issues/SAA-458)._
-- [ ] **Click menu & reply:** clicking a character opens a backend-controlled,
+      (fail-closed). Update (observed 2026-09-03T01:18:00Z,
+      [SAA-624](/SAA/issues/SAA-624)): criterion **checked** — both stated
+      conditions are resolved in the record: the embedding-surface wiring was
+      delivered as WS2-D ([SAA-549](/SAA/issues/SAA-549), documented at
+      [SAA-552](/SAA/issues/SAA-552) — the bridge runs live in-process in the
+      deployed Pixel Agents server, proven end-to-end), and the WS2 parent
+      [SAA-458](/SAA/issues/SAA-458) closed `done` with its content committed
+      on both sides: fork `ade5601` (plugin host, all four contribution
+      points, webview consumers, the `--plugin` loader, every Tester suite,
+      the [SAA-532](/SAA/issues/SAA-532) client-contract tests + divergence
+      row, and both duplicate WS2-B test pairs kept) and plugin repo
+      `f92c058` + `4489e28` — read-back-verified this milestone._
+- [x] **Click menu & reply:** clicking a character opens a backend-controlled,
       plugin-extensible menu; the stuck/requesting-agent reply option routes
       through existing feedback/intake actions and cannot create new work.
       _Outcome snapshot (observed 2026-09-01T22:25:00Z): the server-side half
@@ -555,9 +587,16 @@ per `git-ops`.
       refusals surface the server's `error` verbatim in one non-modal
       auto-dismissing toast (`PLUGIN_TOAST_DURATION_MS` 4000), and the
       [SAA-545](/SAA/issues/SAA-545) App-wiring tests assert the click→invoke
-      path sends **no work-creation message**. Remains unchecked: end-to-end
-      reply still needs the embedding-surface wiring (CTO companion
-      follow-up)._
+      path sends **no work-creation message**. Update (observed
+      2026-09-03T01:18:00Z, [SAA-624](/SAA/issues/SAA-624)): criterion
+      **checked** — the embedding-surface wiring landed as WS2-D
+      ([SAA-549](/SAA/issues/SAA-549)): the deployed-stack proof covered the
+      full round-trip (`requestAgentMenu` returns the plugin's Reply… item →
+      `invokePluginAction reply-to-feedback` → a comment created on the bound
+      issue with the company issue count unchanged — zero issue creation),
+      and the WS2 parent [SAA-458](/SAA/issues/SAA-458) closed `done` with
+      its content committed (fork `ade5601`, plugin repo
+      `f92c058`/`4489e28` — read-back-verified)._
 - [x] **Provider neutrality:** dispatch is keyed on `providerId`; hooks-only
       agents receive context-usage and tool events through the provider
       agnostic channel; Claude file parsing is provider-private.
@@ -602,7 +641,21 @@ per `git-ops`.
       tests plus Tester reverse-probe gates ([SAA-484](/SAA/issues/SAA-484));
       live-stack render verification (real Pixel Agents + relay + worker)
       deferred to the WS3 parent [SAA-456](/SAA/issues/SAA-456) verification
-      gates per CTO hand-back — remains unchecked until that gate passes._
+      gates per CTO hand-back — remains unchecked until that gate passes.
+      Update (observed 2026-09-03T01:10:00Z, [SAA-624](/SAA/issues/SAA-624)):
+      the final asset path landed with WS4-C ([SAA-588](/SAA/issues/SAA-588)) —
+      the plugin adopts the WS4-A first-class appearance API
+      (`ctx.appearance.declareCharacterCatalog` + `assignAgentAppearance`):
+      the 24-sheet WS3 catalog is declared at onStart (host-valid sanitized
+      ids — the WS3 ids contain `:`, which the host sheet-id pattern rejects),
+      per-agent `characterId` assignments (WS3 frozen contract) translate to
+      positional sheet indices, unknown ids skip fail-closed, a host catalog
+      refusal degrades to palette rendering (the frozen WS3 fallback) with
+      hueShift retained as the tint layer, and the WS3 interim
+      external-asset-directory sharing is retired plugin-side
+      (Tester-verified [SAA-620](/SAA/issues/SAA-620), fail-on-old-code
+      guardrail included). Remains unchecked: the formal criterion check
+      rides the WS4 parent [SAA-459](/SAA/issues/SAA-459) close._
 - [ ] **Plugin chrome:** single-line native-style menu entry; settings page
       global-only with editable global fields; per-agent settings on the
       agent's surface.
@@ -662,7 +715,21 @@ per `git-ops`.
       stack (reply round-trip to a comment on the bound issue, zero issue
       creation). Remains unchecked: the plugin's real conversation-extract
       feed rides WS4, and the formal criterion check rides the WS2 parent
-      [SAA-458](/SAA/issues/SAA-458) close (single-commit gate)._
+      [SAA-458](/SAA/issues/SAA-458) close (single-commit gate). Update
+      (observed 2026-09-03T01:10:00Z, [SAA-624](/SAA/issues/SAA-624)): the
+      real conversation-extract feed landed with WS4-C
+      ([SAA-588](/SAA/issues/SAA-588)) — always-on secret redaction
+      (Bearer/Basic/assignment/long-credential patterns), extract caps 120
+      chars OFF / 480 ON, a 600-char wire cap in both modes, strict
+      `dialogPanePrivacyOptIn === true` parsing with the feed mapper rebuilt
+      on change and worker-side boolean validation; the feed sources only
+      existing intake/subscription surfaces (no new host capabilities, no
+      issue-creation primitives), and Tester's fail-on-old-code guardrail
+      ([SAA-620](/SAA/issues/SAA-620)) proves no full sensitive prompt ships
+      with the toggle OFF. Remains unchecked: the formal criterion check
+      rides the remaining workstream closes ([SAA-458](/SAA/issues/SAA-458)
+      has since closed `done`; WS4's [SAA-459](/SAA/issues/SAA-459) close
+      pending)._
 
 ## Verification Plan
 
@@ -692,14 +759,14 @@ per `git-ops`.
 | Pixel Agents server token readable by any local process (`~/.pixel-agents/server.json`, 0600) | Plugin architecture widens local surface | CTO | Acceptable for local tooling; recorded; revisit if a networked mode appears |
 | F5 SPA send-policy client contract unpinned by tests (`webview-ui/src/externalAssetDirectories.ts` refusal fast-path + SettingsModal rejection-flow copy) | A SPA send-policy regression would not fail any test — server-side enforcement is tested, the client contract is not | CTO (routing) → Tester | **Addressed** — [SAA-532](/SAA/issues/SAA-532) (Tester, child of [SAA-455](/SAA/issues/SAA-455), done) authored `webview-ui/test/assetDirectoryClientContract.test.ts` pinning the refusal fast-path and rejection-flow copy (webview suite now 15 files / 148 tests, green in the [SAA-537](/SAA/issues/SAA-537) ladder); the file is however still uncommitted — see the [SAA-532](/SAA/issues/SAA-532) commit-gate row below |
 | Commit-gate reviews signed fingerprint `7e63f6b6…` that predates the [SAA-527](/SAA/issues/SAA-527) documentation pass; the final-tree fingerprint is `b597c07b…` | Approving the WS1 commit against the stale fingerprint would mis-describe the committed diff | CTO (commit approval on [SAA-455](/SAA/issues/SAA-455)) | Reference `b597c07b…` (recorded by [SAA-527](/SAA/issues/SAA-527) at 19:45:20Z, re-verified at the [SAA-530](/SAA/issues/SAA-530) milestone) or re-run the gate; the delta is documentation-only (`CLAUDE.md`, `docs/external-assets.md`) and [SAA-527](/SAA/issues/SAA-527) re-ran `check-types` + `lint` green after its edits. **Closed in practice (observed [SAA-540](/SAA/issues/SAA-540), 2026-09-01T21:05:00Z):** [SAA-455](/SAA/issues/SAA-455) closed `done` with single commit `c634c15`; read-back confirms the commit includes the [SAA-527](/SAA/issues/SAA-527) doc files, so the committed diff carries the final-tree content rather than the stale-fingerprint tree (the approval-referenced fingerprint value was not reported to this record) |
-| [SAA-532](/SAA/issues/SAA-532) WS1-follow-up deliverables are not in the WS1 commit: `webview-ui/test/assetDirectoryClientContract.test.ts` and its DIVERGENCE.md row remain uncommitted in the shared worktree (commit `c634c15` contains **neither** — correction of the [SAA-533](/SAA/issues/SAA-533) flag, read-back verified at [SAA-540](/SAA/issues/SAA-540)) | The F5 client-contract tests exist only in the worktree; the committed WS1 tree still lacks them, and the committed divergence log does not describe them; risk of loss at the WS2 commit boundary | CTO (single-commit gate owner) | Fold both the test file and its divergence row into the WS2 single commit on [SAA-458](/SAA/issues/SAA-458) — or a CTO-directed corrective commit — before workstream close; flagged at [SAA-533](/SAA/issues/SAA-533) and recorded here at [SAA-540](/SAA/issues/SAA-540) |
+| [SAA-532](/SAA/issues/SAA-532) WS1-follow-up deliverables are not in the WS1 commit: `webview-ui/test/assetDirectoryClientContract.test.ts` and its DIVERGENCE.md row remain uncommitted in the shared worktree (commit `c634c15` contains **neither** — correction of the [SAA-533](/SAA/issues/SAA-533) flag, read-back verified at [SAA-540](/SAA/issues/SAA-540)) | The F5 client-contract tests exist only in the worktree; the committed WS1 tree still lacks them, and the committed divergence log does not describe them; risk of loss at the WS2 commit boundary | CTO (single-commit gate owner) | Fold both the test file and its divergence row into the WS2 single commit on [SAA-458](/SAA/issues/SAA-458) — or a CTO-directed corrective commit — before workstream close; flagged at [SAA-533](/SAA/issues/SAA-533) and recorded here at [SAA-540](/SAA/issues/SAA-540). **Resolved (observed 2026-09-03T01:18:00Z, [SAA-624](/SAA/issues/SAA-624)):** the WS2 fork commit `ade5601` includes both deliverables — `webview-ui/test/assetDirectoryClientContract.test.ts` and its [SAA-532](/SAA/issues/SAA-532) DIVERGENCE.md row (read-back-verified via `git show ade5601`) |
 | Specification key configuration gap persists (project `shortname` null, `SPECIFICATION_KEY` env unset) | Key resolution relies on recorded precedent | CTO | Formalize `PAPERCLIP_PIXELS` via project shortname or env (carried from PAPERCLIP_PIXELS-1 Risks) |
 | WS2-C plugin module is embeddable but not yet mounted: the embedding-surface wiring (feed-handler mount + plugin registration inside the Pixel Agents server process, successor to the now-dead `bin/paperclip-pixel-relay.js` seat-driving role) is a CTO companion follow-up outside [SAA-536](/SAA/issues/SAA-536)'s declared file scope. Candidate refinements accepted as-implemented with the companion as the vehicle: Tester [SAA-542](/SAA/issues/SAA-542) observation 1 (setAppearances-only agents emit no removeAgents on offline — bounded exposure) and observation 3 (mapSnapshot ignores `AgentInput.status` — snapshot is a self-heal floor, removal rides the event path) | The plugin feed path is not live end to end until the embedding surface is wired; the removal edge keeps a bounded exposure | CTO (companion follow-up) | **Resolved — delivered as WS2-D** ([SAA-549](/SAA/issues/SAA-549), observed at [SAA-552](/SAA/issues/SAA-552)): the fork's generic repeatable `--plugin <module>` startup loader (`pixel-agents/server/src/plugins/moduleLoader.ts` + `cli.ts`) loads the plugin-repo-side embedding module (`src/pixel-agents-plugin/embedding.ts` → `dist/pixel-agents-embedding.cjs`), which registers the plugin in-process and serves `POST /api/plugin-feed` on its own sidecar; the deployed stack proves the live end-to-end path. Both candidate refinements were deliberately **not** taken — they are pinned AS-IMPLEMENTED by the [SAA-542](/SAA/issues/SAA-542) suites, and flipping them would reopen a clean Tester verdict for bounded edge exposure (decision recorded under Decisions, 2026-09-02) |
 | WS2-C behavior deltas: the reassignment-handoff blip and the document-write blip are dropped (the one-caption-per-agent `updateAgentActivity` source cannot host transient second captions without clobbering the run caption) | Two pre-existing transient captions no longer appear | Executor (accepted as-implemented; reported via [SAA-536](/SAA/issues/SAA-536)) | Accepted as a known delta of the sanctioned single-caption surface; revisit only if the host later offers a transient-caption primitive |
 | WS2-C manifest bridge drift: the plugin repo's `src/pixel-agents-plugin/manifest.ts` still carries the reply menu-item without `action`/`scope` (`PAPERCLIP_REPLY_MENU_ITEM = {id, label, description, order}`) and an empty `labelPolicy: {}` — not matching the landed WS2-A2 manifest contract (action cross-validated against declared actions, scope required, labelPolicy modes) | The bridge's declared contributions would not satisfy the A2 host registration validation as written; drift between the plugin manifest and the host contract | WS2-C parent ([SAA-536](/SAA/issues/SAA-536)) when that workstream reopens | **Resolved — fixed by WS2-D** ([SAA-549](/SAA/issues/SAA-549), observed at [SAA-552](/SAA/issues/SAA-552)): the manifest now carries the reply menu item in the landed A2 shape (`action` cross-validated against the declared `reply-to-feedback` action, `scope: "agent"`) and **omits `labelPolicy` entirely** (a present-but-empty `labelPolicy: {}` is rejected by the real fork host validator — `mode` is required; probe-verified against `validatePluginManifest` before/after; the empty `widgets` placeholder is likewise gone). One stale Tester pin rode the fix — see the [SAA-551](/SAA/issues/SAA-551) row below |
 | Stale Tester pin on the retired manifest shape: `test/plugin-registration.test.ts:113-115` ("carries the WS2-A2 placeholder contributions untouched by the A1 host") still expects `labelPolicy: {}` + `widgets: []` and is the sole red in the worker suite (336/337) | One red test in the plugin repo's worker suite until re-pinned | Tester via [SAA-551](/SAA/issues/SAA-551) (`in_progress`, observed 2026-09-02T03:18:00Z) | [SAA-551](/SAA/issues/SAA-551) (child of [SAA-549](/SAA/issues/SAA-549)) re-pins the manifest contributions pin and adds new embedding-surface suites; [SAA-549](/SAA/issues/SAA-549) stays blocked on it until then |
 | Stale live relay documentation outside the WS2-D scope: the top-level `README.md` (unmodified by this change set) still documents `paperclip-pixel-relay` as a live companion CLI (install table row, `npx @decaf-ts/paperclip-pixels paperclip-pixel-relay` run instructions), and the CTO-governed project-root `AGENTS.md` still describes `bin/paperclip-pixel-relay.js` as the companion process — the WS2-D "all references updated" claim is scoped to the Dockerfile/compose/k8s/deploy README, which are clean | A user following the top-level README would try to run the deleted relay CLI | Commit owner at the WS2 single-commit gate on [SAA-458](/SAA/issues/SAA-458) (README); CTO (AGENTS.md — governance file, DDS does not edit without explicit CTO approval) | Fold a top-level-README refresh into the WS2 close or a follow-up; flag the AGENTS.md drift to the CTO; read-back-verified at [SAA-552](/SAA/issues/SAA-552) (the deploy-facing surfaces — `deploy/README.md`, Dockerfile comment, k8s table row — correctly describe the relay as retired) |
-| Two complementary duplicate WS2-B test-file pairs on disk (`appPluginMenuWiring` + `agentMenuAppWiring`, `fixtureWidgetData` + `fixtureWidgetFeed`) — both green, different nuances (a concurrent duplicate execution of [SAA-545](/SAA/issues/SAA-545) was merged rather than reverted) | Redundant test coverage; consolidation decision pending at the commit boundary | Commit owner (CTO) at the WS2 single-commit gate on [SAA-458](/SAA/issues/SAA-458) | Consolidate or keep both at the commit owner's discretion; recorded by Tester [SAA-545](/SAA/issues/SAA-545) and folded in at [SAA-548](/SAA/issues/SAA-548) |
+| Two complementary duplicate WS2-B test-file pairs on disk (`appPluginMenuWiring` + `agentMenuAppWiring`, `fixtureWidgetData` + `fixtureWidgetFeed`) — both green, different nuances (a concurrent duplicate execution of [SAA-545](/SAA/issues/SAA-545) was merged rather than reverted) | Redundant test coverage; consolidation decision pending at the commit boundary | Commit owner (CTO) at the WS2 single-commit gate on [SAA-458](/SAA/issues/SAA-458) | Consolidate or keep both at the commit owner's discretion; recorded by Tester [SAA-545](/SAA/issues/SAA-545) and folded in at [SAA-548](/SAA/issues/SAA-548). **Resolved (observed 2026-09-03T01:18:00Z, [SAA-624](/SAA/issues/SAA-624)):** kept — the WS2 fork commit `ade5601` contains all four files (read-back-verified) |
 
 ## Paperclip Work Breakdown
 
@@ -752,6 +819,11 @@ state `blocked` → CEO resumes to decompose under CTO execution, carrying
 | [SAA-549](/SAA/issues/SAA-549) | WS2-D — bridge embedding surface: register the paperclip plugin + serve plugin-feed in the deployed Pixel Agents server; retire the dead relay bin (child of [SAA-458](/SAA/issues/SAA-458), Back-End Developer) | high | implementation complete + verified (fork `--plugin` loader, embedding module, manifest fix, deploy vendoring/allowlist, relay bin deleted; fork suites 804/804 + 295/295; deployed-stack e2e 13 passed / 5 skipped / 0 failed + first-hand feed/menu/reply proofs); `blocked` only on its completion milestone [SAA-552](/SAA/issues/SAA-552) (this milestone) and the Tester re-pin [SAA-551](/SAA/issues/SAA-551) (`in_progress`; observed 2026-09-02T03:18:00Z); intended `done` — no commit (the CTO runs the single-commit gate at workstream close on [SAA-458](/SAA/issues/SAA-458)) | SAA-552, SAA-551 |
 | [SAA-551](/SAA/issues/SAA-551) | Tester re-pin for SAA-549 — re-pin the stale manifest contributions pin (`test/plugin-registration.test.ts:113-115`, the sole worker-suite red at 336/337) + new embedding-surface suites | high | in_progress (observed 2026-09-02T03:18:00Z) | none |
 | [SAA-552](/SAA/issues/SAA-552) | Document completion: SAA-549 WS2-D bridge embedding surface (this milestone) | high | done (completing with this record update; delivery-docs mapping body published on the issue) | none |
+| [SAA-585](/SAA/issues/SAA-585) | WS4-A — first-class appearance API + per-agent sprite/asset sync (child of [SAA-459](/SAA/issues/SAA-459), fork) | high | done (observed 2026-09-03T01:08:00Z) | none |
+| [SAA-587](/SAA/issues/SAA-587) | WS4-B — webview consumption of plugin-defined appearance (child of [SAA-459](/SAA/issues/SAA-459), fork) | high | done (observed 2026-09-03T01:08:00Z) | none |
+| [SAA-588](/SAA/issues/SAA-588) | WS4-C — plugin adopts the appearance API + real dialog-pane conversation feed behind decision-2 guardrails (child of [SAA-459](/SAA/issues/SAA-459), plugin repo, Back-End Developer) | high | implementation complete + acceptance-verified ([SAA-620](/SAA/issues/SAA-620) done: 3 new suites, 2 production bugs found and fixed, final ladder green — vitest 21 files / 437 passed / 0 expected-fail); completing at documentation milestone [SAA-624](/SAA/issues/SAA-624) (this milestone, observed 2026-09-03T01:18:00Z); intended `done` — no commit (the CTO runs the single-commit gate at workstream close on [SAA-459](/SAA/issues/SAA-459)) | SAA-624 |
+| [SAA-620](/SAA/issues/SAA-620) | Tester acceptance tests for [SAA-588](/SAA/issues/SAA-588) — appearance adoption + dialog-pane guardrail suites (3 new files; 2 production bugs found, pinned `it.fails`, fixed, pins promoted and re-verified) | high | done (observed 2026-09-03T01:08:00Z; test-only, no production code touched by Tester) | none |
+| [SAA-624](/SAA/issues/SAA-624) | Document completion: SAA-588 WS4-C appearance-API adoption + dialog-pane feed (this milestone) | high | done (completing with this record update; delivery-docs mapping body published on the issue) | none |
 
 ## Decisions
 
@@ -787,6 +859,9 @@ state `blocked` → CEO resumes to decompose under CTO execution, carrying
 | 2026-09-02 | Back-End Developer ([SAA-549](/SAA/issues/SAA-549)) | Embedding module behavior locked: one `register(host, context)` call registers the Paperclip plugin in-process through the real WS2-A1 host API (manifest + reply actions + roster re-declaration on start, the sanctioned agent/team source captured at onStart), serves `POST /api/plugin-feed` on its own sidecar HTTP listener (default `127.0.0.1:8081`; `PAPERCLIP_PIXEL_FEED_HOST/PORT/TOKEN`), with **fail-closed bearer auth** — constant-time compare over SHA-256 digests, 401 on unauthenticated/wrong-token, the token is never accepted via URL, and the module **refuses to start without a token** — and wires click-menu replies through `HttpReplyForwarder` → Paperclip performAction proxy → `agent.reply-to-feedback` / `company.send-message` **only**; without `PAPERCLIP_PIXEL_API_TOKEN` every reply fails closed with `forwarderNotConfigured` | The feed is an untrusted-network-facing ingress, so it gets the same fail-closed discipline as the fork's own privilege-token gate; the reply path preserves the fail-closed new-work invariant (NFR-1/FR-4 lineage) — no issue-creation primitive anywhere on the path, and a missing forwarder credential degrades to a typed refusal rather than an unauthenticated forward |
 | 2026-09-02 | Back-End Developer ([SAA-549](/SAA/issues/SAA-549)) | The manifest fix is **required, not cosmetic**: the WS2-C-delivered `contributes.labelPolicy: {}` is rejected by the real fork host validator (`mode` is required), so the manifest now omits `labelPolicy` — and the empty `widgets` placeholder — entirely; probe-verified against `validatePluginManifest` before/after. The reply menu item simultaneously moved to the landed A2 shape (`action` + `scope: "agent"`, cross-validated at registration). One stale Tester pin rode the fix (`test/plugin-registration.test.ts:113-115`); the re-pin is delegated to [SAA-551](/SAA/issues/SAA-551) | Resolves the WS2-C manifest bridge drift flagged at [SAA-548](/SAA/issues/SAA-548) (Risks): an empty-but-present `labelPolicy` never satisfied the A2 contract, so omission (default label behavior) is the only valid minimal shape; keeping the stale pin red rather than editing Tester-authored tests in the executor's change set preserves the documentation/testing boundary |
 | 2026-09-02 | Back-End Developer ([SAA-549](/SAA/issues/SAA-549)) | The two candidate refinements from the [SAA-542](/SAA/issues/SAA-542) verdict — `removeAgents` for setAppearances-only agents going offline, and honoring `AgentInput.status` in `mapSnapshot` — are deliberately **not implemented**: both are pinned AS-IMPLEMENTED by the SAA-542 suites (`test/plugin-feed-mapper.test.ts:517,564,599`), and flipping either would reopen a clean Tester verdict for bounded edge exposure | The exposure is bounded (a stale setAppearances-only character until the next declare; the snapshot is a self-heal floor whose removals ride the event path); the trade weighs a clean, mutation-proven Tester verdict over two edge-case refinements — revisit only if the host later offers a removal primitive the mapper can consume without disturbing the pinned semantics |
+| 2026-09-03 | Back-End Developer ([SAA-588](/SAA/issues/SAA-588)) | Dialog-pane redaction and truncation live **plugin-side, never renderer-side**: `src/core/domain/dialog.ts` applies always-on secret redaction (Bearer, Basic, assignment/compound-key, ≥32-char long-credential patterns → `[redacted]`) before any truncation decision, then mode-dependent excerpt caps (120 chars with the toggle OFF, 480 ON) with a 600-char wire cap in both modes; the webview renders only the plugin-sent `paperclip.dialog.lines` payloads and never sees raw prompts | Honors PAPERCLIP_PIXELS-1 NFR-7 and locked CEO decision 2 (default OFF): a renderer-side filter could not be audited from the plugin repo and would trust an unauditable wire; the plugin-side pipeline is unit-testable and proven by Tester's fail-on-old-code guardrail ([SAA-620](/SAA/issues/SAA-620)) — no full sensitive prompt ships with the toggle OFF |
+| 2026-09-03 | Back-End Developer ([SAA-588](/SAA/issues/SAA-588)) | Appearance catalog declaration is **best-effort fail-closed**: onStart wraps `ctx.appearance.declareCharacterCatalog` in try/catch — a host refusal (e.g. the asset gate rejecting the catalog directory) logs `paperclip_appearance_catalog_refused` (plugin id + error message, never the feed token) and degrades to palette rendering (the frozen WS3 seat/fallback); `hueShift` is retained as the tint/fallback layer on top of both paths | The WS4-C contract makes declaration best-effort: a host gate refusal must never propagate out of onStart or break the live feed; the degradation keeps the bridge running on the WS3 palette path. The missing try/catch was a Tester-found production bug ([SAA-620](/SAA/issues/SAA-620) finding 1), fixed and re-verified before close |
+| 2026-09-03 | Back-End Developer ([SAA-588](/SAA/issues/SAA-588)) | The dialog feed **sources only existing intake/subscription surfaces** (comment/run/approval lines the relay already observes) — no new host capabilities, no issue-creation primitives; `dialogPanePrivacyOptIn` is parsed strict `=== true` at relay configure (mapper rebuilt on change) with worker-side boolean validation, so undefined/`false`/`"true"`/`1` all mean OFF | Keeps the fail-closed boundary discipline (NFR-1/FR-4 lineage) on the new feed surface; strict-true parsing prevents truthy-coercion opt-ins (Tester-verified in [SAA-620](/SAA/issues/SAA-620)'s `dialog-pane-registration` suite) |
 
 ## Execution Log
 
@@ -1557,6 +1632,129 @@ state `blocked` → CEO resumes to decompose under CTO execution, carrying
   user-approved commit at [SAA-458](/SAA/issues/SAA-458) close per `git-ops`.
 - Jira gate disabled (`JIRA_ENABLED` not `true`); no Jira workflow invoked.
 
+### 2026-09-03T01:10:00Z - Delivery Documentation Specialist
+
+- `completion` milestone [SAA-624](/SAA/issues/SAA-624) for the WS4-C delivery
+  issue [SAA-588](/SAA/issues/SAA-588) (reporting agent: Back-End Developer):
+  folded the reported facts, decisions, artifacts, and verification evidence
+  from [SAA-588](/SAA/issues/SAA-588)'s completion handoff and the Tester
+  verdicts on [SAA-620](/SAA/issues/SAA-620) into this record. No technical
+  content was decided by the documentation specialist; all facts are
+  executor/Tester-reported and the key change-set facts were independently
+  read-back-verified against the plugin repo worktree (see Verification
+  Evidence).
+- **Scope:** the WS4-C plugin-repo change set, delivered uncommitted on
+  `master` (HEAD `4489e28` — the https-transport relay-feed fix, atop the
+  committed WS2-C/D bridge content `f92c058`; both observed by read-back —
+  the plugin repo's WS2-era content has since been committed). 23 uncommitted
+  paths (14 modified, 5 new incl. the 3 Tester suites, plus non-src paths).
+  No commits, branches, or pushes by this change set; it rides the CTO
+  single-commit gate at workstream close on [SAA-459](/SAA/issues/SAA-459)
+  per `git-ops`. `paperclip/` core untouched; the `pixel-agents` submodule
+  pointer belongs to the fork-side WS4-A/WS4-B work
+  ([SAA-585](/SAA/issues/SAA-585)/[SAA-587](/SAA/issues/SAA-587), both `done`).
+- **WS4-A appearance API adopted** (`src/pixel-agents-plugin/appearance.ts`,
+  new): translates `assignAgentAppearance {key, characterId}` feed ops (WS3
+  frozen character ids) into host `ctx.appearance.assignAgentAppearance`
+  positional sheet indices; the 24-sheet catalog is declared at onStart
+  (`declareCharacterCatalog`, host-valid sanitized ids — the WS3 ids contain
+  `:` which the host sheet-id pattern rejects; `indexOfCharacter` resolves
+  the original ids positionally, per the [SAA-620](/SAA/issues/SAA-620)
+  verdict); unknown ids skip fail-closed
+  (`paperclip_appearance_unresolved_character`); declaration failure degrades
+  to palette rendering (`paperclip_appearance_catalog_refused` log — the
+  onStart try/catch was a Tester-found bug fix); hueShift retained as the
+  tint/fallback layer. **The WS3 interim external-asset-directory sharing is
+  retired plugin-side** (read-back: `addExternalAssetDirectory` appears only
+  in a JSDoc comment describing the host gate).
+- **Real dialog-pane conversation feed behind decision-2 guardrails**
+  (`src/core/domain/dialog.ts`, new + wiring): always-on secret redaction
+  (Bearer/Basic/assignment/≥32-char long-credential → `[redacted]`; the
+  Basic-auth pattern was a Tester-found bug fix), extract caps 120 chars OFF
+  / 480 ON, 600-char wire cap both modes; `dialogLines` feed op →
+  `dialog-pane` shell-panel widget + `paperclip.dialog.lines` message type
+  (`sources: {agents: true, appearance: true}` in the plugin manifest);
+  `dialogPanePrivacyOptIn` parsed strict `=== true` at relay configure
+  (`relay.ts:255`, mapper rebuilt on change), worker validates boolean
+  (`worker.ts:766-769`). Feed sources only existing intake/subscription
+  surfaces — no new host capabilities, no issue-creation primitives.
+- **Workaround retirement (final inventory from the completion handoff):**
+  retired — WS3 interim external-asset-directory character sharing (replaced
+  by the first-class appearance path) and transcript-hack grouping (replaced
+  by `bridgeTeamName` stable seats, landed with WS2-C); kept as documented
+  host exceptions, not precedents — plugin SSE 501 → 20s polling fallback
+  ([SAA-315](/SAA/issues/SAA-315) app-gap), and the relay raw-`fetch`
+  loopback bypass for the host SSRF filter (bounds enforced in `src/relay.ts`).
+- **Acceptance gates (Tester [SAA-620](/SAA/issues/SAA-620), done):** 3 new
+  suites (`plugin-appearance`, `dialog-guardrail`,
+  `dialog-pane-registration`) incl. the fail-on-old-code guardrail proving no
+  full sensitive prompt ships with the toggle OFF; 2 production bugs found
+  and pinned `it.fails` (onStart catalog-refusal degradation; short
+  Basic-credential redaction), then fixed by the executor and re-verified
+  green with the pins promoted and strengthened. Final ladder: typecheck
+  green; vitest 21 files / 437 passed / 0 expected-fail; jest 116 (UI) + 150
+  (domain); eslint clean.
+- WS2 closure observed since the last amend: [SAA-458](/SAA/issues/SAA-458)
+  is `done`, and the plugin-repo `master` history now carries the WS2 bridge
+  content (`f92c058`) and the https-transport relay-feed fix (`4489e28`) —
+  read-back-verified this milestone.
+- Jira gate disabled (`JIRA_ENABLED` not `true`); no Jira workflow invoked.
+- Repository edits left uncommitted for the technical parent ticket executor
+  to include in the domain root's single user-approved commit per `git-ops`.
+
+### 2026-09-03T01:20:00Z - Delivery Documentation Specialist
+
+- Closing pass of the [SAA-624](/SAA/issues/SAA-624) milestone (same
+  milestone as the 01:10:00Z entry above; this pass completes it). Corrected
+  two status-snapshot defects introduced by the preceding run of this same
+  milestone, which had overstated lifecycle state ahead of Paperclip: the
+  Paperclip Snapshot row had dropped [SAA-459](/SAA/issues/SAA-459) from the
+  domain root's blocked-by list and asserted "WS4 closed", and the Work
+  Breakdown row had marked [SAA-588](/SAA/issues/SAA-588) `done` — while the
+  live Paperclip read-back (2026-09-03T01:18:00Z) shows
+  [SAA-447](/SAA/issues/SAA-447) still blocked on SAA-459,
+  [SAA-459](/SAA/issues/SAA-459) `blocked` on [SAA-588](/SAA/issues/SAA-588),
+  and [SAA-588](/SAA/issues/SAA-588) `blocked` on this milestone
+  [SAA-624](/SAA/issues/SAA-624). Both rows were restored to the observed
+  state per the "Paperclip is authoritative" rule;
+  [SAA-588](/SAA/issues/SAA-588) closes when this milestone lands `done`.
+- **Newly observed and folded in (read-back-verified this pass):** the WS2
+  fork-side single commit exists — `ade5601` ("add pixel-agents plugin host,
+  contribution points (menu, labels, widgets, behavior hooks), and webview
+  consumers") atop the WS1 commit `c634c15`, containing the plugin host, all
+  four contribution points, the webview consumers, the WS2-D `--plugin`
+  module loader, every Tester suite ([SAA-537](/SAA/issues/SAA-537)/[SAA-541](/SAA/issues/SAA-541)/[SAA-545](/SAA/issues/SAA-545)),
+  **both [SAA-532](/SAA/issues/SAA-532) deliverables** (the
+  `assetDirectoryClientContract.test.ts` client-contract tests + its
+  DIVERGENCE.md row — resolving that Risk row), and **both duplicate WS2-B
+  test pairs kept** (resolving that Risk row's consolidation decision). The
+  record previously recorded only the plugin-repo WS2 commits
+  (`f92c058`/`4489e28`). Also observed: the WS4-A/WS4-B fork-side appearance
+  change set (`server/src/plugins/appearanceSource.ts`/
+  `appearanceAssetGate.ts`,
+  `webview-ui/src/office/engine/agentAppearance.ts`, `pluginAppearance`
+  server/webview suites, standalone e2e) sits uncommitted atop `ade5601` for
+  the [SAA-459](/SAA/issues/SAA-459) close-gate commit; plugin-repo HEAD
+  steady at `4489e28` with the WS4-C change set uncommitted atop it.
+- **Acceptance criteria checked (2):** "Plugin architecture" and
+  "Click menu & reply" — both stated check conditions are resolved in the
+  record (the WS2-D embedding surface delivered and proven live end-to-end on
+  the deployed stack; [SAA-458](/SAA/issues/SAA-458) closed `done` with its
+  content committed on both sides). Criteria still unchecked and why:
+  "Per-agent characters" and "Security & privacy" formally ride the
+  [SAA-459](/SAA/issues/SAA-459) close; "Plugin chrome" lacks any folded WS0
+  delivery evidence in this record (none was ever reported through a
+  documentation milestone — not invented here); "Boundary" and
+  "Visual validation" ride the remaining single-commit gates and WS5.
+- Re-ran the domain-record validator after all edits (see Verification
+  Evidence); published the child-owned `delivery-docs` mapping body as a
+  revisioned document on this milestone child [SAA-624](/SAA/issues/SAA-624)
+  for the parent owner of [SAA-588](/SAA/issues/SAA-588) to publish
+  mechanically.
+- Jira gate disabled (`JIRA_ENABLED` not `true`); no Jira workflow invoked.
+- Repository edits left uncommitted for the technical parent ticket executor
+  to include in the domain root's single user-approved commit per `git-ops`.
+
 ## Changed Artifacts
 
 | Path | Purpose |
@@ -1748,6 +1946,24 @@ at workstream close per `git-ops`):
 | `test/plugin-registration.test.ts:113-115` | One stale Tester pin on the retired manifest shape (sole worker-suite red, 336/337) — rides this change set; re-pin delegated to [SAA-551](/SAA/issues/SAA-551) |
 | _(milestone child issue document `delivery-docs` on [SAA-552](/SAA/issues/SAA-552))_ | Child-owned mapping handoff for this completion milestone; parent owner of [SAA-549](/SAA/issues/SAA-549) publishes it mechanically after this milestone completes |
 
+WS4-C appearance-API adoption + dialog-pane feed ([SAA-588](/SAA/issues/SAA-588),
+Back-End Developer; Tester acceptance [SAA-620](/SAA/issues/SAA-620);
+uncommitted in the plugin repo (outer repo, `master` — HEAD `4489e28`
+untouched, nothing pushed); rides the single user-approved commit on
+[SAA-459](/SAA/issues/SAA-459) at workstream close per `git-ops`):
+
+| Path | Purpose |
+| --- | --- |
+| `src/pixel-agents-plugin/appearance.ts` (new) | WS4-A adoption: catalog sheets loader (24 entries, absolute paths, host-valid sanitized ids) + `assignAgentAppearance` applier translating WS3 frozen `characterId` feed ops into host sheet indices; fail-closed unknown-id skip (`paperclip_appearance_unresolved_character`); hueShift tint/fallback |
+| `src/core/domain/dialog.ts` (new), `src/core/index.ts` | Dialog-extract domain: always-on secret redaction (Bearer/Basic/assignment/long-credential patterns), extract caps 120 (OFF) / 480 (ON), 600-char wire cap; exports |
+| `src/pixel-agents-plugin/feed-mapper.ts`, `feed.ts`, `feed-server.ts` | `assignAgentAppearance` + `dialogLines` feed ops; every comment body routed through `dialogExtract`; server-side line/batch clamps; missing appearance/dialog sinks → 400 |
+| `src/pixel-agents-plugin/embedding.ts` | onStart declares the 24-sheet catalog through `ctx.appearance.declareCharacterCatalog` in a fail-closed try/catch (`paperclip_appearance_catalog_refused` → palette-rendering degradation) |
+| `src/pixel-agents-plugin/manifest.ts`, `types.ts`, `index.ts` | `dialog-pane` shell-panel widget + `paperclip.dialog.lines` message type + `sources: {agents, appearance}`; appearance/feed type surface |
+| `src/worker.ts` | `dialogPanePrivacyOptIn` boolean validation (`onValidateConfig`) |
+| `src/relay.ts` | Dialog-toggle wiring only: strict `=== true` at configure (`relay.ts:255`), mapper rebuilt on config change (`relay.ts:546,569`) |
+| `test/plugin-appearance.test.ts`, `test/dialog-guardrail.test.ts`, `test/dialog-pane-registration.test.ts` (new, Tester via [SAA-620](/SAA/issues/SAA-620)); `test/plugin-feed-mapper.test.ts`, `test/plugin-embedding.test.ts`, `test/plugin-registration.test.ts`, `test/relay.test.ts`, `test/worker.test.ts` (re-pinned) | Acceptance suites incl. the fail-on-old-code guardrail (no full sensitive prompt with toggle OFF); existing suites re-pinned to the new wire contract |
+| _(milestone child issue document `delivery-docs` on [SAA-624](/SAA/issues/SAA-624))_ | Child-owned mapping handoff for this completion milestone; parent owner of [SAA-588](/SAA/issues/SAA-588) publishes it mechanically after this milestone completes |
+
 ## Verification Evidence
 
 | Time | Executor | Check | Result | Evidence |
@@ -1798,6 +2014,10 @@ at workstream close per `git-ops`):
 | 2026-09-02T03:18:00Z | Back-End Developer ([SAA-549](/SAA/issues/SAA-549), reported via [SAA-552](/SAA/issues/SAA-552)) | Deployed-stack verification (compose project `paperclip-pixels-e2e-saa549`, images rebuilt from the current tree): `npx playwright test` e2e suite + first-hand API/WS proofs | Pass | E2e 13 passed / 5 skipped (documented [SAA-315](/SAA/issues/SAA-315) host stream-bus app-gap) / 0 failed in 2.9m; first-hand: feed 401 on unauthenticated/wrong-token/token-in-URL; feed declares applied from the relay; click-menu `requestAgentMenu` returns the plugin's Reply… item; `invokePluginAction reply-to-feedback` round-trips to a comment on the bound issue with the company issue count unchanged (zero creation); junk payload → `invalidPayload` fail-closed |
 | 2026-09-02T03:18:00Z | Back-End Developer ([SAA-549](/SAA/issues/SAA-549), reported via [SAA-552](/SAA/issues/SAA-552)) | Manifest-fix probe against the real fork host validator: `validatePluginManifest` before/after removing `contributes.labelPolicy: {}` (and the empty `widgets` placeholder) | Pass | Before: rejected (`labelPolicy.mode` required). After: the omission validates — the fix is required, not cosmetic |
 | 2026-09-02T03:18:00Z | Delivery Documentation Specialist ([SAA-552](/SAA/issues/SAA-552)) | Independent read-back across both worktrees: `git log -1` (outer HEAD `bea90da`; fork HEAD `c634c15` — both untouched) + `git status --porcelain` (all WS2-D changes uncommitted); presence of `src/pixel-agents-plugin/embedding.ts` and `pixel-agents/server/src/plugins/moduleLoader.ts`; `--plugin` parsing + `initPluginHost`-ordered startup wiring in `pixel-agents/server/src/cli.ts`; `grep -in paperclip` over the fork loader + cli (zero hits — all Paperclip glue plugin-side); embedding env contract in `embedding.ts` (`PAPERCLIP_PIXEL_FEED_HOST/PORT/TOKEN` required-token throw, default `127.0.0.1:8081`, SHA-256-digest constant-time bearer compare, `POST /api/plugin-feed`); manifest `contributes` shape (messages/actions/menuItems only — no `labelPolicy`, no `widgets`; `PAPERCLIP_REPLY_MENU_ITEM` with `action` + `scope: "agent"`); stale pin at `test/plugin-registration.test.ts:113-115` expecting the retired `labelPolicy: {}`/`widgets: []` shape; `bin/paperclip-pixel-relay.js` absent + `package.json` `bin` key gone + `files` without the bin; `Dockerfile.pixel-agents` (`COPY dist/pixel-agents-embedding.cjs`, `EXPOSE 8080 8081`, CMD with the `--plugin` operand); compose + k8s env (`PAPERCLIP_PIXEL_FEED_*`, `PAPERCLIP_PIXEL_API_*`, `PAPERCLIP_ALLOWED_HOSTNAMES` = `paperclip` / `paperclip.paperclip-pixels.svc.cluster.local`); `assets/characters` vendoring in `Dockerfile.paperclip-pixel-host` + `build-plugin-bundle.sh`; WS2-D row in `pixel-agents/DIVERGENCE.md` (2026-09-02); `scripts/build.mjs` emitting `dist/pixel-agents-embedding.cjs`; relay-reference grep (deploy-facing surfaces describe it as retired) | Pass (with one scope caveat) | All confirmed as reported: both HEADs steady, nothing committed or pushed; loader, embedding module, manifest fix, deploy vendoring/allowlist, and bin retirement all present as reported; zero Paperclip identifiers in the fork loader; the sole worker-suite red is the stale pin as reported. **Scope caveat:** the "all references updated (README)" claim holds for `deploy/README.md` only — the **top-level** `README.md` (unmodified by this change set) still documents `paperclip-pixel-relay` as a live companion CLI with `npx` run instructions, and the CTO-governed `AGENTS.md` still describes the bin; recorded under Risks for the commit owner / CTO (outside the milestone's scoped claim of `e2e/`, `deploy/`, `scripts/`, docs) |
+| 2026-09-03T01:05:00Z | Back-End Developer ([SAA-588](/SAA/issues/SAA-588), completion handoff) | Final ladder on the WS4-C tree: `npm run typecheck`; `npx vitest run`; jest UI (`jest.config.ts`); jest domain (`jest.config.domain.ts`); eslint | Pass | typecheck green; vitest 21 files / 437 passed / 0 expected-fail; jest 116 (UI) + 150 (domain); eslint clean — per the [SAA-620](/SAA/issues/SAA-620) final verdict |
+| 2026-09-03T01:03:38Z | Tester ([SAA-620](/SAA/issues/SAA-620), final verdict) | Acceptance-suite authoring + verification: 3 new suites (appearance loader/applier/embedding declare incl. catalog-refusal degradation + unknown-id fail-closed; guardrail redaction/caps/wire-clamp/batch validation; registration/toggle/worker validation); fail-on-old-code guardrail; 2 production bugs found → pinned `it.fails` → executor-fixed → pins promoted and strengthened | Pass — zero remaining findings | `npm run typecheck` ✓; `npx vitest run` 21 files / 437 passed / 0 expected-fail ✓; jest 116 ✓ + 150 ✓; eslint ✓; bugs fixed: onStart catalog-refusal degradation (`src/pixel-agents-plugin/embedding.ts`) and short Basic-credential redaction (`src/core/domain/dialog.ts`); no production code touched by Tester |
+| 2026-09-03T01:08:00Z | Delivery Documentation Specialist ([SAA-624](/SAA/issues/SAA-624)) | Independent read-back on the plugin repo worktree: `git log --oneline` (HEAD `4489e28` — the https-transport relay-feed fix — atop the committed WS2 bridge content `f92c058`) + `git status --porcelain` (23 uncommitted paths: 14 modified + 5 new incl. the 3 Tester suites — no commits by this change set); presence of `src/pixel-agents-plugin/appearance.ts`, `src/core/domain/dialog.ts`, and the 3 new test files; `declareCharacterCatalog` try/catch + `paperclip_appearance_catalog_refused` in `embedding.ts`; caps `120/480/600` + `BEARER/BASIC/ASSIGNMENT/LONG_CREDENTIAL` patterns in `dialog.ts`; strict `=== true` at `relay.ts:255` + boolean validation at `worker.ts:766-769`; `dialog-pane` widget + `paperclip.dialog.lines` + `sources: {agents: true, appearance: true}` in `manifest.ts`; `addExternalAssetDirectory` grep over `src/` (JSDoc comment only — interim sharing retired); raw-`fetch` loopback bypass still bounded in `relay.ts` | Pass | All confirmed as reported: HEAD steady with WS4-C uncommitted atop `4489e28`; appearance adoption, dialog guardrails, strict toggle parsing, workaround-retirement inventory, and the kept host exceptions all present as reported |
+| 2026-09-03T01:20:00Z | Delivery Documentation Specialist ([SAA-624](/SAA/issues/SAA-624)) | Closing-pass verification: live Paperclip status read-back ([SAA-447](/SAA/issues/SAA-447)/457/459/588/620/551/549/585/587/458/454/455/456); fork `git log --oneline` + `git show ade5601 --stat`/`--name-only` (WS2 fork-side single-commit contents; `git show ade5601:DIVERGENCE.md` + `grep -c "SAA-532"` = 1); fork `git status --porcelain` (WS4-A/B appearance files uncommitted atop `ade5601`); plugin repo `git log --oneline` + `git status --porcelain` (HEAD `4489e28` steady, WS4-C uncommitted); `node <skill-root>/scripts/validate-domain-record.mjs workdocs/ai/project/specifications/PAPERCLIP_PIXELS_2.md` after all closing-pass edits | Pass | Paperclip: SAA-454/455/456/458/585/587/620/551/549 `done`; SAA-447/457/459/588 `blocked` exactly as snapshotted (SAA-459 blocked on SAA-588 only; SAA-588 blocked on this milestone SAA-624). Fork commit `ade5601` confirmed as the WS2 single commit — includes both [SAA-532](/SAA/issues/SAA-532) deliverables and all four duplicate-pair test files; WS4-A/B appearance change set uncommitted atop it as recorded; plugin repo HEAD steady. Validator: `Valid domain record` (exit 0) |
 
 ## Result
 
@@ -1979,3 +2199,49 @@ item
 is closed in practice (the WS1 commit carries the final-tree content, doc
 delta included); the `tsconfig.node.json` divergence ratification was owned
 by the [SAA-455](/SAA/issues/SAA-455) commit gate, which has closed.
+
+The WS4-C appearance-API adoption + dialog-pane feed
+([SAA-588](/SAA/issues/SAA-588), documented at `completion` milestone
+[SAA-624](/SAA/issues/SAA-624)) — the plugin adopting the WS4-A first-class
+appearance API (24-sheet catalog declared at onStart with fail-closed
+palette degradation on host refusal, per-agent `assignAgentAppearance`
+translation of the WS3 frozen ids, hueShift tint, interim
+external-asset-directory sharing retired plugin-side) and the real
+conversation-extract dialog-pane feed behind locked CEO decision 2
+(always-on Bearer/Basic/assignment/long-credential redaction, 120/480
+extract caps, 600-char wire cap, strict `=== true` opt-in, existing
+intake/subscription sources only — no new host capabilities, no
+issue-creation primitives) — is implementation-complete and
+acceptance-verified (Tester [SAA-620](/SAA/issues/SAA-620): 3 new suites,
+2 production bugs found and fixed, final ladder green — vitest 21 files /
+437 passed / 0 expected-fail, jest 116 + 150, typecheck + eslint clean,
+fail-on-old-code proof that no full sensitive prompt ships with the toggle
+OFF), uncommitted in the plugin repo (HEAD `4489e28`) for the WS4 parent
+[SAA-459](/SAA/issues/SAA-459)'s single-commit gate at workstream close.
+The fork-side WS4 leaves are closed ([SAA-585](/SAA/issues/SAA-585) WS4-A
+appearance API; [SAA-587](/SAA/issues/SAA-587) WS4-B webview consumption —
+their fork-side appearance change set sits uncommitted atop fork `ade5601`
+for the [SAA-459](/SAA/issues/SAA-459) close-gate commit), and WS2's
+[SAA-458](/SAA/issues/SAA-458) has closed `done` with its content committed
+on both sides (fork `ade5601` — the plugin host, all four contribution
+points, webview consumers, the `--plugin` loader, every Tester suite, the
+[SAA-532](/SAA/issues/SAA-532) client-contract tests + divergence row, and
+both duplicate WS2-B test pairs kept — plus plugin repo `f92c058` and the
+https-transport fix `4489e28`; all read-back-verified). At this closing pass
+the record's Paperclip snapshot was corrected to the observed state
+(SAA-459/SAA-457 still `blocked` — a preceding run of this same milestone
+had overstated them), and the "Plugin architecture" and
+"Click menu & reply" acceptance criteria were checked (both stated
+conditions resolved: the WS2-D embedding surface delivered and proven live
+end-to-end; [SAA-458](/SAA/issues/SAA-458) closed `done` with its content
+committed). [SAA-588](/SAA/issues/SAA-588) closes
+`done` on this milestone ([SAA-624](/SAA/issues/SAA-624));
+[SAA-459](/SAA/issues/SAA-459) then awaits only its workstream close and
+single-commit gate, and
+[SAA-457](/SAA/issues/SAA-457) (WS5, the final phase gate) waits on it.
+Open items for the parent owner: the WS4 workstream close and single-commit
+gate on [SAA-459](/SAA/issues/SAA-459) (then WS5 [SAA-457](/SAA/issues/SAA-457));
+the stale live-relay documentation flags remain carried forward (top-level
+`README.md` refresh — fold into a close or follow-up; `AGENTS.md` — CTO);
+and the specification key formalization (project shortname or
+`SPECIFICATION_KEY` env).

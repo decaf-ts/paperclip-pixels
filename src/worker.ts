@@ -762,6 +762,12 @@ const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime 
     ) {
       errors.push("pixelAgentsRelayEnabled must be a boolean when present");
     }
+    if (
+      config.dialogPanePrivacyOptIn != null
+      && typeof config.dialogPanePrivacyOptIn !== "boolean"
+    ) {
+      errors.push("dialogPanePrivacyOptIn must be a boolean when present");
+    }
     // Same M2 fail-securely rule as pixelAgentsTokenRef above, applied to the
     // tool-activity poller's own token/URL pair.
     const apiUrl = config.paperclipApiBaseUrl;

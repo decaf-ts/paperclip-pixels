@@ -563,9 +563,10 @@ describe("BridgeRelay", () => {
     await flush();
 
     // First sight of the agent: ONE ordered batch to the plugin feed
-    // endpoint — the declaration (spawn/upsert), the run caption, and the
-    // active status. The retired wire needed two hook-body POSTs for this;
-    // the feed carries all three operations in one body, applied in order.
+    // endpoint — the declaration (spawn/upsert), the run caption, the
+    // active status, and the run-scoped dialog-pane line (WS4-C). The
+    // retired wire needed two hook-body POSTs for this; the feed carries
+    // all four operations in one body, applied in order.
     expect(calls).toHaveLength(1);
     const call = calls[0];
     expect(call.url).toBe("https://pa.example/api/plugin-feed");
@@ -575,8 +576,8 @@ describe("BridgeRelay", () => {
     const batch = JSON.parse(call.body);
     expect(batch.schemaVersion).toBe(1);
     expect(batch.companyId).toBe(COMPANY_ID);
-    expect(batch.operations).toHaveLength(3);
-    const [declare, activity, status] = batch.operations;
+    expect(batch.operations).toHaveLength(4);
+    const [declare, activity, status, dialog] = batch.operations;
     expect(declare.op).toBe("declareAgents");
     expect(declare.agents).toHaveLength(1);
     expect(declare.agents[0].key).toBe(AGENT_A);
@@ -588,6 +589,10 @@ describe("BridgeRelay", () => {
     expect(declare.agents[0].teamName).toMatch(/^paperclip-bridge-[0-9a-f]+$/);
     expect(activity).toEqual({ op: "updateAgentActivity", key: AGENT_A, activity: "Task: Paperclip work" });
     expect(status).toEqual({ op: "updateAgentStatus", key: AGENT_A, status: "active" });
+    expect(dialog).toEqual({
+      op: "dialogLines",
+      lines: [{ text: `${AGENT_A} started a run` }],
+    });
   });
 
   it("resolves a string token reference and sends an authorization: Bearer header", async () => {

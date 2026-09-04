@@ -17,7 +17,7 @@
  * idempotent upsert).
  */
 
-import type { PluginFeedOperation } from "./feed.js";
+import type { PluginFeedDialogLine, PluginFeedOperation } from "./feed.js";
 import { validatePluginFeedBatch } from "./feed.js";
 import type { PluginAgentDeclaration, PluginAgentSource } from "./types.js";
 
@@ -28,9 +28,36 @@ const AGENT_KEY_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/;
 const MAX_NAME_LENGTH = 100;
 const MAX_ACTIVITY_LENGTH = 300;
 
+/** Wire caps for dialog lines (WS4-C): defense in depth behind the
+ * worker-side redaction/truncation (core/domain/dialog.ts) — even a buggy
+ * push can never ship an unbounded payload through the pane. */
+const MAX_DIALOG_LINES_PER_BATCH = 8;
+const MAX_DIALOG_LINE_LENGTH = 600;
+
+/** Feed-side appearance applier (WS4-C): translates `characterId` (the WS3
+ * frozen contract id) into a positional sheet index against the catalog the
+ * embedding surface declared through the WS4-A appearance source. Built by
+ * appearance.ts; injected so the handler stays source-agnostic. */
+export interface PluginFeedAppearanceSink {
+  assign(key: string, characterId: string | null): void;
+}
+
+/** Feed-side dialog emitter (WS4-C): re-emits pre-redacted lines through
+ * the plugin's declared `paperclip.dialog.lines` message type. Injected so
+ * the handler stays emit-agnostic. */
+export interface PluginFeedDialogSink {
+  emitLines(lines: PluginFeedDialogLine[]): void;
+}
+
 export interface PluginFeedHandlerOptions {
   /** The registered plugin's agent source (from its PluginContext). */
   source: PluginAgentSource;
+  /** WS4-C appearance assignment sink; required before any
+   * `assignAgentAppearance` operation is accepted. */
+  appearance?: PluginFeedAppearanceSink;
+  /** WS4-C dialog-pane sink; required before any `dialogLines` operation
+   *  is accepted. */
+  dialog?: PluginFeedDialogSink;
   /** Optional structured logger (ids/counts only, per the host's log rule). */
   log?: (event: string, fields?: Record<string, unknown>) => void;
 }
@@ -121,6 +148,37 @@ function validateOperations(operations: PluginFeedOperation[]): string[] {
         }
         break;
       }
+      case "assignAgentAppearance": {
+        if (typeof op.key !== "string" || !AGENT_KEY_PATTERN.test(op.key)) {
+          errors.push(`operations[${index}].key is invalid`);
+        }
+        if (op.characterId !== null && (typeof op.characterId !== "string" || op.characterId.length === 0)) {
+          errors.push(`operations[${index}].characterId must be a non-empty string or null`);
+        }
+        break;
+      }
+      case "dialogLines": {
+        if (!Array.isArray(op.lines) || op.lines.length === 0) {
+          errors.push(`operations[${index}].lines must be a non-empty array`);
+          break;
+        }
+        if (op.lines.length > MAX_DIALOG_LINES_PER_BATCH) {
+          errors.push(`operations[${index}].lines must declare at most ${MAX_DIALOG_LINES_PER_BATCH} lines`);
+          break;
+        }
+        for (const line of op.lines) {
+          if (
+            typeof line !== "object"
+            || line === null
+            || typeof line.text !== "string"
+            || line.text.trim().length === 0
+          ) {
+            errors.push(`operations[${index}] has an invalid dialog line`);
+            break;
+          }
+        }
+        break;
+      }
       default:
         errors.push(`operations[${index}] has unknown op`);
     }
@@ -171,6 +229,24 @@ export function createPluginFeedHandler(options: PluginFeedHandlerOptions): {
         options.source.updateAgentActivity(op.key, activity);
         break;
       }
+      case "assignAgentAppearance":
+        // Sink presence was checked in handle(); the applier owns the
+        // characterId → sheet-index resolution and its fail-closed skips.
+        options.appearance!.assign(op.key, op.characterId);
+        options.log?.("paperclip_feed_appearance_assign", { key: op.key });
+        break;
+      case "dialogLines": {
+        // Clamp again at the apply boundary (defense in depth behind the
+        // worker-side dialog shaping): the wire caps hold regardless of
+        // what the pusher composed.
+        const lines = op.lines
+          .map((line) => ({ text: line.text.trim().slice(0, MAX_DIALOG_LINE_LENGTH) }))
+          .filter((line) => line.text.length > 0);
+        if (lines.length === 0) break;
+        options.dialog!.emitLines(lines);
+        options.log?.("paperclip_feed_dialog_lines", { count: lines.length });
+        break;
+      }
     }
   };
 
@@ -183,6 +259,18 @@ export function createPluginFeedHandler(options: PluginFeedHandlerOptions): {
         return { status: 400, body: { ok: false, error: "invalidFeedBatch", errors } };
       }
       const opErrors = validateOperations(batch.operations);
+      // Sink availability is part of validation, not a silent skip: a push
+      // carrying appearance/dialog operations against an embedding surface
+      // that wired no sink is rejected whole (fail-closed) so the pusher
+      // sees the gap instead of losing the operations quietly.
+      for (const op of batch.operations) {
+        if (op.op === "assignAgentAppearance" && !options.appearance) {
+          opErrors.push("appearance sink unavailable on this embedding surface");
+        }
+        if (op.op === "dialogLines" && !options.dialog) {
+          opErrors.push("dialog sink unavailable on this embedding surface");
+        }
+      }
       if (opErrors.length > 0) {
         options.log?.("paperclip_feed_rejected", { errorCount: opErrors.length });
         return { status: 400, body: { ok: false, error: "invalidFeedOperations", errors: opErrors } };

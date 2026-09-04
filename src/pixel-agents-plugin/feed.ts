@@ -25,11 +25,34 @@ export interface PluginFeedStatusOperation {
 }
 
 /** One activity-caption operation: `string` shows the caption (one per
- *  agent — a new one replaces the previous), `null` clears it. */
+ * agent — a new one replaces the previous), `null` clears it. */
 export interface PluginFeedActivityOperation {
   op: "updateAgentActivity";
   key: string;
   activity: string | null;
+}
+
+/** One first-class appearance assignment (WS4-C): `characterId` is the WS3
+ * frozen catalog id; the embedding surface resolves it to a positional
+ * sheet index in the catalog it declared through the WS4-A appearance
+ * source. `null` reverts the agent to built-in palette rendering. */
+export interface PluginFeedAppearanceAssignmentOperation {
+  op: "assignAgentAppearance";
+  key: string;
+  characterId: string | null;
+}
+
+/** One dialog-pane line (WS4-C): pre-redacted/truncated plugin-side. The
+ * webview's Phase-1 widget renderer reads only `text`. */
+export interface PluginFeedDialogLine {
+  text: string;
+}
+
+/** One dialog-pane conversation-extract push (WS4-C): emitted through the
+ * plugin's declared `paperclip.dialog.lines` message type. */
+export interface PluginFeedDialogLinesOperation {
+  op: "dialogLines";
+  lines: PluginFeedDialogLine[];
 }
 
 /** All operations the feed carries. */
@@ -37,7 +60,9 @@ export type PluginFeedOperation =
   | { op: "declareAgents"; agents: PluginAgentDeclaration[] }
   | { op: "removeAgents"; keys: string[] }
   | PluginFeedStatusOperation
-  | PluginFeedActivityOperation;
+  | PluginFeedActivityOperation
+  | PluginFeedAppearanceAssignmentOperation
+  | PluginFeedDialogLinesOperation;
 
 /** One pushed batch. Applied in order; a batch with any invalid operation is
  *  rejected whole (all-or-nothing, mirroring the host's declareAgents). */
@@ -88,6 +113,21 @@ export function validatePluginFeedBatch(input: unknown): { errors: string[]; bat
         case "updateAgentActivity":
           if (typeof (op as Record<string, unknown>).key !== "string") {
             errors.push(`operations[${index}].key must be a string`);
+          }
+          break;
+        case "assignAgentAppearance": {
+          const entry = op as Record<string, unknown>;
+          if (typeof entry.key !== "string") {
+            errors.push(`operations[${index}].key must be a string`);
+          }
+          if (entry.characterId !== null && typeof entry.characterId !== "string") {
+            errors.push(`operations[${index}].characterId must be a string or null`);
+          }
+          break;
+        }
+        case "dialogLines":
+          if (!Array.isArray((op as Record<string, unknown>).lines)) {
+            errors.push(`operations[${index}].lines must be an array`);
           }
           break;
         default:

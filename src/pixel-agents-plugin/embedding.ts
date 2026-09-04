@@ -17,7 +17,13 @@
  * 3. wires click-menu replies into the plugin's EXISTING Paperclip actions
  *    through the performAction proxy (`HttpReplyForwarder` →
  *    `agent.reply-to-feedback` / `company.send-message`) — fail-closed, zero
- *    issue-creation code anywhere on this path.
+ *    issue-creation code anywhere on this path;
+ * 4. adopts the WS4-A first-class appearance path (WS4-C): declares the
+ *    plugin's WS3 character catalog at onStart and applies per-agent
+ *    `assignAgentAppearance` feed operations; and re-emits the worker's
+ *    pre-redacted `dialogLines` feed operations through the plugin's
+ *    declared `paperclip.dialog.lines` message type, feeding the
+ *    dialog-pane shell-panel widget.
  *
  * Auth is fail-closed by construction: the feed endpoint requires a
  * shared-secret bearer token (constant-time compare), rejects unauthenticated
@@ -45,6 +51,12 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
 import { PLUGIN_ID } from "../constants.js";
+import {
+  createFeedAppearanceApplier,
+  loadPluginCharacterSheets,
+  type PluginCharacterSheets,
+} from "./appearance.js";
+import { PAPERCLIP_DIALOG_LINES_MESSAGE, PAPERCLIP_PIXEL_PLUGIN_ID } from "./manifest.js";
 import { createPluginFeedHandler, type PluginFeedHandlerResult } from "./feed-server.js";
 import { createPaperclipPluginRegistration } from "./plugin.js";
 import { HttpReplyForwarder, type ReplyFetchLike, type ReplyForwarder } from "./reply-forwarder.js";
@@ -52,6 +64,7 @@ import type {
   PixelAgentsPluginContext,
   PixelAgentsPluginHost,
   PluginAgentSource,
+  PluginAppearanceSource,
 } from "./types.js";
 
 /** Feed endpoint path served by the embedding surface's sidecar listener. */
@@ -244,8 +257,10 @@ export async function register(
 ): Promise<void> {
   const config = parseEmbeddingEnv(process.env);
 
-  // The plugin's agent/team source, captured at onStart.
+  // The plugin's agent/team + appearance sources, captured at onStart.
   let pluginSource: PluginAgentSource | undefined;
+  let pluginAppearance: PluginAppearanceSource | undefined;
+  let pluginCtx: PixelAgentsPluginContext | undefined;
   const sourceProxy: PluginAgentSource = {
     declareAgents: (agents) => {
       if (!pluginSource) throw new Error("pluginNotStarted");
@@ -269,7 +284,41 @@ export async function register(
     },
   };
 
-  const feed = createPluginFeedHandler({ source: sourceProxy, log: logEvent });
+  // WS4-C: the plugin's WS3 character catalog as WS4-A sheet declarations.
+  // Load best-effort — a missing/malformed catalog degrades to built-in
+  // palette rendering (the host's own fail-closed fallback) and never
+  // aborts the bridge: names, rooms, statuses, replies, and the dialog
+  // pane all keep working.
+  let characterSheets: PluginCharacterSheets | undefined;
+  try {
+    characterSheets = loadPluginCharacterSheets();
+  } catch (err) {
+    logEvent("paperclip_appearance_catalog_unavailable", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  const appearanceApplier = createFeedAppearanceApplier({
+    getSource: () => pluginAppearance,
+    getSheets: () => characterSheets,
+    log: logEvent,
+  });
+
+  const feed = createPluginFeedHandler({
+    source: sourceProxy,
+    appearance: appearanceApplier,
+    dialog: {
+      // WS4-C: re-emit pre-redacted conversation lines through the
+      // plugin's declared message type. ctx is captured at onStart; the
+      // feed refuses (fail-closed, like the agent source) before that.
+      emitLines: (lines) => {
+        if (!pluginCtx) throw new Error("pluginNotStarted");
+        for (const line of lines) {
+          pluginCtx.emit(PAPERCLIP_DIALOG_LINES_MESSAGE, { text: line.text });
+        }
+      },
+    },
+    log: logEvent,
+  });
 
   const forwarder = config.apiToken
     ? new HttpReplyForwarder({
@@ -293,6 +342,32 @@ export async function register(
   registration.handlers.onStart = (ctx: PixelAgentsPluginContext) => {
     const result = innerOnStart?.(ctx);
     pluginSource = ctx.agents;
+    pluginCtx = ctx;
+    pluginAppearance = ctx.appearance;
+    // WS4-C: declare the plugin's character catalog through the first-class
+    // appearance path. The host privilege-gates every sheet against the
+    // operator-granted external asset directories (WS1 grants, unwidened)
+    // and refuses the whole declaration fail-closed when the catalog dir is
+    // not granted — agents then keep built-in palette rendering, and a
+    // plugin restart re-declares once the grant exists.
+    if (characterSheets) {
+      try {
+        ctx.appearance.declareCharacterCatalog(characterSheets.sheets);
+        logEvent("paperclip_appearance_catalog_declared", {
+          plugin: PAPERCLIP_PIXEL_PLUGIN_ID,
+          sheets: characterSheets.sheets.length,
+        });
+      } catch (error) {
+        // Best-effort contract: a host refusal (e.g. the asset gate rejecting
+        // an ungranted catalog directory) must never propagate out of
+        // onStart. Agents keep built-in palette rendering; a plugin restart
+        // re-declares once the grant exists.
+        logEvent("paperclip_appearance_catalog_refused", {
+          plugin: PAPERCLIP_PIXEL_PLUGIN_ID,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     return result;
   };
 

@@ -2,11 +2,14 @@
  * The Paperclip bridge's first-class Pixel Agents plugin manifest (spec
  * PAPERCLIP_PIXELS-2, WS2-C).
  *
- * Declares exactly what the bridge uses on the WS2-A1/A2 host: the sanctioned
- * agent/team data source (`sources.agents`), the two reply actions the
- * contributed click-menu item routes through (A2 cross-validates the item's
- * `action` against these declarations), and one contributed message
- * announced on start. Validated at registration time by the host's
+ * Declares exactly what the bridge uses on the WS2-A1/A2 + WS4-A host: the
+ * sanctioned agent/team data source (`sources.agents`), the WS4-A appearance
+ * source (`sources.appearance` — the first-class per-agent character path),
+ * the two reply actions the contributed click-menu item routes through (A2
+ * cross-validates the item's `action` against these declarations), the
+ * dialog-pane shell-panel widget with its conversation-extract message type
+ * (WS4-C), and the start-announcement message. Validated at registration
+ * time by the host's
  * `validatePluginManifest` — keep every field inside the landed A1+A2
  * schema (unknown keys are rejected fail-closed; a present `labelPolicy`
  * needs a valid `mode`, so the bridge omits it entirely to keep the default
@@ -21,6 +24,15 @@ export const PAPERCLIP_PIXEL_PLUGIN_ID = "paperclip";
 
 /** The contributed message type announced once on plugin start. */
 export const PAPERCLIP_PLUGIN_STARTED_MESSAGE = "paperclip.bridge.started";
+
+/**
+ * The conversation-extract message type feeding the dialog-pane widget
+ * (WS4-C). Each emitted payload is `{ text }` — the one field the webview's
+ * Phase-1 widget renderer reads. The worker composes and redacts/truncates
+ * every line plugin-side before it rides the feed; the embedding surface
+ * only re-emits what arrived.
+ */
+export const PAPERCLIP_DIALOG_LINES_MESSAGE = "paperclip.dialog.lines";
 
 /** Action ids (A1 pattern `^[a-z0-9][a-z0-9-]{0,63}$`). */
 export const PAPERCLIP_PLUGIN_ACTIONS = {
@@ -61,6 +73,11 @@ export function createPaperclipPluginManifest(): PixelAgentsPluginManifest {
           type: PAPERCLIP_PLUGIN_STARTED_MESSAGE,
           description: "Announced once on plugin start; payload carries the plugin id and version.",
         },
+        {
+          type: PAPERCLIP_DIALOG_LINES_MESSAGE,
+          description:
+            "One redacted/truncated conversation-extract line for the dialog pane. Privacy-guarded plugin-side (per-company dialogPanePrivacyOptIn, default OFF).",
+        },
       ],
       actions: [
         {
@@ -75,7 +92,18 @@ export function createPaperclipPluginManifest(): PixelAgentsPluginManifest {
         },
       ],
       menuItems: [{ ...PAPERCLIP_REPLY_MENU_ITEM }],
+      widgets: [
+        {
+          id: "dialog-pane",
+          kind: "shell-panel",
+          binding: "global",
+          label: "Paperclip conversation",
+          description:
+            "Conversation extracts from Paperclip issue comments and run activity. Content is redacted/truncated plugin-side; fuller extracts require the per-company privacy opt-in.",
+          messageTypes: [PAPERCLIP_DIALOG_LINES_MESSAGE],
+        },
+      ],
     },
-    sources: { agents: true },
+    sources: { agents: true, appearance: true },
   };
 }

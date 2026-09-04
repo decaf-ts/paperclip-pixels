@@ -22,9 +22,16 @@ export {
   PAPERCLIP_PIXEL_PLUGIN_ID,
   PAPERCLIP_PLUGIN_ACTIONS,
   PAPERCLIP_PLUGIN_STARTED_MESSAGE,
+  PAPERCLIP_DIALOG_LINES_MESSAGE,
   PAPERCLIP_REPLY_MENU_ITEM,
   createPaperclipPluginManifest,
 } from "./manifest.js";
+
+export {
+  createFeedAppearanceApplier,
+  loadPluginCharacterSheets,
+} from "./appearance.js";
+export type { PluginCharacterSheets, AppearanceLog } from "./appearance.js";
 
 export {
   createPaperclipPluginHandlers,
@@ -51,13 +58,16 @@ export {
 } from "./feed.js";
 export type {
   PluginFeedActivityOperation,
+  PluginFeedAppearanceAssignmentOperation,
   PluginFeedBatch,
+  PluginFeedDialogLine,
+  PluginFeedDialogLinesOperation,
   PluginFeedOperation,
   PluginFeedStatusOperation,
 } from "./feed.js";
 
 export { PluginFeedMapper } from "./feed-mapper.js";
-export type { FeedAppearanceEntry } from "./feed-mapper.js";
+export type { FeedAppearanceEntry, PluginFeedMapperOptions } from "./feed-mapper.js";
 
 export { PluginFeedHttpSink } from "./feed-sink.js";
 export type { FeedFetchLike, PluginFeedSinkOptions } from "./feed-sink.js";
@@ -66,7 +76,12 @@ export {
   createPluginFeedHandler,
   DeclaredAgentCache,
 } from "./feed-server.js";
-export type { PluginFeedHandlerOptions, PluginFeedHandlerResult } from "./feed-server.js";
+export type {
+  PluginFeedAppearanceSink,
+  PluginFeedDialogSink,
+  PluginFeedHandlerOptions,
+  PluginFeedHandlerResult,
+} from "./feed-server.js";
 
 export {
   PLUGIN_FEED_PATH,
@@ -92,6 +107,8 @@ export type {
   PluginAgentDeclaration,
   PluginAgentSource,
   PluginAgentStatusUpdate,
+  PluginAppearanceSource,
+  PluginCharacterSheetDeclaration,
   PluginContributions,
   PluginMessageDeclaration,
   PluginSourceDeclarations,

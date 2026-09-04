@@ -136,6 +136,9 @@ const activityOf = (agentId: string, activity: string | null) => ({
   activity,
 });
 
+// WS4-C: one dialog-pane line op (the mapper composes + clamps the text).
+const dialogLineOf = (text: string) => ({ op: "dialogLines", lines: [{ text }] });
+
 // -- declaration semantics --------------------------------------------------
 
 describe("PluginFeedMapper — declaration", () => {
@@ -146,6 +149,7 @@ describe("PluginFeedMapper — declaration", () => {
       declareOf(AGENT_A, AGENT_A),
       activityOf(AGENT_A, "Task: Paperclip work"),
       statusOf(AGENT_A, "active"),
+      dialogLineOf(`${AGENT_A} started a run`),
     ]);
   });
 
@@ -224,6 +228,7 @@ describe("PluginFeedMapper — run lifecycle edges", () => {
       declareOf(AGENT_A, AGENT_A),
       activityOf(AGENT_A, "Task: Ship the bridge"),
       statusOf(AGENT_A, "active"),
+      dialogLineOf(`${AGENT_A} started a run: Ship the bridge`),
     ]);
   });
 
@@ -232,7 +237,7 @@ describe("PluginFeedMapper — run lifecycle edges", () => {
     mapper.mapEvent(issueUpdated({ issueId: "issue-1", title: "Fix the flux capacitor" }));
 
     // checked_out opens the caption at the earliest honest point but must NOT
-    // touch the run counter.
+    // touch the run counter (and emits no dialog line — only run.started does).
     expect(mapper.mapEvent(checkedOut(AGENT_A, "issue-1"))).toEqual([
       declareOf(AGENT_A, AGENT_A),
       activityOf(AGENT_A, "Task: Fix the flux capacitor"),
@@ -240,13 +245,16 @@ describe("PluginFeedMapper — run lifecycle edges", () => {
     ]);
 
     // The paired run.started arrives next: caption already open, so it adds
-    // nothing to the wire — only the counter moves (invisible here).
-    expect(mapper.mapEvent(runStarted(AGENT_A, "issue-1"))).toEqual([]);
+    // no declare/caption/status — only the run-scoped dialog line.
+    expect(mapper.mapEvent(runStarted(AGENT_A, "issue-1"))).toEqual([
+      dialogLineOf(`${AGENT_A} started a run: Fix the flux capacitor`),
+    ]);
 
     // One falling edge closes what one logical run opened.
     expect(mapper.mapEvent(runEnded("agent.run.finished", AGENT_A))).toEqual([
       activityOf(AGENT_A, null),
       statusOf(AGENT_A, "waiting", false),
+      dialogLineOf(`${AGENT_A} finished a run`),
     ]);
   });
 
@@ -258,14 +266,21 @@ describe("PluginFeedMapper — run lifecycle edges", () => {
   it("stacks concurrent runs in one caption slot: only the last falling edge closes it", () => {
     const mapper = new PluginFeedMapper();
     mapper.mapEvent(runStarted(AGENT_A, undefined, "run-1"));
-    // Second concurrent run: no new caption, no new status.
-    expect(mapper.mapEvent(runStarted(AGENT_A, undefined, "run-2"))).toEqual([]);
-    // First run ends: one still active, nothing closes.
-    expect(mapper.mapEvent(runEnded("agent.run.finished", AGENT_A, "run-1"))).toEqual([]);
+    // Second concurrent run: no new caption, no new status — but a second
+    // run-scoped dialog line (each real run start is conversation).
+    expect(mapper.mapEvent(runStarted(AGENT_A, undefined, "run-2"))).toEqual([
+      dialogLineOf(`${AGENT_A} started a run`),
+    ]);
+    // First run ends: one still active, nothing closes — the finish is
+    // still a dialog line.
+    expect(mapper.mapEvent(runEnded("agent.run.finished", AGENT_A, "run-1"))).toEqual([
+      dialogLineOf(`${AGENT_A} finished a run`),
+    ]);
     // Last run fails: caption cleared, back to waiting.
     expect(mapper.mapEvent(runEnded("agent.run.failed", AGENT_A, "run-2"))).toEqual([
       activityOf(AGENT_A, null),
       statusOf(AGENT_A, "waiting", false),
+      dialogLineOf(`${AGENT_A} failed a run`),
     ]);
   });
 
@@ -274,9 +289,11 @@ describe("PluginFeedMapper — run lifecycle edges", () => {
     (kind) => {
       const mapper = new PluginFeedMapper();
       mapper.mapEvent(runStarted(AGENT_A));
+      const verb = kind === "agent.run.finished" ? "finished" : "cancelled";
       expect(mapper.mapEvent(runEnded(kind, AGENT_A))).toEqual([
         activityOf(AGENT_A, null),
         statusOf(AGENT_A, "waiting", false),
+        dialogLineOf(`${AGENT_A} ${verb} a run`),
       ]);
     },
   );
@@ -304,7 +321,11 @@ describe("PluginFeedMapper — stuck-agent parity", () => {
         isQuestion: true,
       }),
     );
-    expect(ops).toEqual([declareOf(AGENT_A, AGENT_A), statusOf(AGENT_A, "waiting", true)]);
+    expect(ops).toEqual([
+      dialogLineOf("Human (question): Which database?"),
+      declareOf(AGENT_A, AGENT_A),
+      statusOf(AGENT_A, "waiting", true),
+    ]);
   });
 
   it("AS-IMPLEMENTED: the stuck transition keeps the last caption on the wire and consumes the run's falling-edge clear", () => {
@@ -325,29 +346,34 @@ describe("PluginFeedMapper — stuck-agent parity", () => {
           isQuestion: true,
         }),
       ),
-    ).toEqual([statusOf(AGENT_A, "waiting", true)]);
+    ).toEqual([dialogLineOf("Human (question): ?"), statusOf(AGENT_A, "waiting", true)]);
 
-    // The run's own falling edge then emits nothing: the stuck transition
-    // already claimed the clear (runCaptionOpen was consumed). Reported to
-    // the SAA-536 owner as an observation; pinned as-implemented.
-    expect(mapper.mapEvent(runEnded("agent.run.finished", AGENT_A))).toEqual([]);
+    // The run's own falling edge then emits only its dialog line: the stuck
+    // transition already claimed the caption clear (runCaptionOpen was
+    // consumed). Reported to the SAA-536 owner as an observation; pinned
+    // as-implemented.
+    expect(mapper.mapEvent(runEnded("agent.run.finished", AGENT_A))).toEqual([
+      dialogLineOf(`${AGENT_A} finished a run`),
+    ]);
   });
 
   it.each([
     ["an agent-authored comment", { agentId: AGENT_B, userId: "user-1", isQuestion: true }],
     ["a non-question human comment", { agentId: null, userId: "user-1", isQuestion: false }],
     ["a comment with no user", { agentId: null, userId: null, isQuestion: true }],
-  ])("ignores %s", (_label, payload) => {
+  ])("%s triggers no stuck transition (only its dialog line)", (_label, payload) => {
     const mapper = new PluginFeedMapper();
     mapper.mapEvent(issueUpdated({ issueId: "issue-1", assigneeAgentId: AGENT_A }));
+    const author = "agentId" in payload && payload.agentId ? AGENT_B : "Human";
+    const suffix = payload.isQuestion ? " (question)" : "";
     expect(
       mapper.mapEvent(
         ev("issue.comment.created", { commentId: "c1", issueId: "issue-1", body: "hi", ...payload }),
       ),
-    ).toEqual([]);
+    ).toEqual([dialogLineOf(`${author}${suffix}: hi`)]);
   });
 
-  it("ignores a question comment on an issue with no recorded assignee", () => {
+  it("a question comment on an issue with no recorded assignee: only the dialog line (no stuck target)", () => {
     const mapper = new PluginFeedMapper();
     expect(
       mapper.mapEvent(
@@ -360,7 +386,7 @@ describe("PluginFeedMapper — stuck-agent parity", () => {
           isQuestion: true,
         }),
       ),
-    ).toEqual([]);
+    ).toEqual([dialogLineOf("Human (question): ?")]);
   });
 
   it.each(["pending", "open", "requested", "awaiting", "undecided"])(
@@ -370,7 +396,11 @@ describe("PluginFeedMapper — stuck-agent parity", () => {
       const ops = mapper.mapEvent(
         ev("approval.created", { approvalId: "ap-1", issueId: null, agentId: AGENT_A, status }),
       );
-      expect(ops).toEqual([declareOf(AGENT_A, AGENT_A), statusOf(AGENT_A, "waiting", true)]);
+      expect(ops).toEqual([
+        declareOf(AGENT_A, AGENT_A),
+        statusOf(AGENT_A, "waiting", true),
+        dialogLineOf(`${AGENT_A} is waiting for an approval`),
+      ]);
     },
   );
 
@@ -381,7 +411,11 @@ describe("PluginFeedMapper — stuck-agent parity", () => {
       mapper.mapEvent(
         ev("approval.created", { approvalId: "ap-1", issueId: "issue-1", agentId: null, status: "pending" }),
       ),
-    ).toEqual([declareOf(AGENT_A, AGENT_A), statusOf(AGENT_A, "waiting", true)]);
+    ).toEqual([
+      declareOf(AGENT_A, AGENT_A),
+      statusOf(AGENT_A, "waiting", true),
+      dialogLineOf(`${AGENT_A} is waiting for an approval`),
+    ]);
   });
 
   it("ignores a pending approval with neither agent id nor assignable issue, and any decided approval", () => {
@@ -512,7 +546,18 @@ describe("PluginFeedMapper — snapshot self-heal", () => {
 // -- appearances ---------------------------------------------------------------
 
 describe("PluginFeedMapper — appearance map", () => {
-  const entryA = { agentId: AGENT_A, agentName: "Display A", palette: 3, hueShift: 45 };
+  const entryA = {
+    agentId: AGENT_A,
+    agentName: "Display A",
+    characterId: "pixel-agents:char-3",
+    palette: 3,
+    hueShift: 45,
+  };
+  const assignOf = (agentId: string, characterId: string | null) => ({
+    op: "assignAgentAppearance",
+    key: agentId,
+    characterId,
+  });
 
   it("AS-IMPLEMENTED: setAppearances re-emits the upsert on every call — this path records no `declared` state to diff against", () => {
     const mapper = new PluginFeedMapper();
@@ -520,19 +565,32 @@ describe("PluginFeedMapper — appearance map", () => {
       op: "declareAgents",
       agents: [{ key: AGENT_A, name: "Display A", teamName: TEAM_A, palette: 3, hueShift: 45 }],
     };
-    expect(mapper.setAppearances([entryA])).toEqual([seatedDeclare]);
+    // First call: the seated upsert plus the first-class appearance
+    // assignment (WS4-C) — the characterId is new state, so it emits once.
+    expect(mapper.setAppearances([entryA])).toEqual([
+      seatedDeclare,
+      assignOf(AGENT_A, "pixel-agents:char-3"),
+    ]);
     // Unlike the event path (which diffs against state.declared and stays
     // quiet when nothing changed), setAppearances never records `declared`,
-    // so an unchanged repeat re-emits the same upsert. Harmless at the host
-    // (declares are idempotent upserts by key); reported to the SAA-536
-    // owner as an observation, pinned as-implemented.
+    // so an unchanged repeat re-emits the same upsert. The assignment,
+    // however, diffs against its own recorded state and stays quiet.
+    // Harmless at the host (declares are idempotent upserts by key);
+    // reported to the SAA-536 owner as an observation, pinned as-implemented.
     expect(mapper.setAppearances([entryA])).toEqual([seatedDeclare]);
-    // Seat change: upsert with the new palette.
+    // Seat change: upsert with the new palette. The characterId is
+    // unchanged, so no second assignment op rides the batch.
     expect(mapper.setAppearances([{ ...entryA, palette: 5 }])).toEqual([
       {
         op: "declareAgents",
         agents: [{ key: AGENT_A, name: "Display A", teamName: TEAM_A, palette: 5, hueShift: 45 }],
       },
+    ]);
+    // Character change (a picker write): a new assignment op, and only that
+    // when the seat is unchanged.
+    expect(mapper.setAppearances([{ ...entryA, characterId: "pixel-agents:char-7" }])).toEqual([
+      seatedDeclare,
+      assignOf(AGENT_A, "pixel-agents:char-7"),
     ]);
   });
 
@@ -575,6 +633,7 @@ describe("PluginFeedMapper — appearance map", () => {
       },
       activityOf(AGENT_A, "Task: Paperclip work"),
       statusOf(AGENT_A, "active"),
+      dialogLineOf("Display A started a run"),
     ]);
   });
 
@@ -631,6 +690,7 @@ describe("PluginFeedMapper — tool activity captions", () => {
     expect(mapper.mapEvent(runEnded("agent.run.finished", AGENT_A))).toEqual([
       activityOf(AGENT_A, null),
       statusOf(AGENT_A, "waiting", false),
+      dialogLineOf(`${AGENT_A} finished a run`),
     ]);
   });
 

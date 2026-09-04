@@ -19,9 +19,13 @@ referenced here, not duplicated:
   [`workdocs/ai/project/specifications/PAPERCLIP_PIXELS_2.md`](./specifications/PAPERCLIP_PIXELS_2.md)
   (Pixel Agents plugin-architecture fork plus the paperclip-plugin-side
   character/menu/settings/assets workstreams WS0–WS5, delivered under
-  [SAA-447](/SAA/issues/SAA-447)). The per-agent character system and the
-  plugin UI surfaces (sidebar row, host auto-rendered settings form, character
-  picker) are documented in the companion handbook
+  [SAA-447](/SAA/issues/SAA-447)). The per-agent character system, the plugin
+  UI surfaces (sidebar row, host auto-rendered settings form, character
+  picker), the WS4 first-class appearance pipeline (plugin-declared sheet
+  catalogs → privilege-gated host sync → webview rendering with palette
+  fallback), the WS4 dialog-pane conversation feed and its privacy
+  guardrails, the fork plugin architecture, and the workaround ledger are
+  documented in the companion handbook
   [`workdocs/ai/architecture-handbook.md`](../architecture-handbook.md);
   this handbook keeps the translation-layer + relay architecture below.
   The earlier bundling + in-plugin `BridgeRelay` portion predates that record: it
@@ -111,7 +115,7 @@ all business state; the bridge owns only a derived, restart-safe cache.
 | --- | --- |
 | Platform type | Paperclip host plugin (worker + embedded UI) plus a standalone Pixel Agents adapter |
 | Primary technologies | TypeScript, pnpm/npm workspaces, `@paperclipai/plugin-sdk`, React (UI bundle, host-injected), esbuild (worker + UI bundling via SDK-blessed presets), `tsc` (type declarations), Docker (deploy) |
-| Core capabilities | Raw event projection, rolling-window temporal metrics, behavioral proxies with confidence/provenance, company intake + individual-agent feedback, live UI updates, optional in-plugin relay of canonical events to the bridge's first-class plugin embedding surface inside a Pixel Agents server (`PAPERCLIP_PIXELS-2`) |
+| Core capabilities | Raw event projection, rolling-window temporal metrics, behavioral proxies with confidence/provenance, company intake + individual-agent feedback, live UI updates, optional in-plugin relay of canonical events to the bridge's first-class plugin embedding surface inside a Pixel Agents server (`PAPERCLIP_PIXELS-2`), including WS4 first-class per-agent appearance assignments and the privacy-guarded conversation-extract dialog-pane feed |
 | Deployment models | Host image reusing the published Paperclip base + a self-contained, pre-built plugin `dist/` (no runtime dep vendoring); standalone Pixel Agents CLI image with the bridge embedding module loaded via the fork's `--plugin` loader |
 | Integration interfaces | Public Paperclip Plugin SDK only (`ctx.data`/`ctx.actions`/`ctx.streams`/`ctx.events`/`ctx.state`); host-mounted UI bundle; optional operator-configured outbound HTTP to the embedding surface's `POST /api/plugin-feed` |
 | Data zones | Paperclip (authoritative, external) · bridge derived cache (`ctx.state`, restart-safe) · host UI runtime (React, host-injected) · operator-configured Pixel Agents server (outbound relay target) |
@@ -135,8 +139,9 @@ all business state; the bridge owns only a derived, restart-safe cache.
 | Slot | A host UI extension point (`page` or `sidebar`) declared in the manifest and bound to a named export of the UI bundle |
 | Bridge relay | The optional in-plugin subsystem (`BridgeRelay`, `PAPERCLIP_PIXELS-2`) that pushes canonical bridge events to the Pixel Agents side, one `PluginFeedMapper` + `PluginFeedHttpSink` per company |
 | `instanceConfigSchema` | The operator-editable, company-scoped plugin config schema (manifest) the relay reads; fields `pixelAgentsUrl`, `pixelAgentsUiUrl`, `pixelAgentsTokenRef` (a `secret-ref` binding, never a plaintext value), `pixelAgentsRelayEnabled`, `paperclipApiBaseUrl`, `paperclipApiTokenRef`, `dialogPanePrivacyOptIn` (default OFF) |
-| `PluginFeedMapper` | Per-company stateful translator in `src/pixel-agents-plugin/feed-mapper.ts` that maps canonical `BridgeInputEvent`s / snapshots / appearance maps into plugin feed operations (`declareAgents`, `removeAgents`, `updateAgentStatus`, `updateAgentActivity`) |
+| `PluginFeedMapper` | Per-company stateful translator in `src/pixel-agents-plugin/feed-mapper.ts` that maps canonical `BridgeInputEvent`s / snapshots / appearance maps into plugin feed operations (`declareAgents`, `removeAgents`, `updateAgentStatus`, `updateAgentActivity`, `assignAgentAppearance` — WS4, `dialogLines` — WS4), shaped by per-company mapper options (`dialogPrivacyOptIn`) |
 | `PluginFeedHttpSink` | Ordered HTTP sink in `src/pixel-agents-plugin/feed-sink.ts` that POSTs feed-operation batches (`{ schemaVersion: 1, companyId, operations }`) to the embedding surface's `POST /api/plugin-feed`, optionally with a bearer token |
+| Dialog pane | The bridge's Pixel Agents shell-panel widget ("Paperclip conversation") fed by pre-redacted, truncated conversation extracts (`dialogLines` feed ops → `paperclip.dialog.lines` plugin messages); fuller extracts require the per-company `dialogPanePrivacyOptIn` (default OFF, CEO decision 2). Guardrail detail lives in companion handbook §5.8 |
 | Embedding surface | `src/pixel-agents-plugin/embedding.ts` (bundled to `dist/pixel-agents-embedding.cjs`): the module the deployed Pixel Agents server loads through the fork's generic `--plugin` loader — registers the Paperclip plugin in-process through the fork's plugin host and serves the feed endpoint on its own sidecar listener (default `127.0.0.1:8081`, fail-closed bearer auth) |
 
 ---
@@ -437,9 +442,15 @@ what the UI receives.
 canonical `BridgeInputEvent`s, authoritative snapshots, and the per-agent
 appearance map into plugin feed operations; the sink POSTs strictly ordered
 batches — `{ schemaVersion: 1, companyId, operations }` of `declareAgents` /
-`removeAgents` / `updateAgentStatus` / `updateAgentActivity` — to
-`<baseUrl>/api/plugin-feed`, optionally with a bearer `Authorization` header,
-fire-and-forget with `lastPushError` capture. The sink's outbound push is
+`removeAgents` / `updateAgentStatus` / `updateAgentActivity`, plus since WS4
+`assignAgentAppearance` (per-agent character assignment by frozen
+`characterId`; the embedding surface resolves it to a sheet index in the
+catalog it declared through the fork's first-class appearance source) and
+`dialogLines` (pre-redacted conversation extracts; companion handbook §5.8)
+— to `<baseUrl>/api/plugin-feed`, optionally with a bearer `Authorization` header,
+fire-and-forget with `lastPushError` capture. The mapper is constructed with
+per-company options (`dialogPrivacyOptIn`), so the dialog guardrail mode is
+fixed per company at configure time. The sink's outbound push is
 routed through the **SDK-gated `ctx.http.fetch`** (declared `http.outbound`
 capability; host-managed tracing/audit applies) and adapted to the sink's
 injectable `FeedFetchLike` so the plugin package stays free of node globals —
@@ -462,7 +473,13 @@ to the feed shared secret, resolved at `configure` time via
 persisted or logged), `pixelAgentsRelayEnabled` (default on when a URL is
 set), plus `pixelAgentsUiUrl`, `paperclipApiBaseUrl`, `paperclipApiTokenRef`
 and the privacy opt-in `dialogPanePrivacyOptIn` (default OFF — the retired
-`pixelAgentsProviderId` hook-path field is gone). The relay enables itself as
+`pixelAgentsProviderId` hook-path field is gone). The privacy opt-in parses
+**strict-true**: `parseRelayConfig` maps only an explicit `=== true` to ON —
+missing, absent, `false`, or wrong-typed values all mean OFF (the redacted
+default), and the worker's config validation rejects non-boolean values;
+because the parsed flag participates in the relay's config-unchanged check,
+a toggle change rebuilds the company's mapper so the new guardrail mode
+applies to every later event. The relay enables itself as
 soon as a non-empty URL is present unless explicitly disabled. If
 `pixelAgentsTokenRef` resolution fails, the relay stays disabled for that
 company (fail-securely); a stored config that violates the https-when-token
@@ -488,8 +505,11 @@ company's prior transport and leaves its relay disabled with a warning
 - **Reconciliation job** — `relay.ingestSnapshot(...)` is re-fed after each
   authoritative reconciliation so the feed mapper resyncs and re-declares
   agents that appeared since the last pass; `relay.syncAppearances(...)`
-  re-applies the per-agent appearance map (palette/hueShift ride the
-  declarations) at bootstrap, resync, and each assignment write.
+  re-applies the per-agent appearance map at bootstrap, resync, and each
+  assignment write — seat palette/hueShift ride the declarations, and since
+  WS4 each agent's frozen `characterId` rides a first-class
+  `assignAgentAppearance` operation (emitted on change, so the agent's
+  rendered sprite tracks the assignment; companion handbook §5.7).
 - **`onConfigChanged(newConfig, { companyId })`** — reconfigures only the
   affected company's relay (disposes the prior mapper + sink, rebuilds from the
   new config; disables itself if the URL is gone). Errors are caught and
@@ -499,7 +519,8 @@ company's prior transport and leaves its relay disabled with a warning
   (cleartext must never carry a token; the only save-time exceptions are the
   bundled sidecar hostnames `localhost`, `127.0.0.1`, `::1`, and
   `pixel-agents-relay`), `pixelAgentsTokenRef` a `secret_ref` binding or
-  non-empty string, and `pixelAgentsRelayEnabled` a boolean.
+  non-empty string, `pixelAgentsRelayEnabled` a boolean, and — since WS4 —
+  `dialogPanePrivacyOptIn` a boolean when present.
   `parseRelayConfig` re-enforces the contract at runtime, fail-closed: with
   a token configured, `pixelAgentsUrl` must be a valid http(s) URL and
   cleartext `http:` is accepted only for loopback hosts
@@ -666,6 +687,7 @@ docker build -t pixel-agents:local         -f deploy/docker/Dockerfile.pixel-age
 | Trust boundary (UI ↔ worker) | All Paperclip domain access routes through the worker; the UI never calls Paperclip HTTP routes directly (FR-9, §28.2) | UI bundle externalizes React + SDK UI hooks; UI reaches the worker only via `ctx.data`/`ctx.actions`/`ctx.streams` |
 | Relay outbound boundary (`PAPERCLIP_PIXELS-2`) | The relay's outbound HTTP to the embedding surface is operator-gated per company, push-only, routed through the SDK-gated `ctx.http.fetch` (declared `http.outbound`), and carries only plugin feed batches; the worker never accepts inbound from that server | `instanceConfigSchema` gates `pixelAgentsUrl`/`pixelAgentsRelayEnabled`; relay disabled by default when no URL; `onValidateConfig` enforces http(s) URL + rejects `http:` with a token (bundled sidecar names excepted), and `parseRelayConfig` re-enforces the contract at runtime (with a token the URL must be valid http(s) and cleartext `http:` is loopback-only; otherwise `RelayTransportContractError` disables the relay fail-closed); bearer token is operator-bound via a `secrets.read-ref`-gated secret reference, never a plaintext config value; the feed endpoint mirrors the gate fail-closed (constant-time digest compare, 401, no token-in-URL, refuses to start without `PAPERCLIP_PIXEL_FEED_TOKEN`) |
 | Least-privilege manifest | Request only required capabilities (FR-10, §14, §28.1) | `capabilities` array in `manifest.ts`; read-only visualization needs no mutation caps; feedback needs no `issues.create` |
+| Conversation-extract boundary (WS4-C) | Dialog-pane lines leave the worker only pre-redacted and truncated — raw sensitive prompts never ride the relay wire in either privacy mode | Always-on secret redaction + mode-dependent truncation (OFF ≤ 120 / ON ≤ 480 chars, 600-char line clamp) in pure domain code (`src/core/domain/dialog.ts`), applied at mapper compose time; `dialogPanePrivacyOptIn` parsed strict-true and mapper-rebuilt on change; feed apply side re-clamps and validates fail-closed (full guardrail detail: companion handbook §5.8) |
 | Input validation | All `ctx.data`/`ctx.actions`/`ctx.streams` payloads validated with Zod; host-authenticated actor identity, not user-supplied actor IDs (FR-11, §28.4) | Zod schemas on every handler; `onValidateConfig` validates relay config fields |
 | Secrets | No resolved secrets in plugin state — retain references, resolve at call time; never log secrets/full sensitive prompts by default (FR-12, §28.3, NFR-7) | `ctx.state` holds references only; the relay token is resolved per company from the operator-bound `pixelAgentsTokenRef` (`ctx.secrets.resolve`, `secrets.read-ref`), lives only in memory for the sink's lifetime, and is never logged or persisted |
 
@@ -1109,9 +1131,16 @@ sequenceDiagram
   surface's own sidecar listener (default `127.0.0.1:8081`; env
   `PAPERCLIP_PIXEL_FEED_HOST/PORT/TOKEN`).
 - **Batch:** `{ schemaVersion: 1, companyId, operations }` — thin, honest
-  wrappers around the WS2-A1 agent/team data source, applied in order and
-  validated all-or-nothing. No Claude-hook vocabulary exists on this wire
-  (the three impersonation hacks are retired; WS2-C).
+  wrappers around the sanctioned host sources, applied in order and
+  validated all-or-nothing: `declareAgents` / `removeAgents` /
+  `updateAgentStatus` / `updateAgentActivity` (agent/team source), and since
+  WS4 `assignAgentAppearance` (appearance source, frozen `characterId`) and
+  `dialogLines` (pre-redacted extracts, ≤ 8 lines/batch, 600-char lines).
+  Sink presence is part of validation: a batch carrying appearance or dialog
+  operations against an embedding surface that wired no such sink is
+  rejected whole (fail-closed 400) so the pusher sees the gap. No
+  Claude-hook vocabulary exists on this wire (the three impersonation hacks
+  are retired; WS2-C).
 - **Auth:** optional bearer token resolved per company from the
   `pixelAgentsTokenRef` secret reference (`ctx.secrets.resolve`), sent as
   `Authorization: Bearer <token>` only on the outbound POST; never logged.
@@ -1128,7 +1157,9 @@ sequenceDiagram
   `forwarderNotConfigured`.
 - **Snapshots:** `ingestSnapshot` re-declares every agent at bootstrap and
   after each authoritative reconciliation; `syncAppearances` re-applies the
-  per-agent appearance map (palette/hueShift ride the declarations).
+  per-agent appearance map — seat palette/hueShift ride the declarations,
+  and each agent's `characterId` rides a first-class `assignAgentAppearance`
+  operation (WS4; companion handbook §5.7).
 - **Health:** `onHealth()` reports `companies` (bootstrapped) and
   `relayCompanies` (active relay count); `PluginFeedHttpSink.lastPushError`
   exposes the most recent per-company push error (cleared on success).

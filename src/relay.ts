@@ -102,6 +102,10 @@ export interface RelayCompanyConfig {
   paperclipApiBaseUrl: string;
   /** Resolved bearer token for the tool-activity poller, if configured (never the persisted ref). */
   paperclipApiToken?: string;
+  /** Per-company dialog-pane privacy opt-in (WS4-C, CEO decision 2).
+   *  Default OFF: dialog lines carry only short redacted/truncated
+   *  extracts. Explicit true ships fuller (still bounded) extracts. */
+  dialogPanePrivacyOptIn: boolean;
 }
 
 /** Company-scoped runtime state: a feed mapper plus its underlying push sink. */
@@ -125,6 +129,7 @@ export const RELAY_CONFIG_FIELDS = [
   "pixelAgentsRelayEnabled",
   "paperclipApiBaseUrl",
   "paperclipApiTokenRef",
+  "dialogPanePrivacyOptIn",
 ] as const;
 
 /** How often the tool-activity poller re-fetches each tracked run's log. */
@@ -244,7 +249,11 @@ export function parseRelayConfig(
     : "http://localhost:8090";
   const configuredApiUrl = typeof raw.paperclipApiBaseUrl === "string" ? raw.paperclipApiBaseUrl.trim() : "";
   const paperclipApiBaseUrl = configuredApiUrl.length > 0 ? configuredApiUrl : DEFAULT_PAPERCLIP_API_BASE_URL;
-  return { enabled, pixelAgentsUrl: url, pixelAgentsUiUrl, paperclipApiBaseUrl };
+  // WS4-C guardrail (CEO decision 2): only an explicit true opts the
+  // company into fuller dialog-pane extracts. Missing/absent/false all
+  // mean OFF — the redacted/truncated default.
+  const dialogPanePrivacyOptIn = raw.dialogPanePrivacyOptIn === true;
+  return { enabled, pixelAgentsUrl: url, pixelAgentsUiUrl, paperclipApiBaseUrl, dialogPanePrivacyOptIn };
 }
 
 /**
@@ -387,6 +396,7 @@ function toFeedAppearance(entry: AgentAppearanceSyncEntry): FeedAppearanceEntry 
   return {
     agentId: entry.agentId,
     agentName: entry.agentName,
+    characterId: entry.characterId,
     palette: entry.palette,
     hueShift: entry.hueShift,
   };
@@ -533,6 +543,7 @@ export class BridgeRelay {
       && existing.config.pixelAgentsToken === authToken
       && existing.config.paperclipApiBaseUrl === config.paperclipApiBaseUrl
       && existing.config.paperclipApiToken === apiToken
+      && existing.config.dialogPanePrivacyOptIn === config.dialogPanePrivacyOptIn
     ) {
       this.ctx.logger.debug("Bridge relay config unchanged for company", { companyId });
       return;
@@ -551,7 +562,12 @@ export class BridgeRelay {
       // per-call enforcement, re-done here since rawFetch never asks the host.
       fetch: rawFetch(),
     });
-    const mapper = new PluginFeedMapper();
+    // WS4-C: the per-company dialog-pane privacy toggle rides the mapper —
+    // a toggle change rebuilds the mapper (via the config-unchanged check
+    // above) so the new guardrail mode applies to every later event.
+    const mapper = new PluginFeedMapper({
+      dialogPrivacyOptIn: config.dialogPanePrivacyOptIn,
+    });
     const entry: CompanyRelay = {
       mapper,
       sink,

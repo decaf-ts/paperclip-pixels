@@ -7,6 +7,7 @@ import {
   PAPERCLIP_PIXEL_PLUGIN_ID,
   PAPERCLIP_PLUGIN_ACTIONS,
   PAPERCLIP_PLUGIN_STARTED_MESSAGE,
+  PAPERCLIP_DIALOG_LINES_MESSAGE,
   PAPERCLIP_REPLY_MENU_ITEM,
   registerPaperclipPixelPlugin,
 } from "../src/pixel-agents-plugin/index.js";
@@ -74,20 +75,22 @@ function makeCtx() {
 // -- manifest --------------------------------------------------------------------
 
 describe("createPaperclipPluginManifest", () => {
-  it("declares the paperclip plugin id, current version, and the agent source", () => {
+  it("declares the paperclip plugin id, current version, and both sources", () => {
     const manifest = createPaperclipPluginManifest();
     expect(manifest.id).toBe("paperclip");
     expect(PAPERCLIP_PIXEL_PLUGIN_ID).toBe("paperclip");
     expect(manifest.version).toBe(PLUGIN_VERSION);
-    expect(manifest.sources).toEqual({ agents: true });
+    expect(manifest.sources).toEqual({ agents: true, appearance: true });
     expect(typeof manifest.description).toBe("string");
   });
 
-  it("contributes exactly the started message and the two reply actions", () => {
+  it("contributes the started + dialog-lines messages, the two reply actions, and the dialog-pane widget", () => {
     const manifest = createPaperclipPluginManifest();
-    expect(manifest.contributes.messages).toHaveLength(1);
+    expect(manifest.contributes.messages).toHaveLength(2);
     expect(manifest.contributes.messages?.[0].type).toBe(PAPERCLIP_PLUGIN_STARTED_MESSAGE);
     expect(PAPERCLIP_PLUGIN_STARTED_MESSAGE).toBe("paperclip.bridge.started");
+    expect(manifest.contributes.messages?.[1].type).toBe(PAPERCLIP_DIALOG_LINES_MESSAGE);
+    expect(PAPERCLIP_DIALOG_LINES_MESSAGE).toBe("paperclip.dialog.lines");
 
     expect(manifest.contributes.actions).toEqual([
       expect.objectContaining({ id: PAPERCLIP_PLUGIN_ACTIONS.replyToFeedback }),
@@ -97,6 +100,17 @@ describe("createPaperclipPluginManifest", () => {
       replyToFeedback: "reply-to-feedback",
       sendMessage: "send-message",
     });
+
+    // WS4-C: the dialog-pane shell-panel widget, fed by the declared
+    // conversation-extract message type.
+    expect(manifest.contributes.widgets).toEqual([
+      expect.objectContaining({
+        id: "dialog-pane",
+        kind: "shell-panel",
+        binding: "global",
+        messageTypes: [PAPERCLIP_DIALOG_LINES_MESSAGE],
+      }),
+    ]);
   });
 
   it("every action id conforms to the A1 host validator pattern", () => {
@@ -108,22 +122,23 @@ describe("createPaperclipPluginManifest", () => {
     expect(PAPERCLIP_REPLY_MENU_ITEM.id).toMatch(pattern);
   });
 
-  it("omits labelPolicy and widgets — the as-implemented shape the real host validator accepts", () => {
+  it("omits labelPolicy — the as-implemented shape the real host validator accepts", () => {
     const manifest = createPaperclipPluginManifest();
     expect(manifest.contributes.menuItems).toEqual([{ ...PAPERCLIP_REPLY_MENU_ITEM }]);
-    // The WS2-C-era placeholders (`labelPolicy: {}`, `widgets: []`) are gone
-    // by design: the REAL fork host validator (pixel-agents/server/src/
-    // plugins/manifest.ts validatePluginManifest) rejects a present
-    // `labelPolicy` without a valid `mode` fail-closed, so the manifest omits
-    // the key entirely (default label behavior) and ships no widgets. Pin
-    // both keys as absent — not `{}` / `[]` — and pin the exact key set so a
-    // stray placeholder can never sneak back in.
+    // The WS2-C-era `labelPolicy: {}` placeholder is gone by design: the
+    // REAL fork host validator (pixel-agents/server/src/plugins/manifest.ts
+    // validatePluginManifest) rejects a present `labelPolicy` without a
+    // valid `mode` fail-closed, so the manifest omits the key entirely
+    // (default label behavior). Pin it as absent — not `{}` — and pin the
+    // exact key set so a stray placeholder can never sneak back in.
+    // (`widgets` is no longer absent since WS4-C: the dialog-pane
+    // shell-panel widget ships, with its message type declared above.)
     expect(manifest.contributes.labelPolicy).toBeUndefined();
-    expect(manifest.contributes.widgets).toBeUndefined();
     expect(Object.keys(manifest.contributes).sort()).toEqual([
       "actions",
       "menuItems",
       "messages",
+      "widgets",
     ]);
   });
 });

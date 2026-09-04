@@ -11,6 +11,12 @@
  *   - working / idle / waiting-on-a-human → `updateAgentStatus`
  *   - current work caption ("Task: <title>", real tool descriptions from the
  *     activity poller) → `updateAgentActivity` (one caption per agent)
+ *   - character assignment change → `assignAgentAppearance` (WS4-C: the
+ *     first-class appearance path — characterId is the WS3 frozen id, the
+ *     embedding surface resolves it to a sheet index)
+ *   - conversation extracts (comment bodies, run edges, approval waits) →
+ *     `dialogLines` (WS4-C: redacted/truncated plugin-side per the
+ *     per-company `dialogPanePrivacyOptIn` toggle, default OFF)
  *
  * Parity with the retired mapping: stuck-agent detection (a human question
  * comment or pending approval on an agent's issue → waiting + awaitingInput),
@@ -21,12 +27,13 @@
  * host a transient second caption without clobbering the run caption.
  */
 
+import { clampDialogLine, dialogExtract } from "../core/index.js";
 import type {
   AuthoritativeSnapshotInput,
   BridgeInputEvent,
 } from "../core/index.js";
 
-import type { PluginFeedOperation } from "./feed.js";
+import type { PluginFeedDialogLine, PluginFeedOperation } from "./feed.js";
 import type { PluginAgentDeclaration } from "./types.js";
 
 /** Stable per-agent unique team name (the retired transcript hack's grouping
@@ -43,18 +50,36 @@ function bridgeTeamName(agentId: string): string {
   return `paperclip-bridge-${hash.toString(16)}`;
 }
 
-/** One agent's appearance, as resolved by the worker (WS3 frozen contract). */
+/** One agent's appearance, as resolved by the worker (WS3 frozen contract).
+ * `characterId` rides the wire for the WS4-C first-class appearance path:
+ * the embedding surface resolves it to a positional index in the catalog it
+ * declared through the WS4-A appearance source. */
 export interface FeedAppearanceEntry {
   agentId: string;
   agentName: string;
+  /** WS3 catalog character id (e.g. `pixel-agents:char-3`). */
+  characterId: string;
   palette: number;
   hueShift: number;
+}
+
+/** Mapper options (WS4-C). */
+export interface PluginFeedMapperOptions {
+  /** Per-company `dialogPanePrivacyOptIn` (CEO decision 2, default OFF):
+   *  OFF ships only short redacted/truncated comment excerpts in dialog
+   *  lines; ON ships fuller (still bounded) excerpts. Set at relay
+   *  configure time; a toggle change rebuilds the mapper. */
+  dialogPrivacyOptIn?: boolean;
 }
 
 interface AgentFeedState {
   /** Last declaration pushed (name + seat) — declare ops are emitted only on
    *  change (the host upserts, but the wire stays quiet when nothing changed). */
   declared?: { name: string; palette?: number; hueShift?: number };
+  /** Last characterId assigned through the first-class appearance path
+   *  (WS4-C) — assignment ops are emitted only on change. `undefined` =
+   *  never assigned; `null` = explicitly reverted to palette rendering. */
+  assignedCharacterId?: string | null;
   /** Last status pushed, for diffing. `undefined` = never pushed. */
   status?: "active" | "waiting";
   awaitingInput?: boolean;
@@ -99,6 +124,13 @@ export class PluginFeedMapper {
   private readonly issueAssignees = new Map<string, string>();
   private readonly issueTitles = new Map<string, string>();
   private readonly appearances = new Map<string, FeedAppearanceEntry>();
+  private readonly dialogPrivacyOptIn: boolean;
+
+  constructor(options: PluginFeedMapperOptions = {}) {
+    // Guardrail default OFF (CEO decision 2): only an explicit true at
+    // relay-configure time ever ships fuller extracts.
+    this.dialogPrivacyOptIn = options.dialogPrivacyOptIn === true;
+  }
 
   /** Drop all state (relay re-sync): the next snapshot re-declares everyone
    *  and re-pushes statuses — the bounded-time self-heal contract. */
@@ -109,8 +141,10 @@ export class PluginFeedMapper {
   }
 
   /** Record the company's appearance map (WS3 single source of truth) and
-   *  return declare upserts for every entry whose seat changed. Safe to call
-   *  repeatedly; also consulted by every later declare for new agents. */
+   * return declare upserts for every entry whose seat changed, plus
+   * first-class appearance assignments (WS4-C) for every entry whose
+   * characterId changed. Safe to call repeatedly; also consulted by every
+   * later declare for new agents. */
   setAppearances(entries: FeedAppearanceEntry[]): PluginFeedOperation[] {
     const operations: PluginFeedOperation[] = [];
     for (const entry of entries) {
@@ -123,6 +157,17 @@ export class PluginFeedMapper {
         || state.declared.hueShift !== entry.hueShift
       ) {
         operations.push({ op: "declareAgents", agents: [this.declarationFor(entry.agentId, entry.agentName)] });
+      }
+      // First-class appearance path (WS4-C): assign the agent's character
+      // through the WS4-A source when it changed. palette/hueShift above
+      // remain the seat/fallback (and hueShift still tints plugin sheets).
+      if (state.assignedCharacterId !== entry.characterId) {
+        state.assignedCharacterId = entry.characterId;
+        operations.push({
+          op: "assignAgentAppearance",
+          key: entry.agentId,
+          characterId: entry.characterId,
+        });
       }
     }
     return operations;
@@ -177,6 +222,24 @@ export class PluginFeedMapper {
       this.agents.set(agentId, state);
     }
     return state;
+  }
+
+  /** Best-known display label for one agent (dialog lines only — captions
+   *  and declarations have their own name resolution): the appearance-map
+   *  name, else the last declared name, else the raw agent id. */
+  private agentLabel(agentId: string): string {
+    const appearance = this.appearances.get(agentId);
+    if (appearance) return appearance.agentName;
+    return this.agents.get(agentId)?.declared?.name ?? agentId;
+  }
+
+  /** Push one dialog-pane line (WS4-C) after the shared wire clamp. Empty
+   *  composed lines are dropped, never faked. */
+  private pushDialogLine(text: string, operations: PluginFeedOperation[]): void {
+    const line = clampDialogLine(text);
+    if (line.length === 0) return;
+    const lines: PluginFeedDialogLine[] = [{ text: line }];
+    operations.push({ op: "dialogLines", lines });
   }
 
   private pushStatus(
@@ -287,6 +350,13 @@ export class PluginFeedMapper {
         }
         if (event.kind === "agent.run.started") {
           state.activeRunCount += 1;
+          // Dialog-pane line (WS4-C): a run edge is conversation-worthy
+          // activity the worker already sees — no new host surface.
+          const title = issueId ? this.issueTitles.get(issueId) : undefined;
+          this.pushDialogLine(
+            `${this.agentLabel(agentId)} started a run${title ? `: ${title}` : ""}`,
+            operations,
+          );
         }
         break;
       }
@@ -296,11 +366,23 @@ export class PluginFeedMapper {
       case "agent.run.cancelled": {
         const p = event.payload;
         const state = this.ensureState(p.agentId);
+        // Dialog line only when the mapper actually knew the run — a
+        // phantom falling edge (never-seen run) is not conversation.
+        const knewRun = state.activeRunCount > 0;
         if (state.activeRunCount > 0) state.activeRunCount -= 1;
         if (state.activeRunCount === 0 && (state.runCaptionOpen || state.status === "active")) {
           state.runCaptionOpen = false;
           operations.push({ op: "updateAgentActivity", key: p.agentId, activity: null });
           this.pushStatus(p.agentId, "waiting", false, operations);
+        }
+        if (knewRun) {
+          const verb =
+            event.kind === "agent.run.finished"
+              ? "finished"
+              : event.kind === "agent.run.failed"
+                ? "failed"
+                : "cancelled";
+          this.pushDialogLine(`${this.agentLabel(p.agentId)} ${verb} a run`, operations);
         }
         break;
       }
@@ -318,7 +400,18 @@ export class PluginFeedMapper {
       }
 
       case "issue.comment.created": {
-        const { issueId, agentId, userId, isQuestion } = event.payload;
+        const { issueId, agentId, userId, isQuestion, body } = event.payload;
+        // Dialog-pane line (WS4-C): one conversation extract per comment,
+        // redacted/truncated plugin-side per the privacy toggle. Author
+        // label: the agent's known name, or "Human" for user comments.
+        const author = agentId ? this.agentLabel(agentId) : "Human";
+        const extract = dialogExtract(body ?? "", this.dialogPrivacyOptIn);
+        if (extract.length > 0) {
+          this.pushDialogLine(
+            `${author}${isQuestion ? " (question)" : ""}: ${extract}`,
+            operations,
+          );
+        }
         // Stuck-agent detection parity: a human question on an agent's
         // assigned issue → the agent waits on a human reply.
         if (isQuestion && userId && !agentId) {
@@ -342,6 +435,10 @@ export class PluginFeedMapper {
             const state = this.ensureState(target);
             state.runCaptionOpen = false;
             this.pushStatus(target, "waiting", true, operations);
+            this.pushDialogLine(
+              `${this.agentLabel(target)} is waiting for an approval`,
+              operations,
+            );
           }
         }
         break;

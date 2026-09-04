@@ -504,17 +504,22 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
     await flushRelay();
 
     // The unseen agent spawns one feed batch: declaration + run caption +
-    // active status (the retired wire needed a sessionStart + toolStart
-    // pair; the feed carries all three operations in one body).
+    // active status + the run-scoped dialog line (the retired wire needed a
+    // sessionStart + toolStart pair; the feed carries all four operations
+    // in one body).
     expect(relayFetchCalls.length).toBe(baseline + 1);
     const forwardBatch = JSON.parse(relayFetchCalls[relayFetchCalls.length - 1].body);
     expect(forwardBatch.companyId).toBe(COMPANY_ID);
-    expect(forwardBatch.operations).toHaveLength(3);
-    const [declare, activity, status] = forwardBatch.operations;
+    expect(forwardBatch.operations).toHaveLength(4);
+    const [declare, activity, status, dialog] = forwardBatch.operations;
     expect(declare.op).toBe("declareAgents");
     expect(declare.agents[0]).toMatchObject({ key: "agent-relay-late", name: "agent-relay-late" });
     expect(activity).toEqual({ op: "updateAgentActivity", key: "agent-relay-late", activity: "Task: Paperclip work" });
     expect(status).toEqual({ op: "updateAgentStatus", key: "agent-relay-late", status: "active" });
+    expect(dialog).toEqual({
+      op: "dialogLines",
+      lines: [{ text: "agent-relay-late started a run" }],
+    });
 
     // Store behavior unchanged: the store path still applies events and serves
     // the authoritative snapshot (the relay addition never replaces it).
@@ -630,23 +635,37 @@ describe("worker relay wiring (SAA-229 coverage gap)", () => {
       await flushRelay();
     }
 
-    // Exactly the one resync tick's single feed batch. The mapper retains
-    // the company's appearance map across reset(), so the re-declaration in
-    // the snapshot batch already carries each agent's seat — the follow-up
-    // appearance push diffs to nothing and emits no second batch. Ordinary
-    // reconcile ticks push nothing extra.
+    // Exactly the one resync tick's two feed batches. Batch 1: the mapper
+    // retains the company's appearance map across reset(), so the
+    // re-declaration in the snapshot batch already carries each agent's
+    // seat — and the follow-up appearance push's declare diff is empty.
+    // Batch 2 (WS4-C): the same appearance push re-emits each agent's
+    // first-class `assignAgentAppearance` — the per-agent assignment state
+    // was reset with the mapper, and a freshly (re)started embedding
+    // surface must receive assignments again. Ordinary reconcile ticks
+    // push nothing extra.
     const newCalls = relayFetchCalls.slice(baseline);
-    expect(newCalls).toHaveLength(1);
+    expect(newCalls).toHaveLength(2);
     for (const call of newCalls) {
       expect(call.url).toBe("https://pa.example/api/plugin-feed");
       expect(call.method).toBe("POST");
     }
-    const [resyncBatch] = newCalls.map((c) => JSON.parse(c.body));
+    const [resyncBatch, assignmentBatch] = newCalls.map((c) => JSON.parse(c.body));
     const redeclared = declaredAgents([resyncBatch]);
     expect(redeclared.map((a) => a.key).sort()).toEqual([AGENT_CEO_ID, AGENT_DEV_ID]);
     const statuses = resyncBatch.operations.filter((op) => op.op === "updateAgentStatus");
     expect(statuses).toHaveLength(2);
     for (const status of statuses) expect(status.status).toBe("waiting");
+    // WS4-C: the second batch carries exactly the two first-class
+    // appearance assignments, one per seeded agent, each naming a real
+    // catalog character id.
+    const assignments = assignmentBatch.operations.filter((op) => op.op === "assignAgentAppearance");
+    expect(assignments).toHaveLength(2);
+    expect(assignments.map((op) => op.key).sort()).toEqual([AGENT_CEO_ID, AGENT_DEV_ID]);
+    for (const assignment of assignments) {
+      expect(assignment.characterId).toMatch(/^(pixel-agents|paperclip-pixels):char-\d+$/);
+    }
+    expect(assignmentBatch.operations).toHaveLength(assignments.length);
     // The retained appearance map means the re-declarations are seated.
     for (const declared of redeclared) {
       expect(Number.isInteger(declared.palette)).toBe(true);
