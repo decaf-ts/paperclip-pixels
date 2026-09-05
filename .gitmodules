@@ -3,4 +3,5 @@
 	url = https://github.com/paperclipai/paperclip
 [submodule "pixel-agents"]
 	path = pixel-agents
-	url = https://github.com/pixel-agents-hq/pixel-agents
+	url = https://github.com/decaf-ts/as-pixels.git
+	branch = legacy

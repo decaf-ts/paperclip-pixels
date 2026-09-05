@@ -16,3 +16,4 @@ workdocs/locks/*
 !workdocs/locks/.gitkeep
 .saa*
 /.pnpm-store
+/allure-results/server

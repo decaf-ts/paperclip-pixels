@@ -36,6 +36,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:ui": "tsc -p tsconfig.test.json --noEmit",
     "release": "./bin/tag-release.sh",
+    "pixel-agents:sync-legacy": "node scripts/sync-pixel-agents-legacy.mjs",
     "lint": "eslint .",
     "lint-fix": "eslint --fix .",
     "test": "jest --config jest.config.ts",
