@@ -79,8 +79,10 @@ describe("manifest", () => {
     // `pixelAgentsTokenRef` (a `secret-ref` binding, never a plaintext value).
     // WS2-C (2026-09-01): `pixelAgentsProviderId` is retired with the
     // Claude-hook wire (the feed has no provider id), and
-    // `dialogPanePrivacyOptIn` (CEO decision 2) joins the schema. These
-    // assertions lock in the current schema.
+    // `dialogPanePrivacyOptIn` (CEO decision 2) joins the schema.
+    // SAA-734 (2026-09-05): `pixelAgentsAllowedHttpHosts` joins the schema for
+    // the separate-container compose topology cleartext-token carve-out.
+    // These assertions lock in the current schema.
     const properties = (manifest.instanceConfigSchema as {
       type?: string;
       properties?: Record<string, Record<string, unknown>>;
@@ -93,6 +95,7 @@ describe("manifest", () => {
         "dialogPanePrivacyOptIn",
         "paperclipApiBaseUrl",
         "paperclipApiTokenRef",
+        "pixelAgentsAllowedHttpHosts",
         "pixelAgentsRelayEnabled",
         "pixelAgentsTokenRef",
         "pixelAgentsUiUrl",
@@ -100,6 +103,13 @@ describe("manifest", () => {
       ]);
       expect(properties.pixelAgentsToken).toBeUndefined();
       expect(properties.pixelAgentsProviderId).toBeUndefined();
+    });
+
+    it("declares pixelAgentsAllowedHttpHosts as an array of strings", () => {
+      expect(properties.pixelAgentsAllowedHttpHosts).toMatchObject({
+        type: "array",
+        items: { type: "string" },
+      });
     });
 
     it("declares pixelAgentsUrl as a uri-format string", () => {

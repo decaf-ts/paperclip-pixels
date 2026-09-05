@@ -16,7 +16,7 @@ jiraIssueId: "none"
 jiraUpdatedAt: "none"
 jiraSyncState: "disabled"
 createdAt: "2026-09-01T03:22:52Z"
-updatedAt: "2026-09-03T01:20:00Z"
+updatedAt: "2026-09-05T04:45:00Z"
 ---
 
 # PAPERCLIP_PIXELS-2: Pixel Agents Plugin Architecture (Fork) + Paperclip Plugin Character/Settings/Assets
@@ -26,12 +26,12 @@ updatedAt: "2026-09-03T01:20:00Z"
 | Field | Value |
 | --- | --- |
 | Task type | `specification` |
-| Status | blocked (in delivery: WS0–WS5 implementation in progress under CTO execution) |
+| Status | blocked (Revision 2 recorded 2026-09-05 via the amendment milestone [SAA-715](/SAA/issues/SAA-715); the implementation re-plan [SAA-716](/SAA/issues/SAA-716) closed `done` and its Phase 1–4 implementation tickets [SAA-717](/SAA/issues/SAA-717)–[SAA-720](/SAA/issues/SAA-720) are all closed `done`; the Phase 5 record content is recorded through this milestone [SAA-721](/SAA/issues/SAA-721); the prior plan's final phase gate [SAA-457](/SAA/issues/SAA-457) remains open) |
 | Priority | medium |
 | Assignee | CEO |
 | Parent | none (domain root) |
-| Blocked by | SAA-454, SAA-455, SAA-456, SAA-457, SAA-458, SAA-459 (workstream parents; observed 2026-09-03T01:18:00Z — SAA-454/455/456/458 closed `done` (WS1 committed as fork `c634c15`; WS2 closed with its fork-side plugin host + contribution points + webview consumers committed as `ade5601` — including the [SAA-532](/SAA/issues/SAA-532) client-contract tests and divergence row — and its plugin-repo bridge/embedding content committed as `f92c058` plus the https-transport relay-feed fix `4489e28`, all read-back-verified); SAA-457 (WS5) and SAA-459 (WS4) still `blocked`, with SAA-459's fork leaves [SAA-585](/SAA/issues/SAA-585)/[SAA-587](/SAA/issues/SAA-587) `done` (their fork-side appearance work uncommitted atop `ade5601` for the [SAA-459](/SAA/issues/SAA-459) close-gate commit) and SAA-459 blocked only on its plugin-repo leaf [SAA-588](/SAA/issues/SAA-588) (WS4-C), which is implementation-complete and acceptance-verified ([SAA-620](/SAA/issues/SAA-620) done: 3 new suites, 2 production bugs found and fixed, final ladder green — vitest 21 files / 437 passed / 0 expected-fail) and closes on this completion documentation milestone [SAA-624](/SAA/issues/SAA-624); WS5's SAA-457 is blocked on SAA-459) |
-| Observed at | 2026-09-03T01:18:00Z |
+| Blocked by | SAA-457 (WS5 final phase gate, `blocked` on the e2e environment chain) — observed 2026-09-05T04:45:00Z; every other prior blocker closed `done`: the amendment [SAA-715](/SAA/issues/SAA-715), the re-plan [SAA-716](/SAA/issues/SAA-716), and the WS0–WS4 workstream parents SAA-454/455/456/458/459 (close-gate commits as previously recorded: fork `c634c15`/`ade5601`/`a063063`, plugin repo `f92c058`/`4489e28`/`c47aefa`). The Revision 2 Phase 1–4 change sets (SAA-717–SAA-720) are `done` but uncommitted in the shared working trees (fork `pixel-agents/` atop HEAD `a063063`; plugin repo atop HEAD `c47aefa`), awaiting the CTO-owned single user-approved commit per ticket per `git-ops`; the outer repo's `pixel-agents` submodule pointer update (`3537e14` → `a063063`) also remains uncommitted |
+| Observed at | 2026-09-05T04:45:00Z |
 
 Paperclip is authoritative for all lifecycle fields in this snapshot. The product
 scope is board-authored and locked, living verbatim in the parent issue
@@ -70,7 +70,672 @@ bridge-port `completion` milestone [SAA-544](/SAA/issues/SAA-544) (delivery
   [SAA-549](/SAA/issues/SAA-549), reporting agent Back-End Developer), and
   the WS4-C appearance-API + dialog-pane-feed `completion` milestone
   [SAA-624](/SAA/issues/SAA-624) (delivery issue [SAA-588](/SAA/issues/SAA-588),
-  reporting agent Back-End Developer).
+  reporting agent Back-End Developer), and most recently the `amend`
+  (board review) milestone [SAA-715](/SAA/issues/SAA-715), which recorded
+  the board's Revision 2 target-architecture directive (2026-09-05)
+  verbatim as **Revision 2** below, and the Revision 2 Phase 5 record
+  milestone [SAA-721](/SAA/issues/SAA-721), which recorded the capability
+  matrix, override rules, operator configuration guidance, and migration
+  notes derived from the Phase 1–4 completion evidence
+  ([SAA-717](/SAA/issues/SAA-717)–[SAA-720](/SAA/issues/SAA-720)) as
+  **Revision 2 Phase 5** below.
+
+## Revision 2 — Board Directive: Base-Plugin / Host / Paperclip-Override Architecture (2026-09-05)
+
+Amendment recorded through the milestone [SAA-715](/SAA/issues/SAA-715).
+Provenance: board architectural review comment on the parent
+[SAA-447](/SAA/issues/SAA-447) (comment
+`5628530d-93cb-4a88-a578-ffe418662768`, posted 2026-09-05T02:53:52Z,
+board-authored). The directive redefines the target architecture for the
+Pixel Agents plugin refactor and is recorded faithfully below: the board's
+wording is preserved for the desired end state, non-goals, architecture,
+all seven core contracts, the five-phase implementation strategy, the
+functional requirements, the acceptance criteria, the risks, and the
+delivery notes. (The source comment's fenced block carried flattened line
+breaks; the rendering below restores line and list breaks only — no word is
+changed, reordered, or omitted. Verified against the source comment by
+read-back; see Verification Evidence.)
+
+> The original Claude/hook-based behavior must remain the baseline runtime,
+> expressed as a first-class default plugin. Paperclip-specific behavior
+> must be implemented as an additional plugin layer that overrides selected
+> capabilities without breaking the baseline.
+>
+> This specification defines:
+>
+> - the target architecture
+> - the compatibility and override contracts
+> - the migration path
+> - the acceptance criteria required for delivery
+
+### R2.1 Desired End State (board §2)
+
+The system must satisfy all of the following:
+
+- The original Pixel Agents behavior remains the default.
+- The original behavior is modeled as a plugin.
+- Paperclip-specific behavior is implemented as a separate plugin.
+- The Paperclip plugin can override selected capabilities.
+- Any capability not overridden falls back to the base/default plugin.
+- If only the base plugin is loaded, the system behaves like the
+  pre-refactor Pixel Agents runtime.
+- Existing Claude-hook installation and communication behavior remains the
+  default unless explicitly overridden.
+
+### R2.2 Non-Goals (board §3)
+
+This effort does not aim to:
+
+- replace the default runtime behavior with Paperclip-specific behavior
+- remove Claude-hook support from the baseline path
+- make plugin behavior implicitly authoritative over default behavior
+- change installation or communication defaults without explicit
+  configuration
+- allow Paperclip-specific logic to leak into unrelated baseline paths
+- introduce ambiguous override behavior
+
+### R2.3 Target Architecture (board §4)
+
+The architecture has three layers:
+
+1. Base/default plugin
+2. Plugin host arbitration layer
+3. Paperclip override plugin
+
+**Base/Default Plugin (board §4.1).** The base plugin represents the
+original Pixel Agents behavior. It must implement the legacy Claude/hook
+runtime semantics and serve as the fallback for all capabilities not
+overridden by downstream plugins.
+
+**Plugin Host (board §4.2).** The host is not the business logic. It is
+the capability resolution layer. It must:
+
+- register plugins in deterministic order
+- resolve capabilities using explicit priority
+- fall back to the base plugin when no override exists
+- fail closed when no implementation exists
+- prevent implicit cross-plugin coupling
+
+**Paperclip Override Plugin (board §4.3).** The Paperclip plugin is a
+specialization layer. It may override only declared capabilities and must
+delegate everything else back to the base plugin.
+
+It may provide:
+
+- bridge mapping
+- Paperclip-specific UI surfaces
+- appearance and labeling overrides
+- Paperclip-specific policy behavior
+- any compatibility shims needed to adapt Paperclip state to the default
+  runtime
+
+### R2.4 Core Contracts (board §5 — board wording preserved)
+
+**5.1 Default Compatibility Contract.** When the Paperclip plugin is not
+loaded, the runtime must behave identically to the legacy Pixel Agents
+experience.
+
+This includes:
+
+- hook installation and removal
+- consent flows
+- provider selection
+- session lifecycle
+- tool-activity derivation
+- transcript parsing
+- existing UI behavior
+- persistence behavior
+
+**5.2 Override Contract.** When the Paperclip plugin is loaded, it may
+override only explicitly declared capabilities.
+
+The override contract must guarantee:
+
+- deterministic precedence
+- explicit fallback to the base plugin
+- no mutation of undeclared capabilities
+- no silent replacement of unrelated behavior
+
+**5.3 Capability Resolution Contract.** Each capability must resolve in
+the following order:
+
+1. Highest-priority explicit override
+2. Base/default implementation
+3. Fail closed if no implementation exists
+
+The host must not guess, synthesize, or implicitly redirect behavior.
+
+**5.4 Transport Contract.** The default transport must remain the original
+Claude/hook-based path.
+
+Any alternate transport introduced for Paperclip must be:
+
+- explicitly enabled
+- configuration-driven
+- isolated from the default path
+- documented as an override, not a replacement
+
+**5.5 UI Contract.** The default UI must remain equivalent to the
+pre-refactor behavior.
+
+Plugin UI additions must be:
+
+- additive
+- explicitly declared
+- isolated from baseline surfaces
+- unable to suppress default views unless explicitly configured to do so
+
+**5.6 Data Contract.** Persistent state must distinguish:
+
+- base/default plugin state
+- override/plugin-specific state
+- shared runtime state
+
+Plugin-specific state must not overwrite baseline state unless the
+capability contract explicitly allows it.
+
+**5.7 Security Contract.** All plugin behavior must fail closed.
+
+The system must prevent:
+
+- implicit privilege escalation through plugin loading
+- hidden transport changes
+- unauthorized work creation paths
+- direct mutation outside declared interfaces
+- cross-plugin state corruption
+
+### R2.5 Implementation Strategy (board §6)
+
+The work should proceed in five phases.
+
+**Phase 1: Extract the Base Plugin.** Move the original behavior into a
+base plugin without changing runtime output.
+
+Deliverables:
+
+- a base/default plugin
+- baseline behavior matching the pre-refactor runtime
+- compatibility tests proving equivalence
+
+**Phase 2: Add Host-Level Arbitration.** Introduce a plugin host that
+resolves capabilities by priority and fallback.
+
+Deliverables:
+
+- plugin registration
+- capability lookup
+- deterministic override order
+- fail-closed behavior
+
+**Phase 3: Implement the Paperclip Plugin.** Create the
+Paperclip-specific plugin on top of the default plugin.
+
+Deliverables:
+
+- bridge-specific overrides
+- Paperclip UI integrations
+- policy and appearance specializations
+- explicit fallback to baseline behavior
+
+**Phase 4: Add Compatibility Guards.** Lock the baseline behavior through
+tests.
+
+Deliverables:
+
+- default-behavior equivalence tests
+- override-isolation tests
+- fallback tests
+- transport compatibility tests
+- security tests
+
+**Phase 5: Stabilize and Document.** Document the runtime contract and the
+operational model.
+
+Deliverables:
+
+- capability matrix
+- override rules
+- operator configuration guidance
+- migration notes
+
+### R2.6 Functional Requirements (board §7)
+
+**7.1 Plugin Registration.** Plugins must declare:
+
+- identity
+- version
+- capabilities
+- override scope
+- fallback behavior
+
+Registration must fail closed when:
+
+- required metadata is missing
+- capability declarations conflict
+- overrides are ambiguous
+- the plugin is malformed
+
+**7.2 Capability Dispatch.** The host must dispatch each capability
+independently.
+
+It must support:
+
+- direct implementation
+- override
+- wrap-and-delegate
+- fallback to base implementation
+
+**7.3 Base Runtime Preservation.** The base/default plugin must implement
+the legacy runtime behavior as-is.
+
+It must preserve:
+
+- default hook install behavior
+- default provider behavior
+- default communication behavior
+- default UI defaults
+- default parsing and lifecycle behavior
+
+**7.4 Paperclip Specialization.** The Paperclip plugin may specialize the
+runtime for Paperclip needs.
+
+It may override:
+
+- bridge translation
+- UI contribution points
+- appearance and policy handling
+- Paperclip-specific action routing
+
+It may not:
+
+- silently alter baseline behaviors outside its scope
+- replace the baseline runtime without explicit configuration
+
+### R2.7 Acceptance Criteria (board §8 — board wording preserved)
+
+The implementation is complete only when all of the following are true:
+
+- [ ] The legacy Pixel Agents behavior is available as the default plugin.
+- [ ] The default plugin reproduces the pre-refactor behavior.
+- [ ] The Paperclip plugin layers on top of the default plugin.
+- [ ] Unoverridden behavior falls back to the base plugin.
+- [ ] Default installation and communication behavior remain unchanged
+      unless explicitly overridden.
+- [ ] The system passes compatibility, regression, and security tests.
+- [ ] Operators can reason about runtime behavior from configuration alone.
+
+### R2.8 Risks (board §9)
+
+**9.1 Behavioral Drift.** The extracted base plugin may diverge from the
+legacy runtime.
+
+Mitigation:
+
+- snapshot tests
+- equivalence tests
+- side-by-side verification
+
+**9.2 Override Leakage.** Paperclip-specific behavior may spill into the
+baseline path.
+
+Mitigation:
+
+- strict capability scoping
+- explicit host arbitration
+- tests for non-overridden behavior
+
+**9.3 Configuration Ambiguity.** Multiple modes may be enabled without
+clear precedence.
+
+Mitigation:
+
+- deterministic priority rules
+- single source of truth for mode selection
+- fail-closed validation
+
+**9.4 Hidden Coupling.** The base plugin may begin depending on
+Paperclip-specific assumptions.
+
+Mitigation:
+
+- hard separation between base and specialization layers
+- dependency rules enforced in review and tests
+
+### R2.9 Delivery Notes (board §10)
+
+The correct implementation sequence is:
+
+1. extract the original runtime into a base plugin
+2. introduce the host arbitration layer
+3. implement the Paperclip override plugin
+4. prove baseline equivalence with tests
+5. enable Paperclip-specific behavior only through explicit configuration
+
+This is a compatibility-preserving migration, not a wholesale replacement.
+
+### R2.10 Superseded Content In This Record
+
+The directive redefines the target architecture. The following prior
+statements in this record are **superseded** by Revision 2. Per amendment
+policy the superseded content is kept in place below as history and is not
+deleted:
+
+- **"The paperclip bridge becomes the first plugin"** — stated in Overview
+  item 1 ("Port the paperclip bridge to be the first first-class plugin"),
+  Scope, and Architecture And Interfaces. Superseded by the three-layer
+  architecture (R2.3): the original Claude/hook behavior is the first-class
+  **default/base plugin** (board §4.1), and the Paperclip plugin is an
+  additional **override plugin** layered on top of the default plugin
+  (board §4.3).
+- **Host framed as a contribution-point registry** — the Architecture And
+  Interfaces framing of the host (server-side registration plus manifest
+  plus contribution points). The authoritative host definition is now the
+  **capability resolution layer** of board §4.2 together with the
+  Capability Resolution Contract (board §5.3): deterministic registration
+  order, explicit-priority resolution, fallback to the base plugin,
+  fail-closed when no implementation exists, and no implicit cross-plugin
+  coupling.
+- **WS0–WS5 as the forward delivery path** — the Delivery And Rollout
+  sequencing. The forward migration path for the refactor is now the
+  five-phase strategy (R2.5) and the delivery notes (R2.9). The delivered
+  workstream content (WS0–WS4 closed `done`; recorded throughout this
+  record) remains delivery history.
+
+### R2.11 Relationship To Delivered Work — Open Items For The Parent Owner
+
+The directive arrives after workstreams WS0–WS4 of the prior decomposition
+closed `done` (fork commits `c634c15`/`ade5601`/`a063063`; plugin-repo
+`f92c058`/`4489e28`/`c47aefa` — see the Paperclip Snapshot) and while WS5
+([SAA-457](/SAA/issues/SAA-457)) remains blocked. How the delivered fork
+plugin host, contribution points, and bridge plugin map onto the
+base-plugin / host-arbitration / Paperclip-override layers — including what
+Phase 1 (extract the base plugin) and Phase 2 (host-level arbitration)
+require relative to the landed WS1/WS2 surfaces — is not adjudicated by
+this record; it is owned by the implementation re-plan
+[SAA-716](/SAA/issues/SAA-716) under the parent owner, per the board
+directive's five-phase strategy (R2.5) and delivery notes (R2.9).
+
+## Revision 2 Phase 5 — Stabilize And Document (record milestone)
+
+Recorded through the Phase 5 record milestone [SAA-721](/SAA/issues/SAA-721),
+woken on blocker resolution after the Phase 1–4 tickets
+[SAA-717](/SAA/issues/SAA-717) (extract the base plugin),
+[SAA-718](/SAA/issues/SAA-718) (host-level capability arbitration),
+[SAA-719](/SAA/issues/SAA-719) (Paperclip override plugin), and
+[SAA-720](/SAA/issues/SAA-720) (compatibility guards) all closed `done`. This
+section supplements the board's Revision 2 wording (§R2.1–R2.9, preserved
+verbatim above) with the operator-facing runtime contract and operational
+model the board's Phase 5 strategy (R2.5) calls for — the capability matrix,
+override rules, operator configuration guidance, and migration notes. All
+content below reflects only delivered, evidenced work from Phases 1–4
+(executor completion comments on SAA-717–SAA-720; independent Tester verdict
+[SAA-724](/SAA/issues/SAA-724) on Phase 2 and guard-suite authoring
+[SAA-725](/SAA/issues/SAA-725) with the QA-reviewed hardening
+[SAA-727](/SAA/issues/SAA-727) on Phase 4; the QA phase verdict on
+[SAA-720](/SAA/issues/SAA-720)), read back by the documentation specialist
+against both working trees at recording time — no forward-looking promises.
+
+### Phase 5.1 Capability Matrix
+
+The stable capability vocabulary is `CAPABILITY_IDS` in
+`pixel-agents/server/src/plugins/manifest.ts` — 13 ids, every one resolvable
+without guessing (board §5.3). The base column names the `pixel-agents-base`
+delegation wrapper (Phase 1: wrap, never relocate — the facade registers, the
+legacy server modules stay in place); the override column names the Paperclip
+override plugin's declared override scope (`paperclip` v0.6.0, plugin repo
+`src/pixel-agents-plugin/manifest.ts`, Phase 3).
+
+| Capability id | Base implementation (`pixel-agents-base`, all declared `direct`, `fallback: 'none'`) | Delivered override (Paperclip plugin) |
+| --- | --- | --- |
+| `provider-selection` | Providers registry (`server/src/providers/index.ts`) | not declared — resolves to base (deliberate) |
+| `hook-management` | Hook installer + consent flow (`configPersistence.ts`, `claude.ts`/`claudeHookInstaller.ts`); install/uninstall/areInstalled delegation asserted at the spied `claudeProvider` boundary with expected arguments in both the no-plugin and plugin-loaded configurations (guard-pinned after [SAA-727](/SAA/issues/SAA-727)) | not declared — resolves to base (deliberate) |
+| `session-lifecycle` | Runtime descriptor owned by the embedding surface (`cli.ts` owns the `AgentRuntime`) — delegated, never synthesized | not declared — resolves to base (deliberate) |
+| `tool-activity` | Runtime-derived tool-activity (same embedding-surface descriptors) | not declared — resolves to base (deliberate) |
+| `transcript-parsing` | Transcript parser (`transcriptParser.ts`) | not declared — resolves to base (deliberate) |
+| `persistence` | `AgentStateStore` + `configPersistence` | not declared — resolves to base (deliberate) |
+| `ui-data` | Default UI/asset loaders | not declared — resolves to base (deliberate) |
+| `agents-source` | Host-owned per-plugin additive source (`ctx.agents`, manifest `sources.agents`) | declared override — `overrides: 'pixel-agents-base'`, `fallback: 'base'`, priority 0 (bridge translation/agents source) |
+| `appearance-source` | Host-owned per-plugin additive source (`ctx.appearance`, manifest `sources.appearance` — the WS4-A catalog/assignment API) | declared override — `overrides: 'pixel-agents-base'`, `fallback: 'base'`, priority 1 (appearance specialization) |
+| `label-policy` | Host default — additive aggregation of manifest `contributes.labelPolicy` (override/revert, server-evaluated onto `AgentState.labelPolicy`) | declared override — `overrides: 'pixel-agents-base'`, `fallback: 'base'`, priority 2 |
+| `menu` | Host default — additive aggregation of manifest `contributes.menuItems` (`(order, pluginId, itemId)` sort) | declared override — `overrides: 'pixel-agents-base'`, `fallback: 'base'`, priority 3 (reply menu item) |
+| `widgets` | Host default — additive snapshot semantics (`pluginWidgets`) | declared override — `overrides: 'pixel-agents-base'`, `fallback: 'base'`, priority 4 (conversation-feed/dialog-pane widget) |
+| `action-routing` | Host default — owner-routed, privilege-gated `invokePluginAction` | declared override — `overrides: 'pixel-agents-base'`, `fallback: 'base'`, priority 5 (Paperclip-specific reply-forwarder routing) |
+
+Arity note (Phases 2/3 as delivered): `menu`, `label-policy`, `widgets`, and
+`action-routing` are host-arbitrated capabilities whose host default is
+additive aggregation; `agents-source` and `appearance-source` remain per-plugin
+additive host-owned sources — a single-winner swap would break the multi-plugin
+office model. The Paperclip plugin therefore declares its six overrides through
+the manifest `capabilities` contract **without registering replacement
+capability implementations**: they are realized through the manifest
+`contributes` (menuItems/widgets/actions/messages) and the sanctioned
+`ctx.agents`/`ctx.appearance` sources, which the host aggregates additively —
+registering replacements would suppress baseline UI (board §5.5) and is
+infeasible against the host's `getBaseCapabilityImpl` for contribution points.
+The seven runtime capabilities are deliberately **not** declared, so the host
+resolves them to `pixel-agents-base` (board §5.1/§5.2/§5.3) — verified against
+the real manifest by the Phase 4 override-isolation guards.
+
+### Phase 5.2 Override Rules (operator-checkable)
+
+**Declared scope.** A plugin may declare capabilities only from
+`CAPABILITY_IDS` (the 13 ids above). Declaration shape:
+`{ id, implementation: 'direct' | 'override', overrides?, fallback?: 'none' | 'base', priority? }`.
+`priority` is a non-negative bounded integer, valid only on `override`
+(rejected on `direct`). The base plugin declares all 13 as `direct` with
+`fallback: 'none'`. An override must name its target
+(`overrides: 'pixel-agents-base'`). Legacy manifests without a `capabilities`
+block still validate (backward compatible).
+
+**Resolution order** (`PluginHost.resolveCapability`, Phase 2 — deterministic:
+identical registrations always elect the same provider):
+
+```
+resolveCapability(cap):
+  1. groups registered providers for cap into direct (base) and override
+  2. no provider                -> CapabilityResolutionError (fail closed)
+  3. >1 direct provider         -> CapabilityResolutionError (conflict)
+  4. no override                -> base/direct provider   (mode: direct)
+  5. override(s): max priority; >1 at max -> CapabilityResolutionError (ambiguous)
+  6. winner override: mode = fallback:'base' ? wrap-and-delegate : override
+     invoke: override impl; if wrap-and-delegate and it returns CAPABILITY_DELEGATE_TO_BASE
+             -> call base impl (fallback-to-base)
+```
+
+**Precedence.** Highest-priority explicit override wins (board §5.3). Two
+plugins overriding the same capability at the same priority are rejected as
+ambiguous; a non-base plugin declaring `direct` once the base plugin is
+registered is rejected. The base plugin id `pixel-agents-base` is reserved:
+`initPluginHost` registers it deterministically first (before any external
+`--plugin` module loads), and `registerPlugin`/`stopPlugin`/`unregisterPlugin`
+all refuse the id — an external module can never register, re-register, or
+displace it.
+
+**Fallback.** A capability with no override resolves to the base/direct
+provider. An override declared with `fallback: 'base'` runs in
+wrap-and-delegate mode: its implementation runs first and may hand back the
+`CAPABILITY_DELEGATE_TO_BASE` sentinel, causing the host to invoke the base
+implementation (`invokeCapability`/`getBaseCapabilityImpl`). An override
+reaches the base implementation only through the host's declared capability
+interface — never a handler-to-handler or store reach-around (board §4.2, no
+implicit cross-plugin coupling).
+
+**Fail-closed semantics — registration (board §7.1).** Manifest validation
+rejects: missing metadata (identity/version/capability fields), unknown
+capability id, duplicate or conflicting declaration, an override without a
+named override target (ambiguous), contradictory fallback shapes
+(`direct` with `fallback: 'base'`; `override` with `fallback: 'none'`), and
+unknown keys. The `--plugin` module loader aborts startup (exit 1) when a
+module cannot be loaded, exports no `register`, or throws during registration —
+an operator who asked for a plugin never gets a silently plugin-less server.
+
+**Fail-closed semantics — resolution (board §5.3/§5.7).** No provider →
+`CapabilityResolutionError` (the host must not guess, synthesize, or implicitly
+redirect behavior); more than one direct provider → conflict error; ambiguous
+max-priority ties → error. The host exposes no work-creation primitive; the
+Paperclip worker instance-config manifest carries no `issues.create`/
+`issues.update` capability; plugin reply actions route only to the existing
+Paperclip feedback/send-message actions, and the new-work gate routes
+materially-new text to company intake — there is no unauthorized work-creation
+path (guard-pinned against the real manifest with a spied `forwardReply`
+boundary).
+
+### Phase 5.3 Operator Configuration Guidance (board §8)
+
+Runtime behavior is decidable from configuration alone, in three steps:
+
+**1. Base-plugin-only mode (the default).** Start the Pixel Agents server with
+no `--plugin` operands. `initPluginHost` registers `pixel-agents-base`
+deterministically first and nothing else loads, so the runtime behaves
+identically to the pre-refactor legacy experience — hook installation and
+removal, consent flows, provider selection, session lifecycle, tool-activity
+derivation, transcript parsing, existing UI behavior, and persistence
+(board §5.1). With only the base plugin loaded there is no observable change:
+no agents, no widgets, no menu contributions, no contributed messages
+(pinned by the Phase 1 baseline equivalence suite, 19/19, and the Phase 4
+default-equivalence guards, 11/11 — both configurations included).
+
+**2. Adding the Paperclip override plugin.** Start the server with
+`--plugin <module>` pointing at the embedding bundle
+(`dist/pixel-agents-embedding.cjs`; the deploy surfaces wire this: the
+`Dockerfile.pixel-agents` CMD, `docker-compose.bridge-stack.yml` /
+`docker-compose.e2e-override.yml`, and `deploy/k8s/pixel-agents.yaml`). The
+plugin registers as `paperclip` v0.6.0 through the real host API and overrides
+exactly the six declared capabilities (Phase 5.1) — the seven runtime
+capabilities still resolve to `pixel-agents-base`. UI contributions stay
+additive (the reply menu item and the dialog-pane widget join the baseline
+surfaces; nothing is suppressed — board §5.5), and plugin state is namespaced
+(`STATE_NAMESPACES.bridge` / `.characters`), distinct from baseline state
+(board §5.6).
+
+**3. Enabling the alternate transport explicitly.** The feed
+relay/embedding-sidecar transport is an explicitly-enabled,
+configuration-driven override transport, isolated from the default Claude/hook
+path (board §5.4):
+
+- `PAPERCLIP_PIXEL_FEED_HOST` — bind host (default `127.0.0.1`)
+- `PAPERCLIP_PIXEL_FEED_PORT` — bind port (default `8081`, the sidecar feed
+  listener serving `POST /api/plugin-feed`)
+- `PAPERCLIP_PIXEL_FEED_TOKEN` — **required** shared-secret bearer token:
+  `parseEmbeddingEnv` throws and `register()` aborts startup before any
+  plugin/host action when it is missing ("refuses to start without a
+  shared-secret bearer token"); the endpoint answers 401 on
+  unauthenticated/wrong-token requests and never accepts a token in the URL
+  (constant-time SHA-256-digest compare)
+- `PAPERCLIP_PIXEL_API_BASE_URL` + `PAPERCLIP_PIXEL_API_TOKEN` — Paperclip API
+  target for the reply forwarder; without them replies fail closed
+  (`forwarderNotConfigured`, nothing is sent)
+- `PAPERCLIP_ALLOWED_HOSTNAMES` — must include the Paperclip host (compose:
+  `paperclip`; k8s: `paperclip.paperclip-pixels.svc.cluster.local`), otherwise
+  the reply forwarder's in-network target hostname is 403-rejected by the host
+  allowlist
+
+With the plugin loaded but the transport not configured, startup aborts
+fail-closed and the default Claude/hook path (base `hook-management`) stays
+untouched; the provider registry is identical before and after plugin load,
+Claude stays the primary provider, and there is no provider collision
+(transport-compatibility guards, 8/8).
+
+### Phase 5.4 Migration Notes
+
+What moved in each phase (all changes uncommitted in the working trees at
+recording time — fork `pixel-agents/` atop HEAD `a063063`, plugin repo atop
+HEAD `c47aefa` — for the CTO-owned single user-approved commit per ticket per
+`git-ops`; the `paperclip/` submodule is untouched throughout):
+
+- **Phase 1 — extract the base plugin ([SAA-717](/SAA/issues/SAA-717)).**
+  Moved: the original Claude/hook runtime became the first-class default
+  plugin `pixel-agents-base` (`server/src/plugins/basePlugin.ts` new —
+  delegation wrappers over the providers registry, hook installer + consent
+  flow, transcript parser, persistence, UI/asset loaders; wrap, never
+  relocate); `manifest.ts` gained the capability vocabulary + fail-closed
+  validation; `pluginHost.ts` gained the capability registry,
+  `registerBasePlugin`, and reserved-id guards; `plugins/index.ts` registers
+  base first; `cli.ts` documents the ordering. Equivalence evidence:
+  baseline equivalence suite `basePlugin.test.ts` 19/19 (base registers first;
+  every capability id has a registered implementation; base-only output
+  unchanged; reserved-id non-displacement; all §7.1 fail-closed cases reject);
+  full server suite 51 files / 862 tests; `tsc --noEmit` (main + test project)
+  and eslint/prettier clean. DIVERGENCE.md row 2026-09-05. Capability dispatch
+  was intentionally not wired in Phase 1 (Phase 2 owns resolution).
+- **Phase 2 — host-level arbitration ([SAA-718](/SAA/issues/SAA-718)).**
+  Moved: `pluginHost.ts` gained `resolveCapability`/`invokeCapability`/
+  `getBaseCapabilityImpl`/`CapabilityResolutionError`/
+  `CAPABILITY_DELEGATE_TO_BASE` (the resolution order in Phase 5.2);
+  `manifest.ts` gained the `priority` field with fail-closed validation;
+  ambiguous overrides (same capability, same priority) and non-base `direct`
+  declarations are rejected; `menu`/`label-policy`/`widgets`/`action-routing`
+  were re-expressed as host-arbitrated capabilities with additive host
+  defaults, while `agents-source`/`appearance-source` remain per-plugin
+  additive host-owned sources. Equivalence evidence: arbitration suite
+  `pluginCapabilityArbitration.test.ts` 16/16 across all four dispatch modes
+  and the fail-closed paths; full server suite 52 files / 878 tests (from 862);
+  typecheck + eslint clean; outward client snapshot shapes (`pluginWidgets`,
+  menu assembly, `agentLabelPolicy`) unchanged; independent Tester verdict
+  [SAA-724](/SAA/issues/SAA-724): PASS, no defects.
+- **Phase 3 — Paperclip override plugin ([SAA-719](/SAA/issues/SAA-719)).**
+  Moved: the bridge was re-expressed as the override plugin with a declared
+  override scope — plugin repo only (`src/pixel-agents-plugin/manifest.ts`,
+  `types.ts`, `index.ts`): exactly six overrides with explicit fallback to
+  base (Phase 5.1), the seven runtime capabilities deliberately undeclared.
+  Verified against the real Phase 2 host validator
+  (`validatePluginManifest(createPaperclipPluginManifest())` → `ok: true`) and
+  the non-overridden capabilities were shown to resolve to `pixel-agents-base`.
+  Transport isolation demonstrated (§5.4): `parseEmbeddingEnv({})` throws
+  fail-closed, so `register()` aborts before any plugin/host action.
+  Equivalence evidence: plugin-repo vitest 21 files / 438 tests; jest UI 116 +
+  domain 150; `npm run typecheck` and eslint on the changed files clean.
+- **Phase 4 — compatibility guards ([SAA-720](/SAA/issues/SAA-720)).** Moved:
+  test-only guard suites in `pixel-agents/server/__tests__/guards/` (5 suites
+  + `guardTestUtils.ts`, 890 lines) locking the board contracts against the
+  real shipped Paperclip override manifest (`paperclip` v0.6.0):
+  default-equivalence 11 (§5.1), override-isolation 7 (§9.2 — exact-six
+  override assertion; all seven runtime capabilities resolve to base with the
+  plugin loaded), fallback-resolution 11 (§5.2/§5.3 — deterministic
+  resolution, priority-only precedence stable across registration orders,
+  wrap-and-delegate hand-back, genuine fail-closed cases), transport
+  compatibility 8 (§5.4), security fail-closed 18 (§5.7 — malformed-manifest
+  shapes, base-id displacement, work-creation allow-list, state isolation).
+  Equivalence evidence: authored by Tester ([SAA-725](/SAA/issues/SAA-725),
+  52/52), hardened after the line-by-line QA review filed three test-quality
+  findings as [SAA-727](/SAA/issues/SAA-727) (hook-install behavioral
+  delegation, a tautological state-isolation test, a mislabeled fail-closed
+  test — all fixed test-only and verified in code), final **55/55 green**
+  (5 files, exit 0), independently re-run twice by QA; no application-code
+  defects found in the Phase 1–3 baseline.
+
+**WS5 visual-suite disposition.** The prior plan's visual chain
+([SAA-457](/SAA/issues/SAA-457), blocked on the e2e environment — stack
+redeploy interrupted 2026-09-04) was re-anchored to the Revision 2
+architecture: the [SAA-694](/SAA/issues/SAA-694) authoring brief now includes
+default-view equivalence (base plugin only) alongside the override-plugin
+visual specs, noted on [SAA-692](/SAA/issues/SAA-692). The visual chain
+completes on its own tickets as UI-level evidence riding on the phase work —
+it is not part of the five Phase 4 guard categories and does not block them.
+
+**Residual open item (pre-existing, flagged by the Phase 4 QA verdict for
+Phase 5 stabilization).** `tsc --noEmit -p server/tsconfig.test.json`
+surfaces `rootDir` errors from the cross-repo guard imports (inherent to
+importing the real manifest from `src/pixel-agents-plugin/`) and three
+pre-existing `TS2322` manifest-shape errors in the security suite's
+fail-closed-registration tests; runtime guards are unaffected (vitest
+transform). Test-typeconfig hygiene is an implementation change outside this
+documentation milestone's scope — recorded here for the parent owner.
+
+**Board §R2.7 acceptance criteria — evidence now on record.** Phase-level
+evidence exists for every criterion (1 legacy behavior as the default plugin —
+Phase 1; 2 default plugin reproduces pre-refactor behavior — Phase 1
+equivalence suite + Phase 4 default-equivalence guards; 3 Paperclip plugin
+layers on top — Phase 3; 4 unoverridden behavior falls back to base — Phase 2
+arbitration suite + Phase 4 override-isolation/fallback guards; 5 default
+installation/communication unchanged unless explicitly overridden — Phase 3
+transport isolation + Phase 4 transport guards; 6 compatibility, regression,
+and security tests pass — Phase 4 suites plus the unchanged legacy suites; 7
+operators can reason about runtime behavior from configuration alone — Phase
+5.3 above). The formal checking of the §R2.7 checklist remains the parent
+owner's at domain-root close, which still awaits the WS5 gate
+([SAA-457](/SAA/issues/SAA-457)) and the CTO-owned single-commit gates; the
+checklist above is left unchecked accordingly.
 
 ## Overview
 
@@ -87,6 +752,12 @@ that this specification addresses on both sides:
    and label policy; plus de-hardcoding of claude-specific features into
    provider-extensible mechanisms. Pixel Agents is a fork from now on — no
    upstream PRs.
+   _Amended by Revision 2 (2026-09-05): the board directive redefines the
+   plugin target — the original Claude/hook behavior is modeled as the
+   first-class default/base plugin, and the Paperclip plugin is an override
+   layer on top; the "bridge as the first plugin" framing is superseded (see
+   Revision 2 §R2.3 and §R2.10). The fork policy and the de-hardcoding
+   direction are not addressed by the directive and remain as recorded._
 2. **The paperclip bridge plugin gains a per-agent character system** following
    the [Agent-Pixels](https://github.com/gcampton/Agent-Pixels) per-agent
    character-definition pattern (ordered catalog + per-agent assignment,
@@ -213,7 +884,14 @@ Board scope, mapped bullet-by-bullet (full change inventory in the CTO review,
 **Testing:**
 
 - Playwright visual-validation suite asserting: task-lifecycle statuses reach
-  the UI (todo → in_progress → in_review/done mapped to character activity),
+  the UI (todo → in_progress → in_review/done mapped to character activity —
+  **accepted 2026-09-05 as realized through run edges**, CTO ruling
+  [SAA-740](/SAA/issues/SAA-740): a live agent run is the in_progress state
+  made visible — rising run edge (`issue.checked_out`/`agent.run.started`) →
+  active + typing frames + "Task: <title>" caption, falling edge
+  (`agent.run.finished|failed|cancelled`) → idle, caption closed;
+  todo/in_review/done with no live run render as idle, the honest no-work
+  state — see Decisions, 2026-09-05),
   the rendered name is correct (blue label = agent name), character behavior is
   consistent with activity (reading → reading frames; writing/developing →
   typing frames), label show/hide behavior, and the click-menu reply
@@ -271,7 +949,7 @@ Board scope, mapped bullet-by-bullet (full change inventory in the CTO review,
 | FR-16 | Settings page shows only global configurations; custom `settingsPage` slot dropped so the host auto form renders the global fields editable; read-only status block stays on the plugin page; per-agent settings move to the agent's surface | Must | Settings UI tests |
 | FR-17 | Per-agent character assets shared with Pixel Agents via the external-asset-directory path (interim) and the fork appearance API (final), so Pixel Agents always represents the agent as user-defined | Must | Asset sync tests; visual validation |
 | FR-18 | No paperclip core changes (except the FR-14 board-decision exception if approved) | Must | Diff review of the single commit |
-| FR-19 | Playwright visual-validation suite: task-lifecycle statuses reach the UI, rendered names correct, character behavior consistent with activity, label behavior, click-menu reply round-trip | Must | Playwright suite green on deployed stack |
+| FR-19 | Playwright visual-validation suite: task-lifecycle statuses reach the UI, rendered names correct, character behavior consistent with activity, label behavior, click-menu reply round-trip — **accepted 2026-09-05 under the run-edge realization** (CTO [SAA-740](/SAA/issues/SAA-740)): in_progress = a live agent run made visible through run-edge events (active + typing frames + caption), no live run = idle; the issue status field is deliberately not consumed (see Decisions and Risks, 2026-09-05) | Must | Playwright suite green on deployed stack |
 | FR-20 | Existing domain/worker/UI suites stay green; duplicated stale copy at `tests/e2e/` retired | Must | Suite runs green |
 
 ## Non-Functional Requirements
@@ -291,6 +969,15 @@ Board scope, mapped bullet-by-bullet (full change inventory in the CTO review,
 
 From the CTO technical-governance review ([SAA-448](/SAA/issues/SAA-448)
 Deliverable 1), approved with conditions:
+
+_Amended by Revision 2 (2026-09-05): the board directive supersedes the
+host-as-server-side-registration-plus-contribution-points framing and the
+"paperclip bridge becomes the first plugin" statement below — the host is
+now defined as the capability-resolution layer and the Paperclip plugin as
+an override plugin layered on the default/base plugin (see Revision 2 §R2.3
+and §R2.10). The delivered WS1/WS2/WS4 surfaces described here remain
+delivery history; their reconciliation to the revised target is owned by
+the re-plan [SAA-716](/SAA/issues/SAA-716)._
 
 - **Pixel Agents fork side.** (1) Per-provider dispatch keyed on `providerId`
   replaces the compile-time one-entry registry — the mandatory first refactor.
@@ -435,6 +1122,14 @@ Deliverable 3); the CEO turns these into implementation children under
 [SAA-447](/SAA/issues/SAA-447), each carrying specification ID
 `PAPERCLIP_PIXELS-2`:
 
+_Amended by Revision 2 (2026-09-05): the WS0–WS5 sequencing below is no
+longer the forward migration path; the forward path is the board's
+five-phase strategy and delivery notes (see Revision 2 §R2.5, §R2.9, and
+§R2.10). The delivered workstreams (WS0–WS4 closed `done`) remain delivery
+history, and reconciliation of the remaining work — including the WS5
+testing & hardening gate — is owned by the re-plan
+[SAA-716](/SAA/issues/SAA-716)._
+
 1. **WS0 — Plugin quick wins** (no dependencies, start immediately):
    single-line native-style menu entry; settings-page simplification
    (global-only, restore editable global config); expose `hueShift` + picker UX
@@ -483,6 +1178,13 @@ per `git-ops`.
   (updated during delivery); fork divergence log in `pixel-agents/`.
 
 ## Acceptance Criteria
+
+_Amended by Revision 2 (2026-09-05): this checklist was written for the
+superseded "bridge as first plugin" plan and is kept unchanged as the
+acceptance record of that plan (checked items carry their outcome
+snapshots). The acceptance criteria for the revised target architecture
+are the board's Revision 2 criteria (§R2.7), which are unchecked pending
+the re-plan [SAA-716](/SAA/issues/SAA-716) and its implementation._
 
 - [x] **Plugin architecture:** Pixel Agents hosts the bridge as a first-class
       plugin (no hook-impersonation, synthetic transcripts, or WS
@@ -767,6 +1469,7 @@ per `git-ops`.
 | Stale Tester pin on the retired manifest shape: `test/plugin-registration.test.ts:113-115` ("carries the WS2-A2 placeholder contributions untouched by the A1 host") still expects `labelPolicy: {}` + `widgets: []` and is the sole red in the worker suite (336/337) | One red test in the plugin repo's worker suite until re-pinned | Tester via [SAA-551](/SAA/issues/SAA-551) (`in_progress`, observed 2026-09-02T03:18:00Z) | [SAA-551](/SAA/issues/SAA-551) (child of [SAA-549](/SAA/issues/SAA-549)) re-pins the manifest contributions pin and adds new embedding-surface suites; [SAA-549](/SAA/issues/SAA-549) stays blocked on it until then |
 | Stale live relay documentation outside the WS2-D scope: the top-level `README.md` (unmodified by this change set) still documents `paperclip-pixel-relay` as a live companion CLI (install table row, `npx @decaf-ts/paperclip-pixels paperclip-pixel-relay` run instructions), and the CTO-governed project-root `AGENTS.md` still describes `bin/paperclip-pixel-relay.js` as the companion process — the WS2-D "all references updated" claim is scoped to the Dockerfile/compose/k8s/deploy README, which are clean | A user following the top-level README would try to run the deleted relay CLI | Commit owner at the WS2 single-commit gate on [SAA-458](/SAA/issues/SAA-458) (README); CTO (AGENTS.md — governance file, DDS does not edit without explicit CTO approval) | Fold a top-level-README refresh into the WS2 close or a follow-up; flag the AGENTS.md drift to the CTO; read-back-verified at [SAA-552](/SAA/issues/SAA-552) (the deploy-facing surfaces — `deploy/README.md`, Dockerfile comment, k8s table row — correctly describe the relay as retired) |
 | Two complementary duplicate WS2-B test-file pairs on disk (`appPluginMenuWiring` + `agentMenuAppWiring`, `fixtureWidgetData` + `fixtureWidgetFeed`) — both green, different nuances (a concurrent duplicate execution of [SAA-545](/SAA/issues/SAA-545) was merged rather than reverted) | Redundant test coverage; consolidation decision pending at the commit boundary | Commit owner (CTO) at the WS2 single-commit gate on [SAA-458](/SAA/issues/SAA-458) | Consolidate or keep both at the commit owner's discretion; recorded by Tester [SAA-545](/SAA/issues/SAA-545) and folded in at [SAA-548](/SAA/issues/SAA-548). **Resolved (observed 2026-09-03T01:18:00Z, [SAA-624](/SAA/issues/SAA-624)):** kept — the WS2 fork commit `ade5601` contains all four files (read-back-verified) |
+| Status-driven captions rejected — would render a character active with no run executing: the issue status field mutates without runs (board edits, bulk transitions, reassignments), and in_review/done have no distinct honest animation (host states are idle/walk/type only; a per-status mapping for review/done would fabricate activity) | A status → activity mapping would show characters "working" while nothing executes and mislead the board about actual work | CTO (ruling [SAA-740](/SAA/issues/SAA-740), 2026-09-05; escalated by QA from the FR-19 suite review [SAA-692](/SAA/issues/SAA-692)) | **Resolved — FR-19 accepted under the run-edge realization** (see Decisions, 2026-09-05): the feed mapper consumes run edges and gates only (`src/pixel-agents-plugin/feed-mapper.ts`; `issue.updated` consumes title/assignee only; no issue-status → activity mapping exists); todo/in_review/done with no live run render as idle — consistent with the already-accepted "developing → typing frames" delta above |
 
 ## Paperclip Work Breakdown
 
@@ -862,6 +1565,8 @@ state `blocked` → CEO resumes to decompose under CTO execution, carrying
 | 2026-09-03 | Back-End Developer ([SAA-588](/SAA/issues/SAA-588)) | Dialog-pane redaction and truncation live **plugin-side, never renderer-side**: `src/core/domain/dialog.ts` applies always-on secret redaction (Bearer, Basic, assignment/compound-key, ≥32-char long-credential patterns → `[redacted]`) before any truncation decision, then mode-dependent excerpt caps (120 chars with the toggle OFF, 480 ON) with a 600-char wire cap in both modes; the webview renders only the plugin-sent `paperclip.dialog.lines` payloads and never sees raw prompts | Honors PAPERCLIP_PIXELS-1 NFR-7 and locked CEO decision 2 (default OFF): a renderer-side filter could not be audited from the plugin repo and would trust an unauditable wire; the plugin-side pipeline is unit-testable and proven by Tester's fail-on-old-code guardrail ([SAA-620](/SAA/issues/SAA-620)) — no full sensitive prompt ships with the toggle OFF |
 | 2026-09-03 | Back-End Developer ([SAA-588](/SAA/issues/SAA-588)) | Appearance catalog declaration is **best-effort fail-closed**: onStart wraps `ctx.appearance.declareCharacterCatalog` in try/catch — a host refusal (e.g. the asset gate rejecting the catalog directory) logs `paperclip_appearance_catalog_refused` (plugin id + error message, never the feed token) and degrades to palette rendering (the frozen WS3 seat/fallback); `hueShift` is retained as the tint/fallback layer on top of both paths | The WS4-C contract makes declaration best-effort: a host gate refusal must never propagate out of onStart or break the live feed; the degradation keeps the bridge running on the WS3 palette path. The missing try/catch was a Tester-found production bug ([SAA-620](/SAA/issues/SAA-620) finding 1), fixed and re-verified before close |
 | 2026-09-03 | Back-End Developer ([SAA-588](/SAA/issues/SAA-588)) | The dialog feed **sources only existing intake/subscription surfaces** (comment/run/approval lines the relay already observes) — no new host capabilities, no issue-creation primitives; `dialogPanePrivacyOptIn` is parsed strict `=== true` at relay configure (mapper rebuilt on change) with worker-side boolean validation, so undefined/`false`/`"true"`/`1` all mean OFF | Keeps the fail-closed boundary discipline (NFR-1/FR-4 lineage) on the new feed surface; strict-true parsing prevents truthy-coercion opt-ins (Tester-verified in [SAA-620](/SAA/issues/SAA-620)'s `dialog-pane-registration` suite) |
+| 2026-09-05 | Board ([SAA-447](/SAA/issues/SAA-447), comment `5628530d` — recorded via [SAA-715](/SAA/issues/SAA-715)) | **Revision 2 architectural directive:** the original Claude/hook behavior is the first-class default/base plugin; a plugin-host arbitration layer resolves capabilities by explicit priority with base-plugin fallback and fail-closed behavior; the Paperclip plugin is an override/specialization layer on top (never a replacement); seven core contracts (default compatibility, override, capability resolution, transport, UI, data, security); five-phase migration (extract base plugin → host-level arbitration → Paperclip plugin → compatibility guards → stabilize/document) — "a compatibility-preserving migration, not a wholesale replacement" | Board architectural review arriving after WS0–WS4 closed; redefines the target architecture and supersedes the "bridge as the first plugin" and host-as-contribution-point-registry framings (recorded at Revision 2 §R2.3 and §R2.10, board wording preserved); the prior acceptance checklist is kept as the record of the delivered plan, with the board's §R2.7 criteria as the forward gate; implementation re-plan owned by [SAA-716](/SAA/issues/SAA-716) |
+| 2026-09-05 | CTO ([SAA-740](/SAA/issues/SAA-740); escalated by QA from the FR-19 suite review [SAA-692](/SAA/issues/SAA-692); recorded via [SAA-741](/SAA/issues/SAA-741)) | **FR-19 "task-lifecycle statuses reach the UI" is accepted as satisfied by the as-implemented run-edge realization.** A live agent run IS the in_progress state made visible: rising run edge (`issue.checked_out`/`agent.run.started`) → active + typing frames + "Task: <title>" caption; falling edge (`agent.run.finished|failed|cancelled`) → idle, caption closed. todo / in_review / done with no live run render as idle — the honest no-work state. The lifecycle sequence todo → in_progress → in_review/done is realized end-to-end through the events that correspond to actual work. The issue status field is deliberately not consumed by the feed mapper: it mutates without runs (board edits, bulk transitions, reassignments), so status-driven captions would show characters "working" while nothing executes — status-driven implementation was considered and rejected. in_review/done have no distinct honest animation (host states are idle/walk/type only; a per-status mapping for review/done would fabricate activity — consistent with the already-accepted "developing → typing frames" delta in the Risks table). The run-edge Playwright specs satisfy FR-19 as accepted; status-transition specs are NOT required; no implementation work is directed | Resolves the QA FR-19 interpretation escalation without directing rework: the office must not lie — activity is driven by run edges (ground truth for "an agent is working a task"), not by a status field that can mutate with no run executing; board intent met ([SAA-447](/SAA/issues/SAA-447) targeted the recorded gap "Testing does not visually validate the pipeline", which the suite validates end-to-end — real Paperclip events → plugin feed → office characters); per-status enrichment may be revisited non-blockingly if the fork later adds distinct review/done host states |
 
 ## Execution Log
 
@@ -1755,13 +2460,150 @@ state `blocked` → CEO resumes to decompose under CTO execution, carrying
 - Repository edits left uncommitted for the technical parent ticket executor
   to include in the domain root's single user-approved commit per `git-ops`.
 
+### 2026-09-05T03:05:00Z - Delivery Documentation Specialist
+
+- Woke on the `amend` (board review) milestone [SAA-715](/SAA/issues/SAA-715)
+  under the specification domain root [SAA-447](/SAA/issues/SAA-447): record
+  the board's architectural-review directive as Revision 2 in this record.
+- Verified the directive source by read-back: board comment
+  `5628530d-93cb-4a88-a578-ffe418662768` on [SAA-447](/SAA/issues/SAA-447)
+  (posted 2026-09-05T02:53:52Z) — the body matches the task-issued directive
+  exactly; the fenced block's flattened line breaks were restored in the
+  record with no word changed, reordered, or omitted.
+- Recorded Revision 2 (§R2.1–R2.11): desired end state, non-goals,
+  three-layer target architecture, all seven core contracts, the five-phase
+  implementation strategy, functional requirements, acceptance criteria,
+  risks, and delivery notes — in the board's wording; plus explicit
+  supersession notes at Overview item 1, Architecture And Interfaces,
+  Delivery And Rollback, and Acceptance Criteria, and the delivered-work
+  reconciliation boundary (owned by the re-plan
+  [SAA-716](/SAA/issues/SAA-716), not this record).
+- Refreshed the Paperclip Snapshot from live read-back: the parent is
+  blocked on this milestone, the re-plan [SAA-716](/SAA/issues/SAA-716),
+  and WS5 [SAA-457](/SAA/issues/SAA-457); workstream parents
+  SAA-454/455/456/458/459 all closed `done` with their close-gate commits
+  (fork `c634c15`/`ade5601`/`a063063`; plugin repo
+  `f92c058`/`4489e28`/`c47aefa`).
+- Re-ran the domain-record validator after all edits (see Verification
+  Evidence); published the child-owned `delivery-docs` mapping body as a
+  revisioned document on this milestone child [SAA-715](/SAA/issues/SAA-715)
+  for the parent owner of [SAA-447](/SAA/issues/SAA-447) to publish
+  mechanically.
+- Jira gate disabled (`JIRA_ENABLED` not `true`); no Jira workflow invoked.
+- Repository edits left uncommitted for the technical parent ticket executor
+  to include in the domain root's single user-approved commit per `git-ops`.
+
+### 2026-09-05T04:45:00Z - Delivery Documentation Specialist
+
+- Woke on blocker resolution of the Phase 5 record milestone
+  [SAA-721](/SAA/issues/SAA-721) under the specification domain root
+  [SAA-447](/SAA/issues/SAA-447): record the board R2.5 Phase 5 deliverables
+  (capability matrix, override rules, operator configuration guidance,
+  migration notes) from the Phase 1–4 completion evidence.
+- Validated the handoff evidence by reading the completion comments on
+  [SAA-717](/SAA/issues/SAA-717) (Phase 1), [SAA-718](/SAA/issues/SAA-718)
+  (Phase 2 + Tester verdict [SAA-724](/SAA/issues/SAA-724)),
+  [SAA-719](/SAA/issues/SAA-719) (Phase 3), and [SAA-720](/SAA/issues/SAA-720)
+  (Phase 4 — QA review, [SAA-725](/SAA/issues/SAA-725) authoring,
+  [SAA-727](/SAA/issues/SAA-727) hardening, final 55/55 verdict), then
+  independently read the delivered facts back against both working trees
+  (see Verification Evidence).
+- Recorded **Revision 2 Phase 5** (§Phase 5.1–5.4): the 13-id capability
+  matrix with base implementations and the Paperclip plugin's exact six
+  declared overrides (priorities 0–5); the override contract in
+  operator-checkable form (declared scope, the deterministic resolution
+  order, precedence, fallback/wrap-and-delegate, and both fail-closed
+  tiers); the three-step operator configuration guidance (base-plugin-only
+  mode, adding the Paperclip override plugin via `--plugin`, enabling the
+  alternate transport explicitly through `PAPERCLIP_PIXEL_FEED_*` /
+  `PAPERCLIP_PIXEL_API_*` / `PAPERCLIP_ALLOWED_HOSTNAMES`); and per-phase
+  migration notes with equivalence evidence pointers, the WS5 visual-suite
+  disposition, the pre-existing test-typeconfig residual, and the §R2.7
+  evidence map (checklist left unchecked for the parent owner).
+- Refreshed the Paperclip Snapshot from live read-back: the parent
+  [SAA-447](/SAA/issues/SAA-447) is now blocked only on WS5
+  [SAA-457](/SAA/issues/SAA-457); the amendment [SAA-715](/SAA/issues/SAA-715),
+  the re-plan [SAA-716](/SAA/issues/SAA-716), and all WS0–WS4 workstream
+  parents are `done`; the Revision 2 Phase 1–4 change sets are `done` and
+  uncommitted in the shared working trees (fork atop `a063063`, plugin repo
+  atop `c47aefa`) for the CTO-owned single-commit gates.
+- Re-ran the domain-record validator after all edits (see Verification
+  Evidence); published the child-owned `delivery-docs` mapping body as a
+  revisioned document on this milestone child [SAA-721](/SAA/issues/SAA-721)
+  for the parent owner of [SAA-447](/SAA/issues/SAA-447) to publish
+  mechanically.
+- Jira gate disabled (`JIRA_ENABLED` not `true`); no Jira workflow invoked.
+- Repository edits left uncommitted for the technical parent ticket executor
+  to include in the domain root's single user-approved commit per `git-ops`.
+
+### 2026-09-05T10:20:00Z - Delivery Documentation Specialist
+
+- Woke on the `decision` milestone [SAA-741](/SAA/issues/SAA-741) (child of
+  the CTO ruling issue [SAA-740](/SAA/issues/SAA-740)) under the
+  specification domain root [SAA-447](/SAA/issues/SAA-447)): record the CTO
+  technical-governance ruling that FR-19 is accepted under the as-implemented
+  run-edge realization, so the WS5 chain ([SAA-693](/SAA/issues/SAA-693) →
+  [SAA-457](/SAA/issues/SAA-457)) and the board §8 evidence on
+  [SAA-447](/SAA/issues/SAA-447) can cite FR-19 acceptance without
+  contradicting the record.
+- Validated the handoff against the ruling source: read the CTO ruling
+  comment on [SAA-740](/SAA/issues/SAA-740) (posted 2026-09-05T10:10:58Z,
+  issue `done`) — the task-issued facts match the ruling verbatim in substance
+  (accept the run-edge realization; status-driven implementation rejected; no
+  implementation work directed; conditions naming this milestone and the
+  [SAA-692](/SAA/issues/SAA-692) unblock).
+- Recorded the ruling: a Decisions table entry (2026-09-05, CTO,
+  [SAA-740](/SAA/issues/SAA-740)) with the full run-edge realization content;
+  annotations on the Testing bullet and the FR-19 row so the record and the
+  as-built product agree; and a Risks row for the rejected
+  status-driven-caption alternative. No technical content was decided by the
+  documentation specialist.
+- Folded in the verification evidence: `e2e/paperclip/character-activity.spec.ts`
+  (authored on [SAA-694](/SAA/issues/SAA-694)) drives a real run via
+  `wakeupAgent` (queued → running → failed) and asserts idle → active/typing
+  frames + caption → idle; QA independently re-ran it green on the deployed
+  stack 2026-09-05 ([SAA-692](/SAA/issues/SAA-692)). Independently read back
+  the as-built facts on the current tree (see Verification Evidence): the
+  feed mapper consumes run edges and gates only; `issue.updated` consumes
+  title/assignee only; no issue-status → activity mapping exists.
+- Re-ran the domain-record validator after all edits (see Verification
+  Evidence); published the child-owned `delivery-docs` mapping body as a
+  revisioned document on this milestone child [SAA-741](/SAA/issues/SAA-741)
+  for the parent owner of [SAA-447](/SAA/issues/SAA-447) to publish
+  mechanically.
+- Jira gate disabled (`JIRA_ENABLED` not `true`); no Jira workflow invoked.
+- Repository edits left uncommitted for the technical parent ticket executor
+  to include in the domain root's single user-approved commit per `git-ops`.
+
 ## Changed Artifacts
 
 | Path | Purpose |
 | --- | --- |
-| `workdocs/ai/project/specifications/PAPERCLIP_PIXELS_2.md` | Specification domain record (this file) |
+| `workdocs/ai/project/specifications/PAPERCLIP_PIXELS_2.md` | Specification domain record (this file) — Revision 2 Phase 5 record content (capability matrix, override rules, operator guidance, migration notes) recorded 2026-09-05 via [SAA-721](/SAA/issues/SAA-721); FR-19 run-edge realization ruling recorded 2026-09-05 via [SAA-741](/SAA/issues/SAA-741) |
 | `workdocs/ai/project/plan.md` | Domain-root index reconciliation (PAPERCLIP_PIXELS-2 / SAA-447 added) |
 | _(milestone child issue document `delivery-docs`)_ | Child-owned mapping handoff authored on [SAA-449](/SAA/issues/SAA-449); parent owner publishes it to [SAA-447](/SAA/issues/SAA-447) |
+| _(milestone child issue document `delivery-docs` on [SAA-715](/SAA/issues/SAA-715))_ | Amendment (Revision 2) mapping handoff for the board-directive milestone; parent owner publishes it to [SAA-447](/SAA/issues/SAA-447) after this milestone completes |
+| _(milestone child issue document `delivery-docs` on [SAA-721](/SAA/issues/SAA-721))_ | Revision 2 Phase 5 record-milestone mapping handoff; parent owner publishes it to [SAA-447](/SAA/issues/SAA-447) after this milestone completes |
+| _(milestone child issue document `delivery-docs` on [SAA-741](/SAA/issues/SAA-741))_ | FR-19 run-edge realization decision-milestone mapping handoff; parent owner publishes it to [SAA-447](/SAA/issues/SAA-447) after this milestone completes |
+
+Revision 2 Phase 1–4 implementation and guard change sets (re-plan
+[SAA-716](/SAA/issues/SAA-716) decomposition; uncommitted in the shared
+working trees — fork `pixel-agents/` HEAD `a063063` and plugin-repo HEAD
+`c47aefa` both untouched, nothing pushed; each phase rides its ticket's
+CTO-owned single user-approved commit per `git-ops`; the `paperclip/`
+submodule is untouched):
+
+| Path | Purpose |
+| --- | --- |
+| `pixel-agents/server/src/plugins/manifest.ts` | Phase 1/2: capability vocabulary (`CAPABILITY_IDS`, 13 ids), `capabilities` declaration shape with fail-closed validation (§7.1), and the `priority` field with arbitration validation |
+| `pixel-agents/server/src/plugins/basePlugin.ts` (new) | Phase 1: the `pixel-agents-base` default plugin — delegation wrappers over the legacy server modules (wrap, never relocate); all 13 capabilities `direct`/`fallback: 'none'` |
+| `pixel-agents/server/src/plugins/pluginHost.ts` | Phase 1/2: capability registry + `registerBasePlugin` + reserved-id guards; `resolveCapability`/`invokeCapability`/`getBaseCapabilityImpl`/`CapabilityResolutionError`/`CAPABILITY_DELEGATE_TO_BASE` arbitration |
+| `pixel-agents/server/src/plugins/index.ts`, `pixel-agents/server/src/cli.ts` | Phase 1: base registers deterministically first, before any external `--plugin` module |
+| `pixel-agents/server/__tests__/basePlugin.test.ts` (new) | Phase 1: baseline equivalence + capability fail-closed suite (19 tests) |
+| `pixel-agents/server/__tests__/pluginCapabilityArbitration.test.ts` (new) | Phase 2: arbitration suite (16 tests; Tester verdict [SAA-724](/SAA/issues/SAA-724)) |
+| `pixel-agents/server/__tests__/guards/` (new, 6 files, 890 lines) | Phase 4: the five guard suites + `guardTestUtils.ts` (55 tests; authored via [SAA-725](/SAA/issues/SAA-725), hardened via [SAA-727](/SAA/issues/SAA-727), QA verdict [SAA-720](/SAA/issues/SAA-720)) |
+| `pixel-agents/DIVERGENCE.md` | Phase 1 divergence row (2026-09-05: capability vocabulary + base/default plugin extraction) |
+| `src/pixel-agents-plugin/manifest.ts`, `types.ts`, `index.ts` | Phase 3: the Paperclip bridge's declared override scope — exactly six overrides of `pixel-agents-base` with `fallback: 'base'` and priorities 0–5; mirrored capability types; re-exports |
 
 WS3 backend delivery ([SAA-469](/SAA/issues/SAA-469), Back-End Developer;
 uncommitted on `master`, rides the single user-approved commit on
@@ -2018,6 +2860,16 @@ untouched, nothing pushed); rides the single user-approved commit on
 | 2026-09-03T01:03:38Z | Tester ([SAA-620](/SAA/issues/SAA-620), final verdict) | Acceptance-suite authoring + verification: 3 new suites (appearance loader/applier/embedding declare incl. catalog-refusal degradation + unknown-id fail-closed; guardrail redaction/caps/wire-clamp/batch validation; registration/toggle/worker validation); fail-on-old-code guardrail; 2 production bugs found → pinned `it.fails` → executor-fixed → pins promoted and strengthened | Pass — zero remaining findings | `npm run typecheck` ✓; `npx vitest run` 21 files / 437 passed / 0 expected-fail ✓; jest 116 ✓ + 150 ✓; eslint ✓; bugs fixed: onStart catalog-refusal degradation (`src/pixel-agents-plugin/embedding.ts`) and short Basic-credential redaction (`src/core/domain/dialog.ts`); no production code touched by Tester |
 | 2026-09-03T01:08:00Z | Delivery Documentation Specialist ([SAA-624](/SAA/issues/SAA-624)) | Independent read-back on the plugin repo worktree: `git log --oneline` (HEAD `4489e28` — the https-transport relay-feed fix — atop the committed WS2 bridge content `f92c058`) + `git status --porcelain` (23 uncommitted paths: 14 modified + 5 new incl. the 3 Tester suites — no commits by this change set); presence of `src/pixel-agents-plugin/appearance.ts`, `src/core/domain/dialog.ts`, and the 3 new test files; `declareCharacterCatalog` try/catch + `paperclip_appearance_catalog_refused` in `embedding.ts`; caps `120/480/600` + `BEARER/BASIC/ASSIGNMENT/LONG_CREDENTIAL` patterns in `dialog.ts`; strict `=== true` at `relay.ts:255` + boolean validation at `worker.ts:766-769`; `dialog-pane` widget + `paperclip.dialog.lines` + `sources: {agents: true, appearance: true}` in `manifest.ts`; `addExternalAssetDirectory` grep over `src/` (JSDoc comment only — interim sharing retired); raw-`fetch` loopback bypass still bounded in `relay.ts` | Pass | All confirmed as reported: HEAD steady with WS4-C uncommitted atop `4489e28`; appearance adoption, dialog guardrails, strict toggle parsing, workaround-retirement inventory, and the kept host exceptions all present as reported |
 | 2026-09-03T01:20:00Z | Delivery Documentation Specialist ([SAA-624](/SAA/issues/SAA-624)) | Closing-pass verification: live Paperclip status read-back ([SAA-447](/SAA/issues/SAA-447)/457/459/588/620/551/549/585/587/458/454/455/456); fork `git log --oneline` + `git show ade5601 --stat`/`--name-only` (WS2 fork-side single-commit contents; `git show ade5601:DIVERGENCE.md` + `grep -c "SAA-532"` = 1); fork `git status --porcelain` (WS4-A/B appearance files uncommitted atop `ade5601`); plugin repo `git log --oneline` + `git status --porcelain` (HEAD `4489e28` steady, WS4-C uncommitted); `node <skill-root>/scripts/validate-domain-record.mjs workdocs/ai/project/specifications/PAPERCLIP_PIXELS_2.md` after all closing-pass edits | Pass | Paperclip: SAA-454/455/456/458/585/587/620/551/549 `done`; SAA-447/457/459/588 `blocked` exactly as snapshotted (SAA-459 blocked on SAA-588 only; SAA-588 blocked on this milestone SAA-624). Fork commit `ade5601` confirmed as the WS2 single commit — includes both [SAA-532](/SAA/issues/SAA-532) deliverables and all four duplicate-pair test files; WS4-A/B appearance change set uncommitted atop it as recorded; plugin repo HEAD steady. Validator: `Valid domain record` (exit 0) |
+| 2026-09-05T02:57:00Z | Delivery Documentation Specialist ([SAA-715](/SAA/issues/SAA-715)) | Read-back of the directive source: board comment `5628530d-93cb-4a88-a578-ffe418662768` on [SAA-447](/SAA/issues/SAA-447) via the Paperclip API | Pass | Comment present, board-authored (board user `ZYIATiBLBYVMNWVEW6IGHFVTbZ4p2a8F`), posted 2026-09-05T02:53:52Z; body matches the task-issued directive text exactly; the fenced block carries flattened line breaks — restored in Revision 2 with line/list breaks only, no word changed |
+| 2026-09-05T03:00:00Z | Delivery Documentation Specialist ([SAA-715](/SAA/issues/SAA-715)) | Lifecycle + classification read-back: parent [SAA-447](/SAA/issues/SAA-447) `task-metadata` (`taskType: specification`, `jiraIssue: none`); blocker chain (SAA-715 `in_progress`; [SAA-716](/SAA/issues/SAA-716) `blocked` on SAA-715; [SAA-457](/SAA/issues/SAA-457) `blocked` on SAA-692/SAA-693); workstream parents SAA-454/455/456/458/459 `done` | Pass | All states confirmed as snapshotted; the classification gate for this amendment is satisfied (specification domain root, Jira disabled — frontmatter `jiraIssue: none` / `jiraSyncState: disabled` unchanged) |
+| 2026-09-05T03:05:00Z | Delivery Documentation Specialist ([SAA-715](/SAA/issues/SAA-715)) | Repo read-back for the snapshot refresh: fork `git log --oneline` (`a063063` appearance commit atop `ade5601`/`c634c15`); plugin repo `git log --oneline` (HEAD `c47aefa`); outer-repo `git diff pixel-agents` (submodule pointer `3537e14` → `a063063`, uncommitted) | Pass | WS4 close-gate commits confirmed as recorded in the snapshot (fork `a063063`; plugin repo `c47aefa`); the uncommitted submodule-pointer state recorded; this amendment's edits are the only new change to the spec record itself |
+| 2026-09-05T03:15:00Z | Delivery Documentation Specialist ([SAA-715](/SAA/issues/SAA-715)) | `node <skill-root>/scripts/validate-domain-record.mjs workdocs/ai/project/specifications/PAPERCLIP_PIXELS_2.md` (re-run after all Revision 2 edits) | Pass | `Valid domain record` (exit 0) — recorded in the closing milestone comment |
+| 2026-09-05T04:40:00Z | Delivery Documentation Specialist ([SAA-721](/SAA/issues/SAA-721)) | Phase 1–4 handoff evidence read-back: completion comments on [SAA-717](/SAA/issues/SAA-717)/[SAA-718](/SAA/issues/SAA-718)/[SAA-719](/SAA/issues/SAA-719)/[SAA-720](/SAA/issues/SAA-720) via the Paperclip API (Phases 1–4 all `done`; Tester verdict [SAA-724](/SAA/issues/SAA-724) PASS; guard authoring [SAA-725](/SAA/issues/SAA-725) + hardening [SAA-727](/SAA/issues/SAA-727) folded into the [SAA-720](/SAA/issues/SAA-720) QA verdict 55/55) | Pass | All phase deliverables evidenced with green transcripts and independent verification; no missing or contradictory evidence — the milestone handoff is valid |
+| 2026-09-05T04:42:00Z | Delivery Documentation Specialist ([SAA-721](/SAA/issues/SAA-721)) | Working-tree read-back for the Phase 5 content: fork `git log --oneline` (HEAD `a063063`) + `git status --porcelain` (Phase 1–4 change set present and uncommitted exactly as reported: `server/src/plugins/basePlugin.ts` untracked; `manifest.ts`/`pluginHost.ts`/`index.ts`/`cli.ts` modified; `server/__tests__/basePlugin.test.ts`, `pluginCapabilityArbitration.test.ts`, `guards/` untracked); `CAPABILITY_IDS` (13 ids) and the base `direct`/`fallback: 'none'` declarations in `manifest.ts`/`basePlugin.ts`; `resolveCapability`/`invokeCapability`/`getBaseCapabilityImpl`/`CapabilityResolutionError`/`CAPABILITY_DELEGATE_TO_BASE` in `pluginHost.ts`; guard test counts per suite (11+7+11+8+18 = 55); plugin repo `git log --oneline` (HEAD `c47aefa`) + `git status --porcelain` (`src/pixel-agents-plugin/manifest.ts`/`types.ts`/`index.ts` modified, uncommitted); the six override declarations with priorities 0–5 and `overrides: 'pixel-agents-base'`/`fallback: 'base'` in `src/pixel-agents-plugin/manifest.ts`; plugin id `paperclip`, version `0.6.0` (`src/constants.ts`); the fail-closed `PAPERCLIP_PIXEL_FEED_TOKEN` contract in `embedding.ts`; the Phase 1 DIVERGENCE.md row (2026-09-05) | Pass | All Phase 1–4 facts recorded in the Phase 5 sections confirmed against the trees; both HEADs steady, nothing committed or pushed; the `paperclip/` submodule untouched |
+| 2026-09-05T04:44:00Z | Delivery Documentation Specialist ([SAA-721](/SAA/issues/SAA-721)) | Lifecycle read-back for the snapshot refresh: parent [SAA-447](/SAA/issues/SAA-447) + blockers via the Paperclip API | Pass | [SAA-447](/SAA/issues/SAA-447) `blocked`, blocked only on [SAA-457](/SAA/issues/SAA-457) (`blocked`); SAA-715/716/454/455/456/458/459 and SAA-717/718/719/720 all `done` — snapshotted accordingly |
+| 2026-09-05T04:46:00Z | Delivery Documentation Specialist ([SAA-721](/SAA/issues/SAA-721)) | `node <skill-root>/scripts/validate-domain-record.mjs workdocs/ai/project/specifications/PAPERCLIP_PIXELS_2.md` (re-run after all Phase 5 edits) | Pass | `Valid domain record` (exit 0) — recorded in the closing milestone comment |
+| 2026-09-05T10:14:00Z | Delivery Documentation Specialist ([SAA-741](/SAA/issues/SAA-741)) | Handoff validation read-back: CTO ruling comment on [SAA-740](/SAA/issues/SAA-740) via the Paperclip API (posted 2026-09-05T10:10:58Z; issue `done`); as-built facts on the current tree — `src/pixel-agents-plugin/feed-mapper.ts` (rising edge `issue.checked_out`/`agent.run.started` at lines 353–372, falling edge `agent.run.finished|failed|cancelled` at lines 385–411, `issue.updated` consuming `title`/`assigneeAgentId` only at lines 411–421, no issue-status → activity mapping anywhere in the mapper); presence of `e2e/paperclip/character-activity.spec.ts` | Pass | Ruling content matches the task-issued handoff verbatim in substance; the as-implemented mapper matches the ruling's description exactly (run edges and gates consumed, status not consumed); the run-edge spec file is present as reported |
+| 2026-09-05T10:22:00Z | Delivery Documentation Specialist ([SAA-741](/SAA/issues/SAA-741)) | `node <skill-root>/scripts/validate-domain-record.mjs workdocs/ai/project/specifications/PAPERCLIP_PIXELS_2.md` (re-run after the FR-19 ruling edits) | Pass | `Valid domain record` (exit 0) — recorded in the closing milestone comment |
 
 ## Result
 
@@ -2245,3 +3097,49 @@ the stale live-relay documentation flags remain carried forward (top-level
 `README.md` refresh — fold into a close or follow-up; `AGENTS.md` — CTO);
 and the specification key formalization (project shortname or
 `SPECIFICATION_KEY` env).
+
+**Amendment (2026-09-05, [SAA-715](/SAA/issues/SAA-715)):** the board's
+architectural-review directive is recorded as **Revision 2** — the original
+Claude/hook behavior becomes the first-class default/base plugin, a host
+arbitration layer resolves capabilities by explicit priority with
+base-plugin fallback and fail-closed behavior, and the Paperclip plugin is
+an override/specialization layer on top; seven core contracts, a five-phase
+migration strategy, functional requirements, acceptance criteria, risks,
+and delivery notes are recorded in the board's wording (§R2.1–R2.9), with
+superseded prior framings marked in place (§R2.10). The prior plan's
+delivered work (WS0–WS4 closed `done`, commits
+`c634c15`/`ade5601`/`a063063` and `f92c058`/`4489e28`/`c47aefa`) remains
+delivery history. Reconciling the delivered surfaces against the revised
+target — and re-planning the remaining implementation, including WS5
+([SAA-457](/SAA/issues/SAA-457)) — is owned by the re-plan
+[SAA-716](/SAA/issues/SAA-716) under the parent owner; the board's
+Revision 2 acceptance criteria (§R2.7) are the forward gate for that work.
+
+**Revision 2 Phase 5 record (2026-09-05, [SAA-721](/SAA/issues/SAA-721)):** the
+board's five-phase migration strategy (R2.5) is now fully delivered at the
+phase level and documented. Phases 1–4 (re-plan
+[SAA-716](/SAA/issues/SAA-716) decomposition) all closed `done`: the
+base/default plugin `pixel-agents-base` extracted with baseline equivalence
+proven ([SAA-717](/SAA/issues/SAA-717), 19/19 + full suite 51 files/862);
+host-level capability arbitration with deterministic priority resolution,
+fallback-to-base, and fail-closed semantics ([SAA-718](/SAA/issues/SAA-718),
+16/16 + 52 files/878, Tester verdict [SAA-724](/SAA/issues/SAA-724) PASS);
+the Paperclip bridge re-expressed as the override plugin with exactly six
+declared overrides and explicit fallback ([SAA-719](/SAA/issues/SAA-719),
+plugin-repo suites green, real-host validator `ok: true`); and the five
+compatibility-guard suites locking §5.1/§5.2/§5.3/§5.4/§5.7 against the real
+shipped manifest ([SAA-720](/SAA/issues/SAA-720), 55/55 after the
+[SAA-727](/SAA/issues/SAA-727) hardening, two independent QA re-runs, zero
+application-code defects). This milestone recorded the Phase 5 deliverables
+as **Revision 2 Phase 5** (§Phase 5.1–5.4): the 13-id capability matrix, the
+operator-checkable override rules, the three-step operator configuration
+guidance (base-plugin-only default; `--plugin` override loading; explicit
+`PAPERCLIP_PIXEL_FEED_*` transport enablement), and the per-phase migration
+notes with equivalence evidence, the WS5 visual-suite re-anchoring
+disposition ([SAA-694](/SAA/issues/SAA-694)/[SAA-692](/SAA/issues/SAA-692)),
+and the pre-existing test-typeconfig residual for the parent owner. The §R2.7
+checklist evidence map is on record; formal checking remains with the parent
+owner at domain-root close, which awaits WS5 ([SAA-457](/SAA/issues/SAA-457),
+still blocked on the e2e environment) and the CTO-owned single-commit gates —
+all Phase 1–4 changes remain uncommitted in the shared working trees (fork
+atop `a063063`, plugin repo atop `c47aefa`).

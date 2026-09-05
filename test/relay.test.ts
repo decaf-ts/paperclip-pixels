@@ -6,7 +6,9 @@ import type {
 } from "../src/core/index.js";
 import {
   BridgeRelay,
+  extractApiTokenRef,
   extractTokenRef,
+  isAllowedCleartextHost,
   isLoopbackHost,
   parseRelayConfig,
   RelayTransportContractError,
@@ -305,6 +307,49 @@ describe("parseRelayConfig transport contract (SAA-557, security F1 regression)"
     }
   });
 
+  it("allows http: + token for the bundled compose-internal host (pixel-agents, SAA-734 reconcile)", () => {
+    // The separate-container compose topology reaches the feed at the
+    // `pixel-agents` service name. The transport contract now trusts this
+    // package's own bundled deployment hostname so the feed token may ride the
+    // cleartext internal link (pixel-agents-relay is the retired sidecar name
+    // kept for backward compatibility).
+    for (const url of [
+      "http://pixel-agents:8081",
+      "http://pixel-agents-relay:8081",
+    ]) {
+      expect(() =>
+        parseRelayConfig({ pixelAgentsUrl: url, pixelAgentsTokenRef: "secret-1" }),
+      ).not.toThrow();
+    }
+  });
+
+  it("allows http: + token for an operator-declared trusted host in pixelAgentsAllowedHttpHosts", () => {
+    expect(() =>
+      parseRelayConfig({
+        pixelAgentsUrl: "http://custom-internal:8081",
+        pixelAgentsTokenRef: "secret-1",
+        pixelAgentsAllowedHttpHosts: ["custom-internal"],
+      }),
+    ).not.toThrow();
+    expect(() =>
+      parseRelayConfig({
+        pixelAgentsUrl: "http://custom-internal:8081",
+        pixelAgentsTokenRef: "secret-1",
+        pixelAgentsAllowedHttpHosts: ["  CUSTOM-INTERNAL.  "],
+      }),
+    ).not.toThrow();
+  });
+
+  it("still rejects http: + token for a host not in the trusted set", () => {
+    expect(() =>
+      parseRelayConfig({
+        pixelAgentsUrl: "http://other-internal:8081",
+        pixelAgentsTokenRef: "secret-1",
+        pixelAgentsAllowedHttpHosts: ["custom-internal"],
+      }),
+    ).toThrow(RelayTransportContractError);
+  });
+
   it("allows https: with a token for any host", () => {
     expect(() =>
       parseRelayConfig({
@@ -392,6 +437,253 @@ describe("parseRelayConfig transport contract (SAA-590 §2 regression)", () => {
   });
 });
 
+describe("parseRelayConfig transport contract (SAA-737 no-suffix / no-wildcard regression)", () => {
+  // SAA-737 security-review follow-up (non-blocking, from SAA-736): pin the
+  // trust decision at the parse level too — a configured feed bearer token
+  // must NEVER ride a cleartext http: pixelAgentsUrl for a host that merely
+  // LOOKS LIKE a trusted one (suffix/subdomain/wildcard/userinfo). Each of
+  // these FAILS if parseRelayConfig ever accepts substring/suffix/wildcard
+  // matching, which would silently widen the bearer-token carve-out.
+
+  it("rejects http: + token for a suffix lookalike of a bundled trusted name", () => {
+    expect(() =>
+      parseRelayConfig({
+        pixelAgentsUrl: "http://pixel-agents.evil.com:8081",
+        pixelAgentsTokenRef: "s",
+      }),
+    ).toThrow(RelayTransportContractError);
+  });
+
+  it("rejects http: + token for a subdomain of a bundled trusted name", () => {
+    expect(() =>
+      parseRelayConfig({
+        pixelAgentsUrl: "http://x.pixel-agents:8081",
+        pixelAgentsTokenRef: "s",
+      }),
+    ).toThrow(RelayTransportContractError);
+    expect(() =>
+      parseRelayConfig({
+        pixelAgentsUrl: "http://x.pixel-agents-relay:8081",
+        pixelAgentsTokenRef: "s",
+      }),
+    ).toThrow(RelayTransportContractError);
+  });
+
+  it("rejects http: + token for a suffix lookalike of an operator-declared trusted host", () => {
+    expect(() =>
+      parseRelayConfig({
+        pixelAgentsUrl: "http://custom-internal.evil.com:8081",
+        pixelAgentsTokenRef: "s",
+        pixelAgentsAllowedHttpHosts: ["custom-internal"],
+      }),
+    ).toThrow(RelayTransportContractError);
+  });
+
+  it("rejects a wildcard pixelAgentsAllowedHttpHosts entry — it must not match any host", () => {
+    expect(() =>
+      parseRelayConfig({
+        pixelAgentsUrl: "http://evil.com:8081",
+        pixelAgentsTokenRef: "s",
+        pixelAgentsAllowedHttpHosts: ["*"],
+      }),
+    ).toThrow(RelayTransportContractError);
+    expect(() =>
+      parseRelayConfig({
+        pixelAgentsUrl: "http://custom-internal.evil.com:8081",
+        pixelAgentsTokenRef: "s",
+        pixelAgentsAllowedHttpHosts: ["*", "custom-internal"],
+      }),
+    ).toThrow(RelayTransportContractError);
+  });
+
+  it("rejects http: + token when a trusted name is smuggled into the userinfo (hostname is the real destination)", () => {
+    // new URL(...).hostname for "http://pixel-agents@evil.com:8081" is
+    // "evil.com" — the userinfo prefix must never be able to smuggle a trust
+    // decision that the destination host itself did not earn.
+    expect(() =>
+      parseRelayConfig({
+        pixelAgentsUrl: "http://pixel-agents@evil.com:8081",
+        pixelAgentsTokenRef: "s",
+      }),
+    ).toThrow(RelayTransportContractError);
+  });
+
+  it("accepts http: + token for the bundled name with a trailing dot (same DNS name after normalization)", () => {
+    expect(() =>
+      parseRelayConfig({ pixelAgentsUrl: "http://pixel-agents.:8081", pixelAgentsTokenRef: "s" }),
+    ).not.toThrow();
+  });
+
+  it("accepts http: + token for an uppercase variant of the bundled trusted name", () => {
+    expect(() =>
+      parseRelayConfig({ pixelAgentsUrl: "http://PIXEL-AGENTS:8081", pixelAgentsTokenRef: "s" }),
+    ).not.toThrow();
+  });
+
+  it("accepts http: + token for the exact operator-declared trusted host", () => {
+    expect(() =>
+      parseRelayConfig({
+        pixelAgentsUrl: "http://custom-internal:8081",
+        pixelAgentsTokenRef: "s",
+        pixelAgentsAllowedHttpHosts: ["custom-internal"],
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe("parseRelayConfig transport contract (SAA-738 paperclipApiTokenRef pair)", () => {
+  // Same-class residual from the SAA-736 security review: the tool-activity
+  // poller's token pair (paperclipApiTokenRef + paperclipApiBaseUrl) had only
+  // the save-time onValidateConfig gate; parseRelayConfig did no transport
+  // check, so a stale/bypassed config would push the resolved api token as
+  // `Authorization: Bearer` over cleartext http: to a non-loopback host.
+  // These mirror the SAA-557/SAA-590/SAA-737 feed-token cases and FAIL on the
+  // pre-SAA-738 parseRelayConfig (no api-pair enforcement at all).
+
+  it("throws RelayTransportContractError for http: api token + non-trusted host", () => {
+    expect(() =>
+      parseRelayConfig({
+        paperclipApiBaseUrl: "http://non-trusted:3100",
+        paperclipApiTokenRef: "secret-1",
+      }),
+    ).toThrow(RelayTransportContractError);
+    try {
+      parseRelayConfig({
+        paperclipApiBaseUrl: "http://non-trusted:3100",
+        paperclipApiTokenRef: "secret-1",
+      });
+    } catch (err) {
+      expect(err).toBeInstanceOf(RelayTransportContractError);
+      expect((err as Error).message).toContain("non-trusted");
+    }
+  });
+
+  it("counts a secret_ref binding api token as present and rejects http: non-loopback for it too", () => {
+    expect(() =>
+      parseRelayConfig({
+        paperclipApiBaseUrl: "http://non-trusted:3100",
+        paperclipApiTokenRef: { type: "secret_ref", secretId: "secret-1" } as never,
+      }),
+    ).toThrow(RelayTransportContractError);
+  });
+
+  it("still allows http: api token for loopback hosts (same-container default)", () => {
+    for (const url of [
+      "http://localhost:3100",
+      "http://127.0.0.1:3100",
+      "http://127.9.8.7:3100", // 127.0.0.0/8
+      "http://[::1]:3100",
+    ]) {
+      expect(() =>
+        parseRelayConfig({ paperclipApiBaseUrl: url, paperclipApiTokenRef: "secret-1" }),
+      ).not.toThrow();
+    }
+  });
+
+  it("allows http: api token for the bundled compose-internal host (pixel-agents)", () => {
+    for (const url of [
+      "http://pixel-agents:3100",
+      "http://pixel-agents-relay:3100",
+    ]) {
+      expect(() =>
+        parseRelayConfig({ paperclipApiBaseUrl: url, paperclipApiTokenRef: "secret-1" }),
+      ).not.toThrow();
+    }
+  });
+
+  it("allows http: api token for an operator-declared trusted host in pixelAgentsAllowedHttpHosts", () => {
+    expect(() =>
+      parseRelayConfig({
+        paperclipApiBaseUrl: "http://custom-internal:3100",
+        paperclipApiTokenRef: "secret-1",
+        pixelAgentsAllowedHttpHosts: ["custom-internal"],
+      }),
+    ).not.toThrow();
+  });
+
+  it("still rejects http: api token for a host not in the trusted set even when the feed url is fine", () => {
+    expect(() =>
+      parseRelayConfig({
+        pixelAgentsUrl: "https://pa.example",
+        paperclipApiBaseUrl: "http://other-internal:3100",
+        paperclipApiTokenRef: "secret-1",
+        pixelAgentsAllowedHttpHosts: ["custom-internal"],
+      }),
+    ).toThrow(RelayTransportContractError);
+  });
+
+  it("allows https: for the api token with any host", () => {
+    expect(() =>
+      parseRelayConfig({
+        paperclipApiBaseUrl: "https://paperclip.example.internal:3100",
+        paperclipApiTokenRef: "secret-1",
+      }),
+    ).not.toThrow();
+  });
+
+  it("keeps http: non-loopback allowed when NO api token is configured", () => {
+    expect(() =>
+      parseRelayConfig({ paperclipApiBaseUrl: "http://non-trusted:3100" }),
+    ).not.toThrow();
+  });
+
+  it("does not throw for http api token when the relay is explicitly disabled", () => {
+    expect(() =>
+      parseRelayConfig({
+        paperclipApiBaseUrl: "http://non-trusted:3100",
+        paperclipApiTokenRef: "secret-1",
+        pixelAgentsRelayEnabled: false,
+      }),
+    ).not.toThrow();
+  });
+
+  it("throws for an unparseable paperclipApiBaseUrl with an api token (SAA-590 road)", () => {
+    for (const url of ["http:", "http:/", "http://", "not-a-url"]) {
+      expect(() =>
+        parseRelayConfig({ paperclipApiBaseUrl: url, paperclipApiTokenRef: "s" }),
+      ).toThrow(RelayTransportContractError);
+    }
+    try {
+      parseRelayConfig({ paperclipApiBaseUrl: "http:", paperclipApiTokenRef: "s" });
+    } catch (err) {
+      expect((err as Error).message).toContain("must be a valid http(s) URL");
+    }
+  });
+
+  it("throws for a non-http(s) protocol paperclipApiBaseUrl with an api token", () => {
+    expect(() =>
+      parseRelayConfig({ paperclipApiBaseUrl: "ftp://x", paperclipApiTokenRef: "s" }),
+    ).toThrow(RelayTransportContractError);
+  });
+
+  it("still parses a tokenless malformed paperclipApiBaseUrl without throwing", () => {
+    expect(() => parseRelayConfig({ paperclipApiBaseUrl: "http:" })).not.toThrow();
+  });
+});
+
+describe("extractApiTokenRef", () => {
+  it("returns undefined when no api token ref is present", () => {
+    expect(extractApiTokenRef({})).toBeUndefined();
+    expect(extractApiTokenRef({ paperclipApiTokenRef: null })).toBeUndefined();
+  });
+
+  it("accepts a non-empty string ref and trims whitespace-only strings to undefined", () => {
+    expect(extractApiTokenRef({ paperclipApiTokenRef: "secret-1" })).toBe("secret-1");
+    expect(extractApiTokenRef({ paperclipApiTokenRef: "" })).toBeUndefined();
+    expect(extractApiTokenRef({ paperclipApiTokenRef: "   " })).toBeUndefined();
+  });
+
+  it("passes through a secret_ref binding object", () => {
+    const binding = { type: "secret_ref", secretId: "secret-1", version: 2 };
+    expect(extractApiTokenRef({ paperclipApiTokenRef: binding } as never)).toEqual(binding);
+  });
+
+  it("returns undefined for malformed values", () => {
+    expect(extractApiTokenRef({ paperclipApiTokenRef: 42 } as never)).toBeUndefined();
+    expect(extractApiTokenRef({ paperclipApiTokenRef: ["secret-1"] } as never)).toBeUndefined();
+  });
+});
+
 describe("isLoopbackHost", () => {
   it("is true for localhost, any 127.0.0.0/8 IPv4, and ::1", () => {
     expect(isLoopbackHost("localhost")).toBe(true);
@@ -409,6 +701,68 @@ describe("isLoopbackHost", () => {
     expect(isLoopbackHost("0.0.0.0")).toBe(false);
     expect(isLoopbackHost("::2")).toBe(false);
     expect(isLoopbackHost("10.0.0.1")).toBe(false);
+  });
+});
+
+describe("isAllowedCleartextHost", () => {
+  it("is true for loopback, the bundled deployment hostnames, and operator-declared hosts", () => {
+    expect(isAllowedCleartextHost("localhost")).toBe(true);
+    expect(isAllowedCleartextHost("127.0.0.1")).toBe(true);
+    expect(isAllowedCleartextHost("::1")).toBe(true);
+    expect(isAllowedCleartextHost("pixel-agents")).toBe(true);
+    expect(isAllowedCleartextHost("pixel-agents-relay")).toBe(true);
+    expect(isAllowedCleartextHost("custom-internal", ["custom-internal"])).toBe(true);
+    expect(isAllowedCleartextHost("  CUSTOM-INTERNAL.  ", ["custom-internal"])).toBe(true);
+  });
+
+  it("is false for a host that is neither loopback, bundled, nor operator-declared", () => {
+    expect(isAllowedCleartextHost("pa.example")).toBe(false);
+    expect(isAllowedCleartextHost("custom-internal")).toBe(false);
+    expect(isAllowedCleartextHost("custom-internal", ["other-internal"])).toBe(false);
+    expect(isAllowedCleartextHost("10.0.0.1")).toBe(false);
+  });
+
+  // SAA-737 security-review follow-up: pin the NO-suffix / NO-substring /
+  // NO-wildcard property of the trust decision. These assertions FAIL if
+  // isAllowedCleartextHost ever drifts to substring, suffix, or wildcard
+  // matching, which would silently widen the cleartext bearer-token carve-out
+  // to attacker-chosen lookalike hosts.
+
+  it("rejects suffix and subdomain lookalikes of the bundled trusted names", () => {
+    // Not the bundled name itself, so each must be refused — never matched by
+    // a ".includes(...)" / suffix / prefix-wildcard rule.
+    expect(isAllowedCleartextHost("pixel-agents.evil.com")).toBe(false);
+    expect(isAllowedCleartextHost("evil.pixel-agents")).toBe(false);
+    expect(isAllowedCleartextHost("pixel-agents-relay.evil.com")).toBe(false);
+    expect(isAllowedCleartextHost("x.pixel-agents-relay")).toBe(false);
+    expect(isAllowedCleartextHost("pixel-agents.dev")).toBe(false);
+  });
+
+  it("rejects a suffix lookalike of an operator-declared trusted host", () => {
+    expect(isAllowedCleartextHost("custom-internal.evil.com", ["custom-internal"])).toBe(false);
+    expect(isAllowedCleartextHost("evil.custom-internal", ["custom-internal"])).toBe(false);
+  });
+
+  it("never treats a wildcard entry as matching any host", () => {
+    // "*" must be compared literally (exact-equality after normalization),
+    // never expanded into a glob — otherwise any host becomes trusted.
+    expect(isAllowedCleartextHost("evil.com", ["*"])).toBe(false);
+    expect(isAllowedCleartextHost("custom-internal.evil.com", ["*"])).toBe(false);
+    expect(isAllowedCleartextHost("feedback.internal", ["*"])).toBe(false);
+  });
+
+  it("still accepts the bundled names after normalization (trailing dot, case)", () => {
+    // Same DNS name as the trusted entries once the trailing dot is stripped
+    // and case is folded — these are the legitimately-trusted forms.
+    expect(isAllowedCleartextHost("pixel-agents.")).toBe(true);
+    expect(isAllowedCleartextHost("PIXEL-AGENTS")).toBe(true);
+    expect(isAllowedCleartextHost("Pixel-Agents-Relay")).toBe(true);
+    expect(isAllowedCleartextHost(" PIXEL-AGENTS. ")).toBe(true);
+  });
+
+  it("still accepts the exact operator-declared host (and its normalized variant)", () => {
+    expect(isAllowedCleartextHost("custom-internal", ["custom-internal"])).toBe(true);
+    expect(isAllowedCleartextHost("  CUSTOM-INTERNAL.  ", ["custom-internal"])).toBe(true);
   });
 });
 
@@ -514,6 +868,43 @@ describe("BridgeRelay", () => {
 
     // And the rejected company stays disabled for later ingests (no stale
     // transport revived by a subsequent push attempt).
+    expect(relay.lastPushError(COMPANY_ID)).toBeUndefined();
+  });
+
+  it("configure() fails secure on an api-pair transport rejection (SAA-738): relay disabled, warn logged, never pushes", async () => {
+    // Same fail-closed handling as the feed-token contract: a config whose
+    // paperclipApiBaseUrl would carry the resolved api token over cleartext
+    // http: to a non-loopback host must disable the company's relay (disposing
+    // any prior transport) and warn — never keep pushing on the old transport.
+    const { ctx, logger } = makeCtx(async () => "board-token-value");
+    const relay = new BridgeRelay(ctx);
+    await relay.configure(COMPANY_ID, {
+      pixelAgentsUrl: "https://pa.example",
+      paperclipApiTokenRef: "board-token",
+      paperclipApiBaseUrl: "http://127.0.0.1:3100",
+    });
+    expect(relay.isConfigured(COMPANY_ID)).toBe(true);
+
+    await expect(
+      relay.configure(COMPANY_ID, {
+        pixelAgentsUrl: "https://pa.example",
+        paperclipApiTokenRef: "board-token",
+        paperclipApiBaseUrl: "http://non-trusted:3100",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(relay.isConfigured(COMPANY_ID)).toBe(false);
+    expect(relay.activeCompanyCount).toBe(0);
+    expect(
+      logger.calls.some(
+        (l) => l.level === "warn" && l.message === "Bridge relay config rejected for company; relay disabled",
+      ),
+    ).toBe(true);
+
+    relay.ingestEvent(COMPANY_ID, runStarted(COMPANY_ID, AGENT_A, "run-1"));
+    relay.ingestSnapshot(COMPANY_ID, snapshot(COMPANY_ID, [AGENT_A]));
+    await flush();
+    expect(calls).toHaveLength(0);
     expect(relay.lastPushError(COMPANY_ID)).toBeUndefined();
   });
 
@@ -844,7 +1235,12 @@ describe("BridgeRelay", () => {
       expect(declared.map((a: { key: string }) => a.key).sort()).toEqual([AGENT_A, AGENT_B]);
       const byKey = new Map(declared.map((a: { key: string }) => [a.key, a]));
       expect(byKey.get(AGENT_A)).toMatchObject({ palette: 0, hueShift: 0 });
-      expect(byKey.get(AGENT_B)).toMatchObject({ palette: 6, hueShift: 45 });
+      // SAA-694 seat-palette clamp: the declaration's palette is the SEAT /
+      // fallback index into Pixel Agents' built-in sheet set (6 sheets) —
+      // catalog indices >= 6 are cycled into the built-in range so the
+      // embedding host's fail-closed declaration validator accepts the seat
+      // everywhere (see PluginFeedMapper.declarationFor).
+      expect(byKey.get(AGENT_B)).toMatchObject({ palette: 0, hueShift: 45 });
     });
 
     it("sends the configured bearer token when one was resolved from the secret ref", async () => {

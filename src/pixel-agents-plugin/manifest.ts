@@ -17,10 +17,20 @@
  */
 
 import { PLUGIN_VERSION } from "../constants.js";
-import type { PixelAgentsPluginManifest } from "./types.js";
+import type {
+  CapabilityId,
+  PixelAgentsPluginManifest,
+  PluginCapabilityDeclaration,
+} from "./types.js";
 
 /** Plugin id in the Pixel Agents host registry (A1 id pattern: lowercase slug). */
 export const PAPERCLIP_PIXEL_PLUGIN_ID = "paperclip";
+
+/** The built-in base/default plugin id (board §4.1): the original Claude/hook
+ *  runtime, registered first so every capability not overridden downstream
+ *  resolves to it. Reserved by the host — an external module can never
+ *  displace it. The Paperclip bridge names it as its `overrides` target. */
+export const BASE_PIXEL_PLUGIN_ID = "pixel-agents-base";
 
 /** The contributed message type announced once on plugin start. */
 export const PAPERCLIP_PLUGIN_STARTED_MESSAGE = "paperclip.bridge.started";
@@ -60,13 +70,85 @@ export const PAPERCLIP_REPLY_MENU_ITEM = {
   order: 100,
 } as const;
 
+/**
+ * The base plugin id the Paperclip bridge names as its `overrides` target —
+ * every capability it does NOT specialize resolves to this base plugin via
+ * the host's explicit fallback (board §5.1/§5.2/§5.3).
+ */
+export const PAPERCLIP_OVERRIDE_TARGET = BASE_PIXEL_PLUGIN_ID;
+
+/**
+ * The declarative override scope (board §7.1 + §5.2): exactly the
+ * capabilities the Paperclip bridge specializes, each declared as an explicit
+ * override of the base/default plugin with fallback to base. The bridge may
+ * override ONLY these (and may not silently replace baseline behavior or
+ * mutate undeclared capabilities — board §5.2); every other capability
+ * (provider-selection, hook-management, session-lifecycle, tool-activity,
+ * transcript-parsing, persistence, ui-data — the original Claude/hook runtime)
+ * is deliberately NOT declared here and resolves to the base plugin.
+ *
+ * These are the host's contribution/arity surfaces, declared as overrides to
+ * state scope, NOT as replacement implementations: the bridge realizes its
+ * specialization through the manifest contribution points (`contributes`) and
+ * the sanctioned `ctx.agents`/`ctx.appearance` sources, which the host
+ * aggregates additively (board §5.5 — no suppression of baseline surfaces).
+ */
+export const PAPERCLIP_OVERRIDE_CAPABILITIES: readonly PluginCapabilityDeclaration[] = [
+  {
+    id: "agents-source",
+    implementation: "override",
+    overrides: PAPERCLIP_OVERRIDE_TARGET,
+    fallback: "base",
+    priority: 0,
+  },
+  {
+    id: "appearance-source",
+    implementation: "override",
+    overrides: PAPERCLIP_OVERRIDE_TARGET,
+    fallback: "base",
+    priority: 1,
+  },
+  {
+    id: "label-policy",
+    implementation: "override",
+    overrides: PAPERCLIP_OVERRIDE_TARGET,
+    fallback: "base",
+    priority: 2,
+  },
+  {
+    id: "menu",
+    implementation: "override",
+    overrides: PAPERCLIP_OVERRIDE_TARGET,
+    fallback: "base",
+    priority: 3,
+  },
+  {
+    id: "widgets",
+    implementation: "override",
+    overrides: PAPERCLIP_OVERRIDE_TARGET,
+    fallback: "base",
+    priority: 4,
+  },
+  {
+    id: "action-routing",
+    implementation: "override",
+    overrides: PAPERCLIP_OVERRIDE_TARGET,
+    fallback: "base",
+    priority: 5,
+  },
+];
+
+/** The override-scope capability ids, for host arbitration and diagnostics. */
+export const PAPERCLIP_OVERRIDE_CAPABILITY_IDS: readonly CapabilityId[] =
+  PAPERCLIP_OVERRIDE_CAPABILITIES.map((c) => c.id);
+
 /** The bridge plugin's manifest for the A1 host. */
 export function createPaperclipPluginManifest(): PixelAgentsPluginManifest {
   return {
     id: PAPERCLIP_PIXEL_PLUGIN_ID,
     version: PLUGIN_VERSION,
     description:
-      "Paperclip bridge: declares Paperclip agents (identity, seats, status, activity) through the sanctioned agent/team source and routes click-menu replies into Paperclip feedback.",
+      "Paperclip bridge: declares Paperclip agents (identity, seats, status, activity) through the sanctioned agent/team source and routes click-menu replies into Paperclip feedback. Loaded as the R2.5 override plugin — it overrides only the declared capabilities (agents-source, appearance-source, label-policy, menu, widgets, action-routing) and delegates everything else back to the base/default plugin (pixel-agents-base).",
     contributes: {
       messages: [
         {
@@ -105,5 +187,6 @@ export function createPaperclipPluginManifest(): PixelAgentsPluginManifest {
       ],
     },
     sources: { agents: true, appearance: true },
+    capabilities: [...PAPERCLIP_OVERRIDE_CAPABILITIES],
   };
 }

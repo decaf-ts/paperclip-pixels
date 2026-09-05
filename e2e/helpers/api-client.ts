@@ -25,6 +25,8 @@ export interface Company {
   id: string;
   name: string;
   status?: string;
+  /** The company's route prefix (e.g. "EEP"), used to build `/prefix/pixel-office`. */
+  issuePrefix?: string;
 }
 export interface Agent {
   id: string;
@@ -133,6 +135,18 @@ export class PaperclipApi {
     return this.createCompany(name);
   }
 
+  /** Delete a company (shared-stack cleanup; board-mutation guard needs the Origin header that `req` sets). */
+  async deleteCompany(companyId: string): Promise<unknown> {
+    const res = await this.req(`/api/companies/${companyId}`, { method: "DELETE" });
+    if (!res.ok) throw new ApiError(res.status, `DELETE /api/companies/${companyId}`);
+    const text = await res.text();
+    try {
+      return text ? JSON.parse(text) : undefined;
+    } catch {
+      return text;
+    }
+  }
+
   async listAgents(companyId: string): Promise<Agent[]> {
     return this.json(`/api/companies/${companyId}/agents`);
   }
@@ -207,6 +221,33 @@ export class PaperclipApi {
   async pixelPluginRecord(): Promise<{ id: string; pluginKey: string } | null> {
     const plugins = await this.listPlugins();
     return plugins.find((p) => p.pluginKey.includes("paperclip-pixel")) ?? null;
+  }
+
+  /** Create a company secret (`POST /api/companies/:companyId/secrets`). */
+  async createCompanySecret(
+    companyId: string,
+    input: { name: string; key: string; value: string },
+  ): Promise<{ id: string; key: string }> {
+    return this.json(`/api/companies/${companyId}/secrets`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  /**
+   * Save (upsert) the company-scoped plugin config
+   * (`POST /api/plugins/:pluginId/config`) — the same route the settings UI
+   * saves through. `configJson` matches the plugin's instanceConfigSchema.
+   */
+  async savePluginConfig(
+    pluginId: string,
+    companyId: string,
+    configJson: Record<string, unknown>,
+  ): Promise<{ id: string; configJson?: Record<string, unknown> }> {
+    return this.json(`/api/plugins/${pluginId}/config`, {
+      method: "POST",
+      body: JSON.stringify({ companyId, configJson }),
+    });
   }
 
   /**

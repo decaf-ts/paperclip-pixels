@@ -34,7 +34,7 @@ import {
 } from "./persistence.js";
 import { loadCharacterCatalog } from "./characters.js";
 import { registerActions } from "./actions.js";
-import { BridgeRelay, type AgentAppearanceSyncEntry } from "./relay.js";
+import { BridgeRelay, isAllowedCleartextHost, type AgentAppearanceSyncEntry } from "./relay.js";
 
 /**
  * A valid `pixelAgentsTokenRef` is either the shared
@@ -737,14 +737,20 @@ const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime 
       }
     }
     // M2 (fail-securely): a token must never travel over public cleartext
-    // HTTP. The package's exact loopback/Compose sidecar names are the only
-    // exception; all operator-supplied remote names still require TLS.
+    // HTTP. Loopback, this package's own bundled deployment hostnames, and
+    // any host the operator explicitly declares in
+    // `pixelAgentsAllowedHttpHosts` are the only exception; all other
+    // operator-supplied remote names still require TLS. The shared
+    // `isAllowedCleartextHost` keeps this save-time gate and the runtime
+    // `parseRelayConfig` backstop in lockstep (SAA-534/557 F1 reconcile).
     const hasToken = config.pixelAgentsTokenRef != null;
+    const allowedHttpHosts = Array.isArray(config.pixelAgentsAllowedHttpHosts)
+      ? config.pixelAgentsAllowedHttpHosts.filter((h): h is string => typeof h === "string")
+      : [];
     let bundledSidecar = false;
     if (typeof url === "string") {
       try {
-        bundledSidecar = ["localhost", "127.0.0.1", "::1", "pixel-agents-relay"]
-          .includes(new URL(url).hostname);
+        bundledSidecar = isAllowedCleartextHost(new URL(url).hostname, allowedHttpHosts);
       } catch { /* URL validation above reports the error. */ }
     }
     if (hasToken && urlProtocol === "http:" && !bundledSidecar) {
@@ -755,6 +761,15 @@ const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime 
       && !isValidTokenRef(config.pixelAgentsTokenRef)
     ) {
       errors.push("pixelAgentsTokenRef must be a secret_ref binding or non-empty string when present");
+    }
+    if (
+      config.pixelAgentsAllowedHttpHosts != null
+      && (
+        !Array.isArray(config.pixelAgentsAllowedHttpHosts)
+        || config.pixelAgentsAllowedHttpHosts.some((h) => typeof h !== "string")
+      )
+    ) {
+      errors.push("pixelAgentsAllowedHttpHosts must be an array of strings when present");
     }
     if (
       config.pixelAgentsRelayEnabled != null
@@ -789,13 +804,22 @@ const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime 
       }
     }
     const hasApiToken = config.paperclipApiTokenRef != null;
-    let apiUrlIsLoopback = true; // the unset default (127.0.0.1:3100) is always loopback
+    // SAA-738: same shared isAllowedCleartextHost trust decision as the
+    // pixelAgentsUrl gate above, applied to the tool-activity poller's own
+    // token/URL pair — so one pixelAgentsAllowedHttpHosts declaration covers
+    // both pairs and the save-time gate and the runtime parseRelayConfig
+    // backstop cannot drift. The unset default (127.0.0.1:3100) is always
+    // loopback, so token-only config stays valid.
+    let apiUrlIsCleartextAllowed = true; // the unset default (127.0.0.1:3100) is always loopback
     if (typeof apiUrl === "string") {
       try {
-        apiUrlIsLoopback = ["localhost", "127.0.0.1", "::1"].includes(new URL(apiUrl).hostname);
+        apiUrlIsCleartextAllowed = isAllowedCleartextHost(
+          new URL(apiUrl).hostname,
+          allowedHttpHosts,
+        );
       } catch { /* URL validation above reports the error. */ }
     }
-    if (hasApiToken && apiUrlProtocol === "http:" && !apiUrlIsLoopback) {
+    if (hasApiToken && apiUrlProtocol === "http:" && !apiUrlIsCleartextAllowed) {
       errors.push("paperclipApiBaseUrl must be https: when paperclipApiTokenRef is configured and the host is not loopback");
     }
     if (

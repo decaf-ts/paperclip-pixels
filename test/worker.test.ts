@@ -707,24 +707,128 @@ describe("worker onValidateConfig (M2 cleartext token rejection)", () => {
     });
     expect(result.ok).toBe(true);
   });
-  it("rejects http: pixelAgentsUrl when a token ref is configured", async () => {
+  it("accepts http: pixelAgentsUrl for the bundled compose-internal host when a token ref is configured (SAA-734 reconcile)", async () => {
     const def = pluginDefinition(plugin);
     const result = await def.onValidateConfig!({
-      pixelAgentsUrl: "http://pixel-agents:8080",
+      pixelAgentsUrl: "http://pixel-agents:8081",
+      pixelAgentsTokenRef: "secret-1",
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("accepts http: pixelAgentsUrl for an operator-declared trusted host in pixelAgentsAllowedHttpHosts", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({
+      pixelAgentsUrl: "http://custom-internal:8081",
+      pixelAgentsTokenRef: "secret-1",
+      pixelAgentsAllowedHttpHosts: ["custom-internal"],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  // SAA-737 security-review follow-up (from SAA-736, non-blocking): pin the
+  // save-time gate's NO-suffix / NO-substring / NO-wildcard trust property.
+  // Each of these FAILS if the gate ever drifts to substring/suffix/wildcard
+  // matching, which would silently widen the cleartext bearer-token carve-out.
+
+  it("rejects http: pixelAgentsUrl for a suffix lookalike of a bundled trusted name (no-suffix pin)", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({
+      pixelAgentsUrl: "http://pixel-agents.evil.com:8081",
       pixelAgentsTokenRef: "secret-1",
     });
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("pixelAgentsUrl must be https: when pixelAgentsTokenRef is configured");
   });
 
-  it("rejects http: pixelAgentsUrl when a secret_ref binding is configured", async () => {
+  it("rejects http: pixelAgentsUrl for a subdomain of a bundled trusted name", async () => {
     const def = pluginDefinition(plugin);
     const result = await def.onValidateConfig!({
-      pixelAgentsUrl: "http://pixel-agents:8080",
+      pixelAgentsUrl: "http://x.pixel-agents:8081",
+      pixelAgentsTokenRef: "secret-1",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("pixelAgentsUrl must be https: when pixelAgentsTokenRef is configured");
+  });
+
+  it("rejects http: pixelAgentsUrl for a suffix lookalike of an operator-declared trusted host", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({
+      pixelAgentsUrl: "http://custom-internal.evil.com:8081",
+      pixelAgentsTokenRef: "secret-1",
+      pixelAgentsAllowedHttpHosts: ["custom-internal"],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("pixelAgentsUrl must be https: when pixelAgentsTokenRef is configured");
+  });
+
+  it("rejects a wildcard pixelAgentsAllowedHttpHosts entry — it must not match any host", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({
+      pixelAgentsUrl: "http://evil.com:8081",
+      pixelAgentsTokenRef: "secret-1",
+      pixelAgentsAllowedHttpHosts: ["*"],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("pixelAgentsUrl must be https: when pixelAgentsTokenRef is configured");
+  });
+
+  it("rejects http: pixelAgentsUrl with a trusted name smuggled into the userinfo", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({
+      pixelAgentsUrl: "http://pixel-agents@evil.com:8081",
+      pixelAgentsTokenRef: "secret-1",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("pixelAgentsUrl must be https: when pixelAgentsTokenRef is configured");
+  });
+
+  it("accepts http: pixelAgentsUrl for a bundled trusted host with a trailing dot (same DNS name)", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({
+      pixelAgentsUrl: "http://pixel-agents.:8081",
+      pixelAgentsTokenRef: "secret-1",
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("accepts http: pixelAgentsUrl for an uppercase variant of the bundled trusted host (case-folded)", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({
+      pixelAgentsUrl: "http://PIXEL-AGENTS:8081",
+      pixelAgentsTokenRef: "secret-1",
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects http: pixelAgentsUrl on an untrusted remote host when a token ref is configured", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({
+      pixelAgentsUrl: "http://public-host:8080",
+      pixelAgentsTokenRef: "secret-1",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("pixelAgentsUrl must be https: when pixelAgentsTokenRef is configured");
+  });
+
+  it("rejects http: pixelAgentsUrl on an untrusted remote host when a secret_ref binding is configured", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({
+      pixelAgentsUrl: "http://public-host:8080",
       pixelAgentsTokenRef: { type: "secret_ref", secretId: "secret-1" },
     });
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("pixelAgentsUrl must be https: when pixelAgentsTokenRef is configured");
+  });
+
+  it("rejects a non-array pixelAgentsAllowedHttpHosts", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({
+      pixelAgentsUrl: "http://pixel-agents:8081",
+      pixelAgentsAllowedHttpHosts: "not-an-array",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("pixelAgentsAllowedHttpHosts must be an array of strings when present");
   });
 
   it("accepts http: pixelAgentsUrl when token-less", async () => {
@@ -782,6 +886,46 @@ describe("worker onValidateConfig (M2 cleartext token rejection)", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("paperclipApiTokenRef must be a secret_ref binding or non-empty string when present");
+  });
+
+  // SAA-738: the api-pair save-time gate must consult the SAME shared
+  // isAllowedCleartextHost decision as the feed-token gate (and the runtime
+  // parseRelayConfig backstop), so a bundled deployment hostname and an
+  // operator-declared pixelAgentsAllowedHttpHosts entry are accepted for the
+  // tool-activity poller's token too — these FAIL on the pre-SAA-738
+  // onValidateConfig (loopback-only list for the api pair).
+
+  it("accepts http: paperclipApiBaseUrl for the bundled compose-internal host with an api token (SAA-738 reconcile)", async () => {
+    const def = pluginDefinition(plugin);
+    for (const url of ["http://pixel-agents:3100", "http://pixel-agents-relay:3100"]) {
+      const result = await def.onValidateConfig!({
+        paperclipApiBaseUrl: url,
+        paperclipApiTokenRef: "board-token-1",
+      });
+      expect(result.ok).toBe(true);
+    }
+  });
+
+  it("accepts http: paperclipApiBaseUrl for an operator-declared trusted host in pixelAgentsAllowedHttpHosts with an api token", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({
+      paperclipApiBaseUrl: "http://custom-internal:3100",
+      paperclipApiTokenRef: "board-token-1",
+      pixelAgentsAllowedHttpHosts: ["custom-internal"],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects an unparseable paperclipApiBaseUrl with an api token at save time", async () => {
+    const def = pluginDefinition(plugin);
+    for (const url of ["http:", "http:/", "http://", "not-a-url"]) {
+      const result = await def.onValidateConfig!({
+        paperclipApiBaseUrl: url,
+        paperclipApiTokenRef: "board-token-1",
+      });
+      expect(result.ok).toBe(false);
+      expect(result.errors).toContain("paperclipApiBaseUrl is not a valid URL");
+    }
   });
 
   it("is valid with neither paperclipApiBaseUrl nor paperclipApiTokenRef set (the feature is fully optional)", async () => {

@@ -12,7 +12,8 @@
 #     (http://172.24.0.1:3100) so browser/auth flows work when driven from the
 #     daemon host (LOGIN_ORIGIN for the e2e suite).
 #   - Postgres is published on the host at 15432 so `e2e/helpers/db.ts` can
-#     query it directly (`DB_HOST=172.24.0.1`, `DB_PORT=15432`).
+#     query it directly (`PAPERCLIP_PIXEL_E2E_DB_HOST=172.24.0.1`,
+#     `PAPERCLIP_PIXEL_E2E_DB_PORT=15432`).
 #
 # The stack is disposable and re-seedable: wiping the `pgdata` +
 # `paperclip-data` volumes gives a fresh instance (the board user is then

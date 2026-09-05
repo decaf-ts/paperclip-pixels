@@ -36,6 +36,12 @@ import type {
 import type { PluginFeedDialogLine, PluginFeedOperation } from "./feed.js";
 import type { PluginAgentDeclaration } from "./types.js";
 
+/** Pixel Agents' built-in character-sheet count (the seat/fallback palette
+ * range the embedding host's declaration validator accepts without an
+ * external asset grant — the first six catalog entries mirror exactly these
+ * sheets). See `declarationFor` for the clamp rationale. */
+const BUILT_IN_SEAT_PALETTE_COUNT = 6;
+
 /** Stable per-agent unique team name (the retired transcript hack's grouping
  *  semantics, through the sanctioned declaration field): each Paperclip
  *  agent sits in its own one-agent "team" so unrelated agents are never
@@ -174,8 +180,20 @@ export class PluginFeedMapper {
   }
 
   /** The declaration for one agent from the current appearance map (name
-   *  falls back to the agent id — the worker always knows the real name by
-   *  the time it configures the relay). */
+   * falls back to the agent id — the worker always knows the real name by
+   * the time it configures the relay).
+   *
+   * Seat-palette clamp (SAA-694): the declaration's `palette` is the SEAT /
+   * fallback index into Pixel Agents' built-in sheet set, but the WS3
+   * catalog's `palette` field counts the whole (17-entry) catalog — indices
+   * ≥ the built-in sheet count are rejected fail-closed by the embedding
+   * host's declaration validator whenever no external asset grant has
+   * widened the palette (every docker deployment: the catalog ships only in
+   * the Paperclip image, never in the pixel-agents image). Cycling the
+   * catalog index into the built-in range keeps the seat fallback valid
+   * everywhere — catalog entries 0..5 ARE the built-in sheets, so char_N
+   * falls back to its built-in counterpart — while `hueShift` (which tints
+   * plugin sheets when the WS4-A path IS active) rides unchanged. */
   private declarationFor(agentId: string, name: string): PluginAgentDeclaration {
     const appearance = this.appearances.get(agentId);
     return {
@@ -183,7 +201,10 @@ export class PluginFeedMapper {
       name,
       teamName: bridgeTeamName(agentId),
       ...(appearance
-        ? { palette: appearance.palette, hueShift: appearance.hueShift }
+        ? {
+          palette: appearance.palette % BUILT_IN_SEAT_PALETTE_COUNT,
+          hueShift: appearance.hueShift,
+        }
         : {}),
     };
   }

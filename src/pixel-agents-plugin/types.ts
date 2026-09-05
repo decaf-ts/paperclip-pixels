@@ -155,6 +155,73 @@ export interface PluginSourceDeclarations {
   appearance?: boolean;
 }
 
+/**
+ * Verbatim shape of the R2.5 Phase 2 arbitration manifest's
+ * `CAPABILITY_IDS` (manifest.ts, board §5.1 + §7.1). Every stable capability
+ * id the host resolves — the runtime capabilities (the original Claude/hook
+ * runtime) plus the already-delivered contribution surfaces. The base/default
+ * plugin declares each as `direct`; an override plugin (the Paperclip bridge,
+ * R2.5 Phase 3) declares only the subset it specializes as `override` with
+ * `overrides: 'pixel-agents-base'` and `fallback: 'base'`.
+ */
+export const CAPABILITY_IDS = [
+  // Runtime capabilities (legacy Claude/hook runtime — board §5.1 list).
+  "provider-selection",
+  "hook-management",
+  "session-lifecycle",
+  "tool-activity",
+  "transcript-parsing",
+  "persistence",
+  "ui-data",
+  // Contribution surfaces (already delivered, WS2-A2 / WS4-A / WS2-A1).
+  "menu",
+  "label-policy",
+  "widgets",
+  "agents-source",
+  "appearance-source",
+  "action-routing",
+] as const;
+
+/** A single stable capability id (member of {@link CAPABILITY_IDS}). */
+export type CapabilityId = (typeof CAPABILITY_IDS)[number];
+
+/** How a plugin provides a capability (board §7.1). */
+export type CapabilityImplementation = "direct" | "override";
+
+/** Explicit fallback behavior when this plugin cannot satisfy a capability
+ *  (board §5.2/§7.2). */
+export type CapabilityFallback = "none" | "base";
+
+/** A capability implementation: the delegation wrapper a plugin registers for
+ *  one capability id (host `registerCapability`). */
+export type BaseCapabilityImpl = (...args: unknown[]) => unknown;
+
+/**
+ * Verbatim shape of the R2.5 Phase 2 arbitration manifest's
+ * `PluginCapabilityDeclaration` (manifest.ts, board §7.1: identity, version,
+ * capabilities, override scope, fallback). A `direct` capability is the
+ * canonical provider (the base/default plugin, or a plugin's own
+ * implementation); an `override` capability names the plugin it overrides,
+ * may fall back to the base, and declares the explicit priority used by the
+ * host's arbitration layer (board §5.3).
+ */
+export interface PluginCapabilityDeclaration {
+  /** A stable capability id (member of {@link CAPABILITY_IDS}). */
+  id: CapabilityId;
+  /** How this plugin provides the capability. */
+  implementation: CapabilityImplementation;
+  /** For `override`, the plugin id this overrides (the built-in base/default
+   *  plugin `pixel-agents-base`). Declares the override *scope* — the host
+   *  elects the highest-priority explicit override, fail-closed on ambiguity. */
+  overrides?: string;
+  /** Explicit fallback when this plugin cannot satisfy the capability. Direct
+   *  implementations fall back to `none`; overrides may fall back to `base`. */
+  fallback?: CapabilityFallback;
+  /** Override precedence (board §5.3): higher wins; ties are ambiguous and are
+   *  rejected fail-closed. Only meaningful for `override` capabilities. */
+  priority?: number;
+}
+
 /** Verbatim shape of A1's `PluginManifest` (manifest.ts). */
 export interface PixelAgentsPluginManifest {
   id: string;
@@ -162,6 +229,10 @@ export interface PixelAgentsPluginManifest {
   description?: string;
   contributes: PluginContributions;
   sources?: PluginSourceDeclarations;
+  /** Override scope (board §7.1 + §5.2): the capabilities this plugin
+   *  explicitly overrides; every unoverridden capability resolves to the
+   *  base/default plugin. */
+  capabilities?: PluginCapabilityDeclaration[];
 }
 
 /** Verbatim shape of A1+A2's `PluginAgentSource` (pluginHost.ts): the sanctioned
@@ -212,7 +283,12 @@ export interface PixelAgentsPluginRegistration {
 /**
  * The slice of A1's `PluginHost` the embedding surface hands to
  * {@link registerPaperclipPixelPlugin}: registration + lifecycle start. The
- * real host (pluginHost.ts) is structurally assignable.
+ * real host (pluginHost.ts) is structurally assignable, and because the
+ * bridge realizes its R2.5 Phase 3 overrides through the manifest
+ * contribution points (`contributes`) and the sanctioned `ctx.agents` /
+ * `ctx.appearance` sources — NOT through registered capability-arbitration
+ * implementations (the host aggregates which additively, board §5.5) — this
+ * mirror documents only the surfaces the plugin builds against.
  */
 export interface PixelAgentsPluginHost {
   registerPlugin(registration: PixelAgentsPluginRegistration): void;

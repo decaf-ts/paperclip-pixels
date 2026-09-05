@@ -24,6 +24,10 @@ export {
   PAPERCLIP_PLUGIN_STARTED_MESSAGE,
   PAPERCLIP_DIALOG_LINES_MESSAGE,
   PAPERCLIP_REPLY_MENU_ITEM,
+  BASE_PIXEL_PLUGIN_ID,
+  PAPERCLIP_OVERRIDE_TARGET,
+  PAPERCLIP_OVERRIDE_CAPABILITIES,
+  PAPERCLIP_OVERRIDE_CAPABILITY_IDS,
   createPaperclipPluginManifest,
 } from "./manifest.js";
 
@@ -97,6 +101,10 @@ export {
 export type { EmbeddingConfig } from "./embedding.js";
 
 export type {
+  BaseCapabilityImpl,
+  CapabilityFallback,
+  CapabilityId,
+  CapabilityImplementation,
   PixelAgentsPluginContext,
   PixelAgentsPluginHandlers,
   PixelAgentsPluginHost,
@@ -108,6 +116,7 @@ export type {
   PluginAgentSource,
   PluginAgentStatusUpdate,
   PluginAppearanceSource,
+  PluginCapabilityDeclaration,
   PluginCharacterSheetDeclaration,
   PluginContributions,
   PluginMessageDeclaration,

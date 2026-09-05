@@ -2,13 +2,13 @@
 
 ## 00. Index
 
-| Field | Value |
-|---|---|
-| Project | `@decaf-ts/paperclip-pixels` — Paperclip plugin + first-class Pixel Agents plugin module (embedding surface) |
-| Current version | 0.6.0 (`package.json`) |
-| Owning team | with-ai engineering (CTO technical governance; delivery via Paperclip issues) |
-| Last updated | 2026-09-03 |
-| Repository | `paperclip-pixels` (this repo); Pixel Agents lives in the `pixel-agents/` submodule (fork of upstream `v1.4.1`, local tag `fork-baseline-v1.4.1`, governed by its `FORK.md`/`DIVERGENCE.md`) |
+| Field           | Value                                                                                                                                                                                        |
+|-----------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Project         | `@decaf-ts/paperclip-pixels` — Paperclip plugin + first-class Pixel Agents plugin module (embedding surface)                                                                                 |
+| Current version | 0.6.0 (`package.json`)                                                                                                                                                                       |
+| Owning team     | with-ai engineering (CTO technical governance; delivery via Paperclip issues)                                                                                                                |
+| Last updated    | 2026-09-05                                                                                                                                                                                   |
+| Repository      | `paperclip-pixels` (this repo); Pixel Agents lives in the `pixel-agents/` submodule (fork of upstream `v1.4.1`, local tag `fork-baseline-v1.4.1`, governed by its `FORK.md`/`DIVERGENCE.md`) |
 
 This handbook describes the real architecture of the bridge as it exists right
 now. It is a living document: when the system changes, the affected section is
@@ -91,7 +91,9 @@ assignment map — never business truth, never rendering decisions.
 | Core | Pure domain package (`src/core/`): raw projections, temporal windows, behavioral proxies, feedback policy, character catalog/assignment domain. No React, no SDK, no filesystem. |
 | Relay | The worker-side push subsystem (`src/relay.ts`): one `PluginFeedMapper` + `PluginFeedHttpSink` per company, translating canonical bridge events into plugin feed operations and POSTing them to the embedding surface's `POST /api/plugin-feed`. |
 | Embedding surface | The module that owns the Pixel Agents server process (`src/pixel-agents-plugin/embedding.ts`, bundled to `dist/pixel-agents-embedding.cjs`), loaded through the fork's generic `--plugin` loader: registers the Paperclip plugin in-process through the WS2-A1 host API and serves the feed endpoint on its own sidecar listener (default `127.0.0.1:8081`, fail-closed bearer auth). |
-| Plugin host | The fork's in-process plugin registry (`pixel-agents/server/src/plugins/pluginHost.ts`): schema-validated manifest, register/start/stop/unregister lifecycle, the sanctioned agent/team data source, owner-routed action invocation, and the four contribution points. |
+| Plugin host | The fork's in-process plugin registry (`pixel-agents/server/src/plugins/pluginHost.ts`): schema-validated manifest, register/start/stop/unregister lifecycle, the sanctioned agent/team data source, owner-routed action invocation, the four contribution points, and — since WS5 — the capability registry with priority-based override arbitration (§5.6). |
+| Base plugin (`pixel-agents-base`) | The fork's built-in default plugin (`pixel-agents/server/src/plugins/basePlugin.ts`): the original Claude/hook runtime wrapped as delegation wrappers around the existing server modules (wrap, never relocate). Registered deterministically first inside `initPluginHost`, before any external `--plugin` module; its id is reserved, so no external module can register, re-register, or displace it. Baseline equivalence proves base-only output is unchanged. |
+| Capability arbitration | The plugin host's capability-resolution layer (§5.6): each capability id resolves to the highest-priority explicit override, else the base plugin; a same-priority clash is a hard `CapabilityResolutionError` — the host never guesses. An override with `fallback: 'base'` dispatches wrap-and-delegate: the host exposes the base implementation, and the override can return `CAPABILITY_DELEGATE_TO_BASE` to fall back mid-call. |
 | Plugin feed | The versioned wire contract (`src/pixel-agents-plugin/feed.ts`, `schemaVersion: 1`) between the worker's relay and the embedding surface: batches of `declareAgents` / `removeAgents` / `updateAgentStatus` / `updateAgentActivity` operations applied through the plugin's sanctioned agent/team source, plus since WS4 `assignAgentAppearance` (appearance source) and `dialogLines` (pre-redacted conversation extracts). No Claude-hook vocabulary exists on this wire. |
 | Character sheet | One `char_<N>.png` sprite sheet (112×96: 3 direction rows × 7 frames of 16×32) loadable by Pixel Agents' unchanged `decodeCharacterPng`. |
 | Catalog | `assets/characters/catalog.json` — the ordered character list (`id`, `name`, `palette`, `file`, `source`, `license` per entry). |
@@ -143,9 +145,9 @@ graph TD
   SDK behind the manifest's least-privilege capabilities. Direction:
   read-heavy inbound; the only writes are comments via the two intake/feedback
   actions (plus the reply forwarder's invocations of those same actions).
-- **Operator / board user**: edits the plugin's global operator settings (7
-  fields including `pixelAgentsUrl`, `pixelAgentsUiUrl`, `pixelAgentsTokenRef`,
-  `dialogPanePrivacyOptIn`)
+- **Operator / board user**: edits the plugin's global operator settings (8
+  fields including `pixelAgentsUrl`, `pixelAgentsAllowedHttpHosts`,
+  `pixelAgentsUiUrl`, `pixelAgentsTokenRef`, `dialogPanePrivacyOptIn`)
   on the host's auto-rendered settings form (Company Settings → Plugins →
   Paperclip Pixel Bridge; global-only — no per-agent values), and edits each
   agent's character through the picker on the Pixel Office page.
@@ -168,9 +170,12 @@ graph TD
   on the Paperclip side and `PAPERCLIP_PIXEL_FEED_TOKEN` on the embedding
   side, constant-time compared, fail-closed 401, token never in the URL; the
   worker side additionally enforces the https-when-token transport contract
-  fail-closed at configure time — with a token configured, `pixelAgentsUrl`
-  must be a valid http(s) URL and plain `http:` is accepted only for
-  loopback hosts);
+  fail-closed at configure time and at runtime — with a token configured,
+  `pixelAgentsUrl` (and, with its own token, the tool-activity poller's
+  `paperclipApiBaseUrl`) must be a valid http(s) URL, and plain `http:` is
+  accepted only for a trusted cleartext host: loopback, this package's own
+  bundled deployment service names, or a host the operator explicitly
+  declares in `pixelAgentsAllowedHttpHosts`);
   (3) the bridge holds **no** websocket to Pixel Agents — it is in-process
   through the host API; (4) plugin state is reached only through `ctx.state`
   capability checks.
@@ -303,10 +308,11 @@ the stable RTL/e2e anchors. The obsolete two-line `<strong>`-headline block
 **Settings surface (host auto-form, global-only).** The manifest declares no
 custom `settingsPage` slot — a custom slot would suppress the host's
 auto-rendered config form. Company Settings → Plugins → Paperclip Pixel
-Bridge therefore auto-renders all 7 `instanceConfigSchema` operator fields
-editable: `pixelAgentsUrl`, `pixelAgentsUiUrl`, `pixelAgentsTokenRef`,
-`pixelAgentsRelayEnabled`, `paperclipApiBaseUrl`, `paperclipApiTokenRef`,
-`dialogPanePrivacyOptIn` (the retired `pixelAgentsProviderId` hook-path
+Bridge therefore auto-renders all 8 `instanceConfigSchema` operator fields
+editable: `pixelAgentsUrl`, `pixelAgentsAllowedHttpHosts`, `pixelAgentsUiUrl`,
+`pixelAgentsTokenRef`, `pixelAgentsRelayEnabled`, `paperclipApiBaseUrl`,
+`paperclipApiTokenRef`, `dialogPanePrivacyOptIn` (the retired
+`pixelAgentsProviderId` hook-path
 field is gone; the per-company conversation-dialog-pane privacy opt-in —
 default OFF, CEO decision 2 — gates the dialog pane's fuller extracts,
 §5.8). The surface is global-only: per-agent
@@ -327,7 +333,9 @@ The Pixel-Agents side of the bridge is a first-class plugin in two halves
   WS4 including first-class `assignAgentAppearance` assignments (the WS3
   frozen `characterId` rides the wire; the embedding surface resolves it to
   a sheet index) and pre-redacted `dialogLines` conversation extracts
-  (§5.8); the sink POSTs strictly ordered batches
+  (§5.8); the declaration's seat `palette` is cycled into the built-in 0–5
+  range (`% 6`, §5.7) so the seat fallback stays valid without an external
+  asset grant; the sink POSTs strictly ordered batches
   (`{ schemaVersion: 1, companyId, operations }`) to the embedding surface's
   `POST /api/plugin-feed`, fire-and-forget with `lastPushError` capture. The
   push rides the documented raw-`fetch` loopback exception (host SSRF-filter
@@ -335,12 +343,24 @@ The Pixel-Agents side of the bridge is a first-class plugin in two halves
   transport contract ([SAA-557](/SAA/issues/SAA-557),
   security F1): `parseRelayConfig` throws `RelayTransportContractError` for
   an enabled relay with a token ref whose `pixelAgentsUrl` is unparseable,
-  not an http(s) URL, or a cleartext `http:` URL to a non-loopback host,
-  and `BridgeRelay.configure()` fails secure on the rejection — the
+  not an http(s) URL, or a cleartext `http:` URL to a host that is not
+  trusted for cleartext — the single shared `isAllowedCleartextHost`
+  decision accepts loopback (`localhost`, `127.0.0.0/8`, `::1`), this
+  package's own bundled deployment service names (`pixel-agents`,
+  `pixel-agents-relay`), and any host the operator explicitly declares in
+  `pixelAgentsAllowedHttpHosts` (normalized; empty by default). The same
+  contract mirrors onto the tool-activity poller's pair: with
+  `paperclipApiTokenRef` configured, `paperclipApiBaseUrl` must be valid
+  http(s) and cleartext `http:` is accepted only for the same trusted hosts
+  — one operator declaration covers both pairs, and the save-time
+  `onValidateConfig` gate and this runtime backstop consult the same
+  decision so the two cannot drift.
+  `BridgeRelay.configure()` fails secure on any rejection — the
   company's prior transport is disposed and its relay left disabled
-  (warn-logged) instead of sending the bearer token in plaintext. Loopback
-  hosts (`localhost`, `127.0.0.0/8`, `::1`) keep plain `http:` for local
-  dev.
+  (warn-logged) instead of sending the bearer token in plaintext. Both raw
+  fetches (feed push and heartbeat-log read) run with `redirect: "error"`
+  so a bearer token is never re-sent to a cross-origin redirect
+  destination. Loopback hosts keep plain `http:` for local dev.
 - **Embedding side (in the Pixel Agents server process):**
   `src/pixel-agents-plugin/embedding.ts` (bundled to
   `dist/pixel-agents-embedding.cjs`, loaded by the fork's `--plugin` loader)
@@ -655,8 +675,79 @@ fail-closed new-work invariant, structurally upheld). Wire contract lives in
 `invokePluginAction`) with `core/src/messages.ts` regenerated in sync.
 Registration and lifecycle events are logged as structured single-line JSON
 carrying ids/versions/counts only — never payloads, secrets, or prompts.
-(WS1 residual R2 folded in here: standalone Fastify request logs now redact
-`?token=`.)
+  (WS1 residual R2 folded in here: standalone Fastify request logs now redact
+  `?token=`.)
+
+**Capability path: base/default plugin + override arbitration (WS5,
+Revision 2).** The fork's original Claude/hook runtime is now itself a
+first-class default plugin: `server/src/plugins/basePlugin.ts` wraps the
+existing server modules (providers registry, hook installer/consent,
+transcript parser, persistence, UI/asset loaders) as delegation wrappers —
+wrap, never relocate — and `initPluginHost` registers it as
+`pixel-agents-base` deterministically first, before any external `--plugin`
+module; the id is reserved (`registerPlugin`/`stopPlugin`/`unregisterPlugin`
+refuse it), so it can never be displaced by re-registration. The baseline
+equivalence suite (`server/__tests__/basePlugin.test.ts`) proves base-only
+output is unchanged (no agents/widgets/messages/menu beyond the legacy
+runtime's own). `manifest.ts` grows a stable capability vocabulary —
+`CAPABILITY_IDS`: seven runtime capabilities (provider-selection,
+hook-management, session-lifecycle, tool-activity, transcript-parsing,
+persistence, ui-data) plus the six delivered contribution surfaces (menu,
+label-policy, widgets, agents-source, appearance-source, action-routing) —
+and an optional `capabilities` declaration (`id`, `implementation:
+direct|override`, `overrides` target, `fallback: none|base`, `priority`)
+validated fail-closed at registration: unknown id, duplicate/conflict,
+override without a named target, fallback contradicting the implementation
+mode, and a priority on a direct capability all reject. The host keeps a
+capability registry (`registerCapability`/`getCapabilityImpl`/
+`capabilityProviders`) plus an override-claims map (capability id →
+priority → plugin id, recorded on successful registration, cleaned on
+unregister): resolution elects the **highest-priority explicit override**
+per capability and falls back to the base plugin, and a same-priority clash
+is a hard `CapabilityResolutionError` — the host never guesses,
+synthesizes, or silently elects. An override declaring `fallback: 'base'`
+dispatches in **wrap-and-delegate** mode: the host exposes the base
+implementation to the override, which can return `CAPABILITY_DELEGATE_TO_BASE`
+to fall back mid-call (returning the symbol in any other mode is refused).
+The Paperclip bridge (below) is the first override plugin; base-only vs
+plugin-loaded behavior is pinned by the fork's guard suites
+(`server/__tests__/guards/`: default-equivalence, override-isolation,
+fallback-resolution, security fail-closed, transport-compatibility — all
+importing the real bridge manifest cross-repo) and the arbitration suite
+(`pluginCapabilityArbitration.test.ts`, all four dispatch modes).
+
+```mermaid
+sequenceDiagram
+    participant OP as Operator (--plugin module / in-process code)
+    participant HOST as Fork plugin host
+    participant BASE as pixel-agents-base (reserved, registered first)
+    participant OVR as Override plugin (e.g. paperclip)
+    Note over HOST,BASE: initPluginHost: base registered first, id reserved
+    OP->>HOST: registerPlugin(manifest + handlers)
+    HOST->>HOST: validate manifest (incl. capabilities, fail-closed)
+    HOST->>HOST: record override claims (capability → priority → plugin);<br/>same-priority clash → CapabilityResolutionError
+    Note over HOST,OVR: capability dispatch
+    HOST->>HOST: resolveCapability(id): highest-priority override,<br/>else base; ambiguity → hard error
+    alt override with fallback: 'base' (wrap-and-delegate)
+        HOST->>OVR: invokeCapability(impl, baseImpl)
+        OVR-->>HOST: result or CAPABILITY_DELEGATE_TO_BASE
+        HOST->>BASE: delegate (fallback-to-base)
+    else direct base capability
+        HOST->>BASE: invokeCapability(impl)
+    end
+```
+
+**Plugin activity captions render honest frame sets (WS5-B).** A plugin
+activity caption now maps to the tool name the render path reads:
+reading-prefixed captions ride the wire as the real reading tool name (so
+reading work renders reading frames), while writing/developing/task
+captions keep the plugin id — a never-reading name — and deterministically
+render typing frames (the SAA-448 callout-4 interim mapping; the fork has
+no "developing" animation). A `waiting` status update also broadcasts
+`agentToolsClear`, mirroring the hook-flow turn-end behavior; and a handler
+result shaped `{ok: false, error}` collapses into the invocation outcome so
+refusals reach the invoking client instead of masquerading as data.
+
 
 **Contribution points (WS2-A2).** Four plugin-declared extension surfaces on
 the host, all fail-closed, zero per-feature fork code for a new contributor:
@@ -723,7 +814,15 @@ dialog pane), the agent-scoped click-menu item `Reply…` (routes to
 `reply-to-feedback`; the host cross-validates the item's `action` against
 the declarations), and — since WS4-C — the `dialog-pane` shell-panel widget
 (global binding, `messageTypes: [paperclip.dialog.lines]`; §5.8). The
-manifest still deliberately omits `labelPolicy` (default label behavior).
+  manifest still deliberately omits `labelPolicy` (default label behavior).
+  Since WS5 its manifest also declares the override scope — exactly the six
+  contribution-surface capabilities (agents-source, appearance-source,
+  label-policy, menu, widgets, action-routing) as overrides of
+  `pixel-agents-base` with `fallback: 'base'` and priorities 0–5
+  (`PAPERCLIP_OVERRIDE_CAPABILITIES` in `src/pixel-agents-plugin/manifest.ts`)
+  — so the bridge layers on the base plugin rather than replacing it, and
+  every runtime capability (the legacy Claude/hook behaviors) deliberately
+  resolves to the base.
 The push/embedding halves and the
 feed wire are §5.4; replies route through the **existing** Paperclip intake
 actions — the reply forwarder invokes the host's sanctioned performAction
@@ -754,8 +853,12 @@ exactly like in-process code and may start whatever else it needs (e.g. its
 own sidecar listener). Fail-closed: a module that cannot be loaded, exports
 no register function, or throws during registration aborts startup (exit 1)
 — an operator who asked for a plugin never gets a silently plugin-less
-server. The loader has zero plugin-specific knowledge; which modules load is
-pure operator configuration. Since WS4 the standalone CLI wires the default
+  server. The loader has zero plugin-specific knowledge; which modules load is
+  pure operator configuration. Since WS5 the built-in base/default plugin is
+  registered inside `initPluginHost` **before** this loop runs — an operator
+  who loads no `--plugin` module still gets the full base runtime, and every
+  capability not overridden downstream resolves to it. Since WS4 the
+  standalone CLI wires the default
 asset gate into the host at this point
 (`initPluginHost({ store, appearanceAssets: createStandaloneAppearanceAssetGate() })`),
 so `--plugin` modules get the appearance source with the operator's
@@ -831,7 +934,12 @@ plugin-side pieces (`src/pixel-agents-plugin/appearance.ts`):
   `declareAgents` and the webview applies it on top of plugin sheets exactly
   as for bundled palettes (modulo 360); the seat `palette` remains the
   frozen WS3 fallback index that governs whenever no plugin appearance is in
-  force.
+  force — since WS5 the feed mapper cycles it into the built-in range
+  (`palette % 6`) on the declaration, because the embedding host's
+  declaration validator accepts only built-in indices without an external
+  asset grant (the 24-sheet catalog ships in the Paperclip image, never in
+  the pixel-agents image) and catalog entries 0–5 are exactly the built-in
+  sheets, so `char_N` falls back to its built-in counterpart.
 
 End-to-end flow (declaration at startup, assignment per write/sync):
 
@@ -963,16 +1071,21 @@ Paperclip side as the plugin's `pixelAgentsTokenRef` secret; the reply
 forwarder additionally needs `PAPERCLIP_PIXEL_API_TOKEN` (a board API key)
 and an allowlisted in-network hostname (`PAPERCLIP_ALLOWED_HOSTNAMES`).
 Any topology where the worker and the feed listener are separated must set
-`pixelAgentsUrl` explicitly per company. Transport-contract consequence
-([SAA-557](/SAA/issues/SAA-557), security F1): with a feed token configured,
-a cleartext service-name URL such as the k8s stack's documented
-`http://pixel-agents:8081` is **rejected at configure time** —
-`parseRelayConfig` throws `RelayTransportContractError` for a
-token-configured relay when the URL is non-loopback `http:`, non-http(s),
-or unparseable, and the relay is disabled fail-secure (warn-logged) — so
-containerized topologies need TLS fronting in front of the feed listener or
-an explicit exception decision (adjudication pending with Security
-Engineer); only loopback hosts keep plain `http:` with a token. The plugin
+  `pixelAgentsUrl` explicitly per company. Transport-contract consequence
+  ([SAA-557](/SAA/issues/SAA-557), security F1, reconciled in WS5): with a
+  feed token configured, a cleartext `http:` `pixelAgentsUrl` is accepted
+  only for a trusted cleartext host — loopback, this package's own bundled
+  deployment service names (`pixel-agents`, `pixel-agents-relay`, so the
+  documented compose/k8s stack URLs such as `http://pixel-agents:8081` work
+  as-is), or a host the operator explicitly declares in
+  `pixelAgentsAllowedHttpHosts` (the field exists for a separate-container
+  topology that reaches the feed under a different internal service name).
+  Anything else is rejected at configure time
+  (`RelayTransportContractError`, relay disabled fail-secure, warn-logged);
+  deployments that want no cleartext exception at all front the feed
+  listener with TLS and use an `https:` URL. The same trusted-host decision
+  covers the tool-activity poller's `paperclipApiBaseUrl` when its own
+  token is configured. The plugin
 worker runs as a forked
 child of the Paperclip host, not as its own pod. Rollback is trivial by
 construction: the bridge is a non-authoritative observer — disabling the
@@ -993,8 +1106,54 @@ replication, navigation to the page),
 contribution; auto-rendered editable 7-field global form; the suite's own
 edits are browser-local and never saved), and `e2e/paperclip/hue-shift.spec.ts` (per-agent picker
 selection, [0, 360]-bounded hue controls, clamping, per-agent draft
-retention). Rebuild/redeploy and suite-run instructions live in
-`deploy/README.md`.
+  retention). Rebuild/redeploy and suite-run instructions live in
+  `deploy/README.md`.
+
+**WS5 verification surface (final hardening + visual validation).** Three
+layers pin the WS5 behavior. (1) *Deployed-stack Playwright*
+(`e2e/paperclip/`): `character-activity.spec.ts` proves FR-19 as accepted
+under the run-edge realization — a real run driven through the Paperclip
+API seats the character in typing frames with the run caption, the run's
+end returns it to idle; the teammate-blue name label and the
+reading-vs-typing frame-set choice are asserted through
+`window.__pixelAgentsTestHooks`, never pixel screenshots. The specs' feed
+wiring is applied idempotently to the seed company by
+`e2e/helpers/plugin-config.ts` (the same routes the settings UI uses;
+skip-with-reason when the runner env lacks the token/URL).
+`company-switch.spec.ts` drives the host's real sidebar company switcher
+and asserts the office re-scopes with no cross-company leakage (agents,
+labels, feed), restoring the canonical single-company state afterwards.
+`stale-disconnect.spec.ts` (opt-in `PAPERCLIP_PIXEL_E2E_STALE=1`, ~4-minute
+disruptive run) pins the deterministic staleness contract
+(`hasSnapshot && !streamConnected && > 90s` silence; the snapshot probe
+502s while the worker is disabled) and records that the office iframe
+stays mounted while the Paperclip worker is down — the pixel-agents-side
+plugin host is decoupled from the Paperclip plugin worker, so the gates
+that truly pause while stale are the Pixel Office page's own. (2)
+*Unit-level isolation*: `test/company-switch-isolation.test.ts` pins the
+worker's per-company `CompanyRuntime` isolation — one
+`BridgeRuntime.companies` map with a separate store, per-agent
+assignments, and relay mapper/sink per company; no company B event,
+snapshot, or appearance assignment leaks into company A's bridge snapshot
+or feed batch. (3) *The fork's standalone suite*
+(`pixel-agents/e2e/tests/standalone/`), split by boot configuration:
+**base-only** (no `--plugin` — `defaultViewEquivalence.spec.ts` proves
+every plugin-host contribution surface resolves to the host default and
+the base-only half of the FR-20 fail-closed new-work gate: empty
+`requestAgentMenu` items, `unknownPlugin` refusal on a privileged reply
+attempt) vs **plugin-loaded** (fixture modules through `--plugin` —
+`pluginActivity.spec.ts` (FR-19 standalone: reading/typing frames,
+status→activity propagation, waiting-on-human stops work, label-policy
+show/hide), `pluginAppearance.spec.ts` (WS4-B), and
+`pluginHostHardening.spec.ts` (NFR-7 restart/reconnect/dedupe on the
+plugin-host surface: a kill + respawn mid-stream rehydrates exactly once —
+no duplicate characters, appearance re-applied,
+`pluginCharactersLoaded`-before-`existingAgents` ordering preserved; a
+duplicate appearance assignment through the plugin-host source does not
+duplicate a character or double-apply the sheet)). The standalone suite
+boots the real `dist/cli.js`, so the bundle must be rebuilt after any
+`server/`/`core/` change — a stale build silently asserts against old
+server code and can false-green.
 
 ## 07. Data Architecture
 
@@ -1028,7 +1187,7 @@ carries no personal or prompt content, and survives plugin upgrades through
 | Host integration | All Paperclip access via the SDK behind the manifest's capability list | Least-privilege capabilities; host-authenticated actor; `resolveCompanyScope` asserts host-scoped company on every action |
 | Action policy | New-work intake is structurally confined to company/leadership actions | `agent.reply-to-feedback` requires an existing work binding, returns `route-to-company` otherwise; no `issues.create` on the reply path — including the click-menu reply route, which forwards into those same actions through the performAction proxy |
 | Plugin state | Scoped, capability-gated (`plugin.state.read/write`) | Zod/fail-closed validation on every load; agent scope per agent id |
-| Worker↔feed-endpoint HTTP | Same-operator sidecar boundary (`POST /api/plugin-feed`) | Bearer shared secret (`pixelAgentsTokenRef` ↔ `PAPERCLIP_PIXEL_FEED_TOKEN`); constant-time compare over SHA-256 digests; 401 fail-closed; token never in the URL; 1 MB body cap; `no-store` + `nosniff`; embedding module refuses to start without a token; https-when-token on `pixelAgentsUrl` enforced at config save (`onValidateConfig`) and fail-closed at runtime (`parseRelayConfig` throws `RelayTransportContractError` → relay disposed and disabled; with a token the URL must be valid http(s) and cleartext `http:` is loopback-only) |
+| Worker↔feed-endpoint HTTP | Same-operator sidecar boundary (`POST /api/plugin-feed`) | Bearer shared secret (`pixelAgentsTokenRef` ↔ `PAPERCLIP_PIXEL_FEED_TOKEN`); constant-time compare over SHA-256 digests; 401 fail-closed; token never in the URL; 1 MB body cap; `no-store` + `nosniff`; embedding module refuses to start without a token; https-when-token on `pixelAgentsUrl` enforced at config save (`onValidateConfig`) and fail-closed at runtime (`parseRelayConfig` throws `RelayTransportContractError` → relay disposed and disabled; with a token the URL must be valid http(s) and cleartext `http:` is accepted only for a trusted host — loopback, the bundled deployment service names, or an operator-declared `pixelAgentsAllowedHttpHosts` entry; the same shared decision covers the poller's `paperclipApiBaseUrl`/`paperclipApiTokenRef` pair); both raw fetches run `redirect: "error"` so a bearer token is never re-sent to a cross-origin redirect destination |
 | Bridge ↔ Pixel Agents runtime | In-process, no network hop | The embedding module registers through the plugin-host API inside the server process — the bridge holds no websocket and no fork-side secret; `invokePluginAction` is privilege-gated like `setHooksEnabled` (plugin actions run first-party code) |
 | Secrets | Operator-configured `pixelAgentsTokenRef` / `paperclipApiTokenRef`; embedding env `PAPERCLIP_PIXEL_FEED_TOKEN` / `PAPERCLIP_PIXEL_API_TOKEN` | Secret references only in Paperclip config, resolved at call time; never logged, never persisted; the feed token is required (fail-closed startup), the reply-forwarder API token is optional (replies fail closed `forwarderNotConfigured` without it) |
 | Outbound HTTP | Worker pushes routed through SDK-gated `ctx.http.fetch` (audited) | One documented exception: the feed push uses a narrowly-scoped raw `fetch` because the host SSRF filter categorically blocks the loopback sidecar destination |
@@ -1331,6 +1490,79 @@ the pane.
 The dialog pane is a lossy, always-redacted summary surface; only an
 explicit per-company opt-in unlocks fuller (still bounded) extracts.
 
+### ADR-06 — The Claude/hook runtime becomes the base plugin; overrides arbitrate by explicit priority (WS5)
+
+#### Context & Problem
+Revision 2 (board directive, recorded in the PAPERCLIP_PIXELS_2 domain
+record §R2) redefined the plugin target: the original Claude/hook behavior
+is modeled as a first-class default/base plugin and the Paperclip bridge is
+an override layer on top — superseding the earlier "bridge as the first
+plugin" framing. The host needed a way to name every behavior the legacy
+runtime exhibits, resolve each one without guessing, and let the bridge
+specialize exactly its contribution surfaces without ever suppressing
+baseline behavior.
+
+#### Alternatives Considered
+
+| Option | Description |
+|---|---|
+| Keep the legacy runtime as ambient server code; plugins add contribution points only | Rejected: baseline behavior is unnameable, so an override layer cannot express what it replaces or inherits |
+| Relocate the legacy runtime into the plugin wholesale | Rejected: large churn with zero behavioral gain; the modules already work where they are |
+| Implicit/residual fallback (unoverridden behavior "just is" whatever remains) | Rejected: the host would guess; conflicts would resolve silently |
+| **Wrap the legacy runtime as the reserved default plugin `pixel-agents-base`; declare capabilities explicitly and arbitrate by priority (board §R2.5/§5.3/§7.1)** | Chosen |
+
+#### Decision
+A stable capability vocabulary (`CAPABILITY_IDS`: 7 runtime + 6
+contribution-surface ids) with fail-closed manifest declarations
+(`direct` vs `override`, explicit `overrides` target, `fallback:
+none|base`, explicit `priority`); the legacy runtime wrapped — never
+relocated — as delegation wrappers (`basePlugin.ts`) under the reserved id
+`pixel-agents-base`, registered first inside `initPluginHost`; and host
+arbitration that elects the highest-priority explicit override per
+capability with base fallback, where a same-priority clash is a hard
+`CapabilityResolutionError`. The bridge declares exactly the six
+contribution-surface capabilities as overrides with `fallback: 'base'`,
+realized additively through the existing contribution points — no
+suppression of baseline surfaces.
+
+#### Detailed Rationale
+Wrapping instead of relocating keeps the change provably behavior-neutral:
+the baseline equivalence suite asserts base-only output is unchanged, and
+the cross-repo guard suites (default-equivalence, override-isolation,
+fallback-resolution, security fail-closed, transport-compatibility) pin
+that an override cannot suppress or mutate undeclared capabilities.
+Explicit priority with hard-fail ambiguity means the host never elects
+silently — two plugins claiming the same capability at the same priority
+is a registration-time error, not a coin flip. Wrap-and-delegate
+(`CAPABILITY_DELEGATE_TO_BASE`) gives an override the base implementation
+through a host-owned surface only, so delegation is auditable and no
+reach-around exists. Operators can reason about runtime behavior from
+configuration alone: what is loaded, what each plugin declares, and what
+falls back to base are all readable without reading code.
+
+#### Pros / Cons
+
+| Pros | Cons |
+|---|---|
+| Base-only installations provably unchanged; the override layer is purely additive | Capability vocabulary must be extended deliberately when a new behavior class appears |
+| Ambiguity fails closed at registration; no silent election | Priority integers are arbitrary — operators must be told the winning rule (highest wins) |
+| Delegation to base is host-mediated and auditable | One more registry to keep fail-closed (claims cleaned on unregister) |
+
+#### SWOT Analysis
+
+| Strengths | Weaknesses |
+|---|---|
+| Every legacy behavior is nameable and resolvable; the structure upholds base-only equivalence by construction | The reserved-id and registry invariants add host surface that must stay guarded |
+| Opportunities | Threats |
+| Future override plugins (beyond Paperclip) reuse the same arbitration unchanged | A plugin declaring a bogus high priority could starve a legitimate override (mitigated: declarations are operator-loaded configuration, and clashes hard-fail) |
+
+#### Summary
+The legacy runtime is the reserved default plugin; capabilities are
+declared explicitly and arbitrated by priority with base fallback; the
+Paperclip bridge overrides exactly its six contribution surfaces and
+delegates everything else. Full decision history and board/CTO rationale
+live in the PAPERCLIP_PIXELS_2 domain record (Revision 2).
+
 ### Workaround ledger (retired workarounds vs. documented host exceptions)
 
 Interim mechanisms are retired when a first-class path replaces them; the
@@ -1344,7 +1576,7 @@ scoped, and tracked, and none licenses a new workaround of the same shape.
 | `saveAgentSeats` seat-driving + `POST /api/appearance-sync` | Workaround | **Retired (WS2-C)** | Appearances ride the sanctioned sources: seat via `declareAgents`, sprite via `assignAgentAppearance` (WS4) |
 | WS3 interim external-asset-directory *sharing* (external loader merges sheets; plugin palette indices point into the merged array) | Workaround | **Retired as the rendering path (WS4)** | First-class appearance pipeline (§5.7); the operator grant itself is **kept** and re-purposed as the appearance asset gate's authorization boundary |
 | Plugin SSE 501 → 20s polling fallback | Host gap exception | **Kept — exception, not precedent** ([SAA-315](/SAA/issues/SAA-315) app gap) | Host lacks plugin stream SSE on the stock image; UI polls every 20s (risk R6); the fix is an upstream Paperclip change, not more plugin-side machinery |
-| Relay raw-`fetch` loopback bypass of `ctx.http.fetch` | Host gap exception | **Kept — exception, not precedent** | Host SSRF filter categorically blocks the loopback/sidecar feed destination (no allowlist exists); bypass is scoped to the feed push (and the heartbeat-log poller's sibling), non-http(s) refused, policed by the https-when-token contract ([SAA-557](/SAA/issues/SAA-557)) so cleartext + token is loopback-only (risk R4) |
+| Relay raw-`fetch` loopback bypass of `ctx.http.fetch` | Host gap exception | **Kept — exception, not precedent** | Host SSRF filter categorically blocks the loopback/sidecar feed destination (no allowlist exists); bypass is scoped to the feed push (and the heartbeat-log poller's sibling), non-http(s) refused, policed by the https-when-token contract ([SAA-557](/SAA/issues/SAA-557)) so cleartext + token is trusted-host-only (loopback, the bundled deployment service names, or an operator-declared `pixelAgentsAllowedHttpHosts` entry; risk R4) |
 
 ### Risk register
 
@@ -1357,7 +1589,7 @@ scoped, and tracked, and none licenses a new workaround of the same shape.
 | R5 | Renderer hueShift mod-360 wrap re-introduces collisions if formulas change | Medium — visual identity collisions | Low | Wrap-safe formula `45 + ((c-1)*47) % 315` pinned by unit tests (Tester-verified) | Engineering | Mitigated |
 | R6 | Host plugin-SSE gap forces polling degradation | Low — UI latency | Certain (known host gap) | 20s polling fallback; documented exception, not a precedent (workaround ledger above) | CTO | Tracked |
 | R7 | Catalog directory not operator-granted in a deployment — the plugin's `declareCharacterCatalog` is refused and every agent keeps built-in palette rendering | Low — visual fallback only; bundled palettes 0–5 always render | Medium (deploy-dependent) | One-time operator grant of the catalog directory through the fork's privilege-gated `addExternalAssetDirectory` path (now the appearance asset gate boundary, §5.7); plugin restart re-declares once granted; refusal is logged (`paperclip_appearance_catalog_refused`) | Engineering | Tracked |
-| R8 | Documented containerized topology pairs the feed token with the cleartext service-name URL `http://pixel-agents:8081` — rejected by the runtime https-when-token gate, so the relay disables itself at configure time in those stacks | Medium — bridge feed stops for affected companies (warn-logged; the token is never sent in plaintext) | Certain for token-configured service-name topologies until remedied | TLS-front the feed listener (https `pixelAgentsUrl`) or obtain an explicit exception decision (adjudication pending with Security Engineer, [SAA-557](/SAA/issues/SAA-557)); loopback local dev unaffected | Engineering / Security Engineer | Tracked |
+| R8 | Containerized topology pairs the feed token with a cleartext service-name feed URL | Medium — bridge feed stops for affected companies (warn-logged; the token is never sent in plaintext) | Low | **Resolved in WS5** ([SAA-557](/SAA/issues/SAA-557) reconcile): the https-when-token gate now trusts loopback, this package's own bundled deployment service names (`pixel-agents`, `pixel-agents-relay` — the documented compose/k8s stack URLs work as-is), and operator-declared `pixelAgentsAllowedHttpHosts` entries for any other internal name; anything else still fails closed at configure time, and deployments wanting no cleartext exception front the listener with TLS | Engineering | Resolved |
 | R9 | Dialog-pane guardrail regression ships sensitive prompt content to the Pixel Agents wire | High — privacy/secret exposure | Low | Guardrails are structural compose-time layers (always-on redaction + both-mode truncation + 600-char clamp), strict-true toggle parsing, feed-side re-clamp and sink validation; pinned fail-on-old-code by `test/dialog-guardrail.test.ts` + `test/dialog-pane-registration.test.ts` ([SAA-620](/SAA/issues/SAA-620) acceptance green) | Engineering | Mitigated |
 
 ## 10. Interfaces
@@ -1368,7 +1600,7 @@ scoped, and tracked, and none licenses a new workaround of the same shape.
 | IF002 | Worker data endpoints | UI → worker | SDK `ctx.data`: `bridge-snapshot`, `company-summary`, `agent-behavior`, `outstanding-feedback`, `visual-settings` |
 | IF003 | Worker actions | UI → worker → Paperclip | SDK `ctx.actions`: `company.send-message`, `agent.reply-to-feedback`, `agent.set-pixel-appearance` (Zod-validated, host-scoped) |
 | IF004 | Worker streams | Worker → UI | SDK `ctx.streams`: the shared `bridge` channel (carries company-scoped events, opened per company) and `behavior:<companyId>` channels |
-| IF005 | Plugin feed endpoint | Worker → embedding surface | `POST /api/plugin-feed` (sidecar listener, default `127.0.0.1:8081`): bearer shared secret (constant-time SHA-256 digest compare, 401 fail-closed, never token-in-URL, 1 MB cap); batches `{ schemaVersion: 1, companyId, operations }` of `declareAgents` / `removeAgents` / `updateAgentStatus` / `updateAgentActivity` / `assignAgentAppearance` (WS4: frozen `characterId`, resolved to a sheet index against the declared catalog) / `dialogLines` (WS4: pre-redacted extracts, ≤ 8 lines/batch, 600-char lines), all-or-nothing validated incl. sink-presence (a batch carrying appearance/dialog ops against a sink-less embedding surface is rejected whole); worker side enforces https-when-token at configure time (with a token, `pixelAgentsUrl` must be a valid http(s) URL and plain `http:` is loopback-only — otherwise `RelayTransportContractError` disables the relay) |
+| IF005 | Plugin feed endpoint | Worker → embedding surface | `POST /api/plugin-feed` (sidecar listener, default `127.0.0.1:8081`): bearer shared secret (constant-time SHA-256 digest compare, 401 fail-closed, never token-in-URL, 1 MB cap); batches `{ schemaVersion: 1, companyId, operations }` of `declareAgents` / `removeAgents` / `updateAgentStatus` / `updateAgentActivity` / `assignAgentAppearance` (WS4: frozen `characterId`, resolved to a sheet index against the declared catalog) / `dialogLines` (WS4: pre-redacted extracts, ≤ 8 lines/batch, 600-char lines), all-or-nothing validated incl. sink-presence (a batch carrying appearance/dialog ops against a sink-less embedding surface is rejected whole); worker side enforces https-when-token at configure time (with a token, `pixelAgentsUrl` must be a valid http(s) URL and plain `http:` is accepted only for a trusted cleartext host — loopback, the bundled deployment service names, or a `pixelAgentsAllowedHttpHosts` entry — otherwise `RelayTransportContractError` disables the relay; the poller's `paperclipApiBaseUrl` follows the same contract with its own token) |
 | IF006 | Fork plugin-host API (bridge ↔ Pixel Agents runtime) | Embedding surface ↔ plugin host, in-process | WS2-A1/A2 + WS4-A host API: `registerPlugin`/`startPlugin`, `PluginContext.agents` (sanctioned agent/team source), `PluginContext.appearance` (WS4-A appearance source: `declareCharacterCatalog` / `assignAgentAppearance`, manifest-gated by `sources.appearance`, privilege-gated by `PluginAppearanceAssetGate` — grants = operator external asset directories), `ctx.characterEvents`; wire contract `pluginMessage` / `pluginActionResult` / `invokePluginAction` (privilege-gated) / `requestAgentMenu`→`agentMenu` / `agentLabelPolicy` / `pluginWidgets` / `pluginCharactersLoaded` (per-plugin snapshot) / `agentAppearance` (assign/revert) (`core/asyncapi.yaml`) |
 | IF007 | Click-menu reply forwarder | Embedding surface → Paperclip API | `POST /api/plugins/:pluginId/actions/:key` (the host's sanctioned performAction proxy) invoking the plugin's existing `agent.reply-to-feedback` / `company.send-message` handlers; bearer board API key (`PAPERCLIP_PIXEL_API_TOKEN`); without it replies fail closed `forwarderNotConfigured`; no issue-creation code on the path |
 | IF008 | Worker ↔ Paperclip API (tool activity) | Worker → host API | `GET /api/heartbeat-runs/:runId/log` polling for real tool-call activity |

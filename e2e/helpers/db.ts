@@ -80,6 +80,23 @@ export async function issueHasCommentContaining(companyId: string, issueId: stri
   }
 }
 
+/** Number of comments on one issue (fail-closed read-back: an invocation
+ *  that must not deliver anything leaves the count unchanged — robust
+ *  across reruns, unlike a fixed text marker a previous run may have
+ *  legitimately landed). */
+export async function issueCommentCount(companyId: string, issueId: string): Promise<number> {
+  const db = await connectDb();
+  try {
+    const rows = await db.query<{ count: string }>(
+      "SELECT count(*)::int AS count FROM issue_comments WHERE company_id = $1 AND issue_id = $2",
+      [companyId, issueId],
+    );
+    return Number(rows[0]?.count ?? 0);
+  } finally {
+    await db.close();
+  }
+}
+
 /** Whether any issue in the company references the given text (new-work leak check). */
 export async function anyIssueReferences(companyId: string, textFragment: string): Promise<boolean> {
   const db = await connectDb();

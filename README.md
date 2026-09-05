@@ -59,10 +59,10 @@ Set these on the plugin's instance config (Paperclip UI: Plugins → this plugin
 
 | Field | Default | Meaning |
 |---|---|---|
-| `pixelAgentsUrl` | `http://127.0.0.1:8081` | Base URL of the running `paperclip-pixel-relay` (**not** Pixel Agents itself — the relay is the one that knows the bearer token). The default assumes Paperclip, the relay, and Pixel Agents are all on one machine; **set this explicitly** whenever the relay runs on a different host/pod than Paperclip (e.g. this repo's own k8s reference deployment, where the relay lives in the Pixel Agents pod). |
-| `pixelAgentsTokenRef` | *(required by the relay)* | Secret reference resolved to the relay's shared secret. Pixel Agents' own token remains local to the companion. |
+| `pixelAgentsUrl` | `http://127.0.0.1:8081` | Base URL of the companion that embeds the Paperclip plugin inside Pixel Agents and serves `POST /api/plugin-feed`. The default assumes Paperclip and the companion are on one machine; **set this explicitly** for a separate-container/k8s topology (e.g. this repo's own deployment, where it is `http://pixel-agents:8081`). |
+| `pixelAgentsAllowedHttpHosts` | `[]` | Optional array of internal hostnames the operator explicitly trusts to carry the feed bearer token over cleartext `http:` (the https-when-token contract otherwise rejects a token on a non-loopback `http:` URL). Set `["pixel-agents"]` for the bundled separate-container compose topology. |
+| `pixelAgentsTokenRef` | *(required by the relay)* | Secret reference resolved to the companion's shared secret (`PAPERCLIP_PIXEL_FEED_TOKEN`). Requires an `https:` `pixelAgentsUrl`, or a loopback/`pixelAgentsAllowedHttpHosts` host. |
 | `pixelAgentsUiUrl` | `http://localhost:8090` | Browser-reachable Pixel Agents URL embedded in the Pixel Office page. |
-| `pixelAgentsProviderId` | `claude` | Path segment in the hook URL. Leave as `claude` — it's the only provider id Pixel Agents' unmodified route currently accepts. |
 | `pixelAgentsRelayEnabled` | `true` | Explicit on/off switch. |
 
 The relay is **on by default** — no configuration is strictly required to see it work, once both halves are running and reachable from each other.

@@ -77,16 +77,24 @@ export function staleBanner(page: Page): Locator {
 /**
  * App-gap marker for the known host defect SAA-315 (filed under SAA-231):
  * the deployed host never wires the plugin stream bus, so every
- * `GET /api/plugins/:id/bridge/stream/*` returns 501 and the Pixel Office is
- * permanently marked stale (§30.1) — all state-changing UI is disabled. Many
- * interactive scenarios therefore cannot be driven until the host enables the
- * stream bridge and is redeployed. The suite probes stream connectivity at
- * runtime and skips only the steps that genuinely require it; rendering and
- * refresh-path steps still run.
+ * `GET /api/plugins/:id/bridge/stream/*` returns 501 and `useBridge.connected`
+ * is permanently false — the stream-connected live-update path never runs. The
+ * stale banner is NOT driven by stream connectivity alone, though: `stale` is
+ * `hasSnapshot && !streamConnected && (now - snapshot.observedAt) > STALE_AFTER_MS`
+ * (`src/ui/use-bridge.ts`), so the Pixel Office is only marked stale after 90s
+ * of genuine snapshot silence and clears again on the next actual snapshot
+ * rebuild (bootstrap/event/reconcile, e.g. plugin re-enable). It is NOT
+ * permanently stale because the stream is down (corrected per SAA-757 — that
+ * was the SAA-754 finding-1 claim). Many stream-dependent scenarios still
+ * cannot be driven until the host wires the stream bus; the suite probes
+ * stream connectivity at runtime and skips only the steps that genuinely
+ * require it; rendering, refresh, and staleness-cycle steps still run.
  */
 export const APP_GAP_STREAM_SKIP_REASON =
   "app gap SAA-315: plugin stream bridge not enabled in the deployed host (GET /api/plugins/:id/bridge/stream/* -> 501); " +
-  "the Pixel Office is permanently stale, so state-changing actions are disabled until the host wires + redeploys the stream bus.";
+  "the stream live-update path is unavailable so stream-dependent steps skip. " +
+  "The stale banner itself is deterministic freshness-based (90s of snapshot silence), not permanently on " +
+  "(corrected per SAA-757).";
 
 /**
  * Probe whether the bridge's `behavior:<companyId>` SSE channel is connected

@@ -28,8 +28,16 @@ const relayConfigSchema: JsonSchema = {
       type: "string",
       title: "Pixel Agents companion URL",
       description:
-        "Base URL of the companion sidecar that embeds the Paperclip plugin inside Pixel Agents and serves POST /api/plugin-feed. Public endpoints must use https; plain http is only accepted for loopback hosts (localhost, 127.0.0.0/8, ::1). Defaults to http://127.0.0.1:8081.",
+        "Base URL of the companion sidecar that embeds the Paperclip plugin inside Pixel Agents and serves POST /api/plugin-feed. Public endpoints must use https; plain http is only accepted for loopback hosts or a host explicitly listed in pixelAgentsAllowedHttpHosts. Defaults to http://127.0.0.1:8081.",
       format: "uri",
+    },
+    pixelAgentsAllowedHttpHosts: {
+      type: "array",
+      items: { type: "string" },
+      title: "Trusted internal hosts (cleartext feed token)",
+      description:
+        "Optional array of internal hostnames the operator explicitly trusts to carry the feed bearer token over cleartext http. Only needed for a separate-container topology (e.g. the bundled Compose service name pixel-agents) where the feed is reachable at a non-loopback host; https is still required for anything not listed here or a loopback address.",
+      default: [],
     },
     pixelAgentsUiUrl: {
       type: "string",
@@ -61,7 +69,7 @@ const relayConfigSchema: JsonSchema = {
       ],
       title: "Pixel Agents bearer token",
       description:
-        "Optional secret reference resolved to the bearer token sent on each plugin feed push to the companion. Stored as a secret_ref binding, never as a plaintext value. Requires an https: pixelAgentsUrl (plain http is only accepted for loopback hosts). Not needed for the bundled sidecar default.",
+        "Optional secret reference resolved to the bearer token sent on each plugin feed push to the companion. Stored as a secret_ref binding, never as a plaintext value. Requires an https: pixelAgentsUrl (plain http is only accepted for loopback hosts or a host explicitly listed in pixelAgentsAllowedHttpHosts). Not needed for the bundled sidecar default.",
     },
     pixelAgentsRelayEnabled: {
       type: "boolean",

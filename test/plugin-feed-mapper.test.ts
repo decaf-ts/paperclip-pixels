@@ -605,6 +605,25 @@ describe("PluginFeedMapper — appearance map", () => {
     ]);
   });
 
+  it("SAA-694: a catalog seat palette beyond the built-in sheet count is cycled into the built-in range (seat/fallback stays declarable everywhere)", () => {
+    // The declaration's palette is the SEAT/fallback index into Pixel
+    // Agents' built-in sheets; catalog indices >= 6 are rejected fail-closed
+    // by the embedding host when no external asset grant widened the palette
+    // (every docker deployment). char-7 (palette 7) falls back to its
+    // built-in counterpart sheet 1; hueShift still rides for the WS4-A path.
+    const mapper = new PluginFeedMapper();
+    const ops = mapper.setAppearances([
+      { ...entryA, characterId: "pixel-agents:char-7", palette: 7 },
+    ]);
+    expect(ops).toEqual([
+      {
+        op: "declareAgents",
+        agents: [{ key: AGENT_A, name: "Display A", teamName: TEAM_A, palette: 1, hueShift: 45 }],
+      },
+      assignOf(AGENT_A, "pixel-agents:char-7"),
+    ]);
+  });
+
   it("the appearance map survives reset(): post-reset declarations keep name/seat", () => {
     const mapper = new PluginFeedMapper();
     mapper.setAppearances([entryA]);

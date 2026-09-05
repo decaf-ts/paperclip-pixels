@@ -63,9 +63,13 @@ The Paperclip-side plugin config (`pixelAgentsUrl`) defaults to
 case, but **wrong for the containerized topologies here**, where the
 embedding surface runs in the pixel-agents container/pod, not the Paperclip
 one. **After creating your first company**, set `pixelAgentsUrl` to
-`http://pixel-agents:8081` (the feed listener's cluster address) and
+`http://pixel-agents:8081` (the feed listener's cluster address),
 `pixelAgentsTokenRef` to a Paperclip secret holding the same shared secret
-as `PAPERCLIP_PIXEL_FEED_TOKEN` on the plugin's instance config — Paperclip
+as `PAPERCLIP_PIXEL_FEED_TOKEN` on the plugin's instance config, and — since
+that is a cleartext `http:` internal host — `pixelAgentsAllowedHttpHosts` to
+`["pixel-agents"]` to declare it a trusted internal peer (SAA-734
+reconcile; the https-when-token contract otherwise rejects the feed+bearer
+token combination on a non-loopback host). Paperclip
 UI: Plugins → this plugin → Configure, or `POST /api/plugins/:id/config`;
 see the [package README](../README.md#configure-the-plugin). There
 is currently no automated way to set this before a company exists (Paperclip
@@ -198,9 +202,11 @@ PAPERCLIP_PIXEL_API_TOKEN=<board-api-key> \
 ```
 
 After the first company exists, configure the Paperclip plugin to match:
-`pixelAgentsUrl=http://pixel-agents:8081` and a `pixelAgentsTokenRef`
-secret holding the same value as `PAPERCLIP_PIXEL_FEED_TOKEN` (see "How the
-bridge reaches Pixel Agents" above).
+`pixelAgentsUrl=http://pixel-agents:8081`, a `pixelAgentsTokenRef`
+secret holding the same value as `PAPERCLIP_PIXEL_FEED_TOKEN`, and
+`pixelAgentsAllowedHttpHosts=["pixel-agents"]` (so the cleartext internal
+feed link may carry the bearer token; see "How the bridge reaches Pixel
+Agents" above).
 
 `up -d` recreates only services whose image/config changed; named volumes
 (`pgdata`, `paperclip-data`) persist. For a fully fresh instance (fresh
@@ -234,8 +240,10 @@ board-mutation API calls, or the board-mutation guard answers 403.
 
 ```bash
 cd e2e && pnpm install --frozen-lockfile && npm run install-browsers
-PAPERCLIP_PIXEL_E2E_HOST_URL=LOGIN_ORIGIN=http://172.24.0.1:3100 \
-DB_HOST=172.24.0.1 DB_PORT=15432 NO_GATE=1 npm test
+PAPERCLIP_PIXEL_E2E_HOST_URL=http://172.24.0.1:3100 \
+PAPERCLIP_PIXEL_E2E_LOGIN_ORIGIN=http://172.24.0.1:3100 \
+PAPERCLIP_PIXEL_E2E_DB_HOST=172.24.0.1 PAPERCLIP_PIXEL_E2E_DB_PORT=15432 \
+PAPERCLIP_PIXEL_E2E_NO_GATE=1 npm test
 ```
 
 **Leave the stack running and healthy when done** — it is shared with

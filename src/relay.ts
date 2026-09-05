@@ -33,6 +33,13 @@
  *   - `pixelAgentsTokenRef`    — secret reference resolving to a bearer token
  *                                sent with each feed push (optional; never
  *                                stored as a plaintext value).
+ *   - `pixelAgentsAllowedHttpHosts` — optional array of internal hostnames
+ *                                the operator explicitly trusts to carry the
+ *                                feed bearer token over cleartext `http:`
+ *                                (SAA-534/557 F1 reconcile, SAA-734). The
+ *                                https-when-token default and the bundled
+ *                                deployment hostnames still apply; this list
+ *                                only adds operator-declared internal peers.
  *   - `pixelAgentsRelayEnabled`— explicit on/off (default on)
  *   - `paperclipApiBaseUrl` / `paperclipApiTokenRef` — the Paperclip API the
  *                                tool-activity poller reads run logs from
@@ -62,6 +69,24 @@ import { ToolActivityPoller, type LogFetchLike } from "./tool-activity-poller.js
  * `deploy/k8s/`) MUST set `pixelAgentsUrl` explicitly — fully overridable.
  */
 export const DEFAULT_PIXEL_AGENTS_URL = "http://127.0.0.1:8081";
+
+/**
+ * Compose/k8s internal hostnames this deployment deliberately trusts to carry
+ * the feed bearer token over cleartext `http:`. These are the package's OWN
+ * bundled deployment names (the first-class in-process embedding surface runs
+ * on the `pixel-agents` service; `pixel-agents-relay` is the retired
+ * same-pod relay sidecar kept for backward compatibility with configs that
+ * predate WS2-D). Kept separate from {@link isLoopbackHost}: loopback is
+ * always trusted (same-machine), these are operator-owned internal peers.
+ *
+ * An operator deploying under a DIFFERENT internal service name extends this
+ * set explicitly via the `pixelAgentsAllowedHttpHosts` config field rather
+ * than relying on a magic hostname here.
+ */
+export const DEFAULT_TRUSTED_CLEARTEXT_HOSTS: readonly string[] = [
+  "pixel-agents",
+  "pixel-agents-relay",
+];
 
 /**
  * Default base URL for the tool-activity poller's `GET
@@ -98,6 +123,15 @@ export interface RelayCompanyConfig {
   pixelAgentsUiUrl: string;
   /** Resolved bearer token (never the persisted ref). */
   pixelAgentsToken?: string;
+  /**
+   * Additional internal hostnames the operator explicitly trusts to carry the
+   * feed bearer token over cleartext `http:` (SAA-557 F1 reconcile, SAA-734).
+   * Unioned with {@link isLoopbackHost} + {@link DEFAULT_TRUSTED_CLEARTEXT_HOSTS}
+   * when deciding whether a token may ride a plaintext `pixelAgentsUrl`.
+   * Empty by default — the fail-closed contract stays intact unless the
+   * operator declares an internal peer or the URL is loopback.
+   */
+  pixelAgentsAllowedHttpHosts: string[];
   /** Base URL for the tool-activity poller's Paperclip API calls. */
   paperclipApiBaseUrl: string;
   /** Resolved bearer token for the tool-activity poller, if configured (never the persisted ref). */
@@ -127,6 +161,7 @@ export const RELAY_CONFIG_FIELDS = [
   "pixelAgentsUiUrl",
   "pixelAgentsTokenRef",
   "pixelAgentsRelayEnabled",
+  "pixelAgentsAllowedHttpHosts",
   "paperclipApiBaseUrl",
   "paperclipApiTokenRef",
   "dialogPanePrivacyOptIn",
@@ -182,21 +217,24 @@ export class RelayTransportContractError extends Error {
  * {@link DEFAULT_PIXEL_AGENTS_URL}.
  *
  * Also enforces the https-when-token transport contract at runtime,
- * fail-closed: when a feed token reference is configured, a cleartext
- * `http:` URL is accepted only for loopback hosts ({@link isLoopbackHost}) —
- * anything else would send the bearer token over plaintext HTTP to a remote
- * host and is rejected. This is the runtime backstop for config that
- * predates (or bypassed) the save-time `onValidateConfig` gate; an
- * unparseable `pixelAgentsUrl` is likewise rejected while a token is
- * configured (tokenless config keeps its historical late push-error
- * surface).
+ * fail-closed, for BOTH token/URL pairs: when a feed token reference is
+ * configured, a cleartext `http:` `pixelAgentsUrl` is accepted only for an
+ * {@link isAllowedCleartextHost} (loopback, a bundled deployment hostname, or
+ * an operator-declared `pixelAgentsAllowedHttpHosts` entry) — anything else
+ * would send the bearer token over plaintext HTTP to a remote host and is
+ * rejected; likewise for the tool-activity poller's `paperclipApiBaseUrl`
+ * when `paperclipApiTokenRef` is configured (SAA-738). This is the runtime
+ * backstop for config that predates (or bypassed) the save-time
+ * `onValidateConfig` gate; an unparseable `pixelAgentsUrl` or
+ * `paperclipApiBaseUrl` is likewise rejected while the corresponding token is
+ * configured (tokenless config keeps its historical late push-error surface).
  *
  * @param raw - Raw configuration object as stored by the plugin system.
  * @returns The resolved, validated relay configuration.
  * @throws {RelayTransportContractError} When the relay is enabled and a feed
- *   token reference is configured, and `pixelAgentsUrl` is either not a
- *   valid http(s) URL or resolves to a cleartext `http:` URL for a
- *   non-loopback host.
+ *   or api token reference is configured, and the corresponding URL is either
+ *   not a valid http(s) URL or resolves to a cleartext `http:` URL for a
+ *   non-trusted host.
  */
 export function parseRelayConfig(
   raw: Record<string, unknown>,
@@ -210,6 +248,14 @@ export function parseRelayConfig(
   const url = configuredUrl.length > 0 ? configuredUrl : DEFAULT_PIXEL_AGENTS_URL;
   const explicitEnabled = raw.pixelAgentsRelayEnabled;
   const enabled = explicitEnabled !== false;
+  // SAA-534/SAA-557 security F1 reconcile (SAA-734): a feed token may ride a
+  // cleartext `http:` `pixelAgentsUrl` only for an explicitly trusted
+  // destination — loopback (same-machine), this package's own bundled
+  // internal deployment hostnames, or a host the operator declares via
+  // `pixelAgentsAllowedHttpHosts`. Everything else fails closed below.
+  const allowedHttpHosts = Array.isArray(raw.pixelAgentsAllowedHttpHosts)
+    ? raw.pixelAgentsAllowedHttpHosts.filter((h): h is string => typeof h === "string")
+    : [];
   // Enforce the documented transport contract (SAA-557, security F1): the
   // resolved bearer token must never travel over cleartext HTTP to a
   // non-loopback host. `onValidateConfig` already rejects this combination at
@@ -235,11 +281,12 @@ export function parseRelayConfig(
     }
     if (
       (parsed.protocol !== "http:" && parsed.protocol !== "https:")
-      || (parsed.protocol === "http:" && !isLoopbackHost(parsed.hostname))
+      || (parsed.protocol === "http:" && !isAllowedCleartextHost(parsed.hostname, allowedHttpHosts))
     ) {
       throw new RelayTransportContractError(
         `pixelAgentsUrl must be an https: URL when pixelAgentsTokenRef is `
-          + `configured (plain http: is only allowed for loopback hosts); `
+          + `configured (plain http: is only allowed for loopback hosts or a `
+          + `host explicitly trusted in pixelAgentsAllowedHttpHosts); `
           + `refusing to send the feed bearer token to ${parsed.protocol}//${parsed.hostname}`,
       );
     }
@@ -249,11 +296,49 @@ export function parseRelayConfig(
     : "http://localhost:8090";
   const configuredApiUrl = typeof raw.paperclipApiBaseUrl === "string" ? raw.paperclipApiBaseUrl.trim() : "";
   const paperclipApiBaseUrl = configuredApiUrl.length > 0 ? configuredApiUrl : DEFAULT_PAPERCLIP_API_BASE_URL;
+  // SAA-738: mirror the feed-token transport contract above for the
+  // tool-activity poller's own token/URL pair. A resolved
+  // paperclipApiTokenRef must never ride cleartext http: to a non-loopback
+  // host — this is the runtime fail-closed backstop for config that predates
+  // (or bypassed) the save-time onValidateConfig gate, exactly like the
+  // pixelAgentsUrl backstop. It reuses the SAME shared isAllowedCleartextHost
+  // AND the same pixelAgentsAllowedHttpHosts field, so one operator
+  // declaration covers both pairs and the two gates cannot drift again.
+  if (enabled && extractApiTokenRef(raw) != null) {
+    let parsedApi: URL;
+    try {
+      parsedApi = new URL(paperclipApiBaseUrl);
+    } catch {
+      throw new RelayTransportContractError(
+        `paperclipApiBaseUrl must be a valid http(s) URL when paperclipApiTokenRef `
+          + `is configured; refusing an ambiguous transport for the Paperclip API `
+          + `bearer token`,
+      );
+    }
+    if (
+      (parsedApi.protocol !== "http:" && parsedApi.protocol !== "https:")
+      || (parsedApi.protocol === "http:" && !isAllowedCleartextHost(parsedApi.hostname, allowedHttpHosts))
+    ) {
+      throw new RelayTransportContractError(
+        `paperclipApiBaseUrl must be an https: URL when paperclipApiTokenRef is `
+          + `configured (plain http: is only allowed for loopback hosts or a host `
+          + `explicitly trusted in pixelAgentsAllowedHttpHosts); refusing to send `
+          + `the Paperclip API bearer token to ${parsedApi.protocol}//${parsedApi.hostname}`,
+      );
+    }
+  }
   // WS4-C guardrail (CEO decision 2): only an explicit true opts the
   // company into fuller dialog-pane extracts. Missing/absent/false all
   // mean OFF — the redacted/truncated default.
   const dialogPanePrivacyOptIn = raw.dialogPanePrivacyOptIn === true;
-  return { enabled, pixelAgentsUrl: url, pixelAgentsUiUrl, paperclipApiBaseUrl, dialogPanePrivacyOptIn };
+  return {
+    enabled,
+    pixelAgentsUrl: url,
+    pixelAgentsUiUrl,
+    pixelAgentsAllowedHttpHosts: allowedHttpHosts,
+    paperclipApiBaseUrl,
+    dialogPanePrivacyOptIn,
+  };
 }
 
 /**
@@ -274,6 +359,34 @@ export function isLoopbackHost(hostname: string): boolean {
   return octets.length === 4
     && octets[0] === "127"
     && octets.every((octet) => /^\d{1,3}$/.test(octet) && Number(octet) <= 255);
+}
+
+/**
+ * Whether a URL hostname may carry a configured feed bearer token over
+ * cleartext `http:`. `true` for loopback addresses ({@link isLoopbackHost}),
+ * this package's own bundled internal deployment hostnames
+ * ({@link DEFAULT_TRUSTED_CLEARTEXT_HOSTS}), and any host the operator
+ * explicitly trusts via `pixelAgentsAllowedHttpHosts`.
+ *
+ * This is the single trust decision both the save-time `onValidateConfig`
+ * gate and the runtime `parseRelayConfig` backstop consult, so the two never
+ * drift (the old save-time-only `pixel-agents-relay` carve-out is folded in
+ * here). Operator-supplied names are normalized (trimmed, lowercased,
+ * trailing dot stripped) like {@link isLoopbackHost}.
+ *
+ * @param hostname - URL hostname as reported by `new URL(...).hostname`.
+ * @param allowedHosts - Operator-declared additional trusted hostnames
+ *   (from `pixelAgentsAllowedHttpHosts`); empty by default.
+ * @returns `true` when a cleartext `http:` URL for this host may carry a token.
+ */
+export function isAllowedCleartextHost(
+  hostname: string,
+  allowedHosts: readonly string[] = [],
+): boolean {
+  if (isLoopbackHost(hostname)) return true;
+  const host = hostname.trim().toLowerCase().replace(/\.$/, "");
+  return DEFAULT_TRUSTED_CLEARTEXT_HOSTS.includes(host)
+    || allowedHosts.some((h) => h.trim().toLowerCase().replace(/\.$/, "") === host);
 }
 
 /**
@@ -315,7 +428,11 @@ function rawLogFetch(): LogFetchLike {
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       throw new Error(`Refusing non-http(s) protocol for heartbeat-log read: ${parsed.protocol}`);
     }
-    const res = await fetch(url, { method: init.method, headers: init.headers });
+    const res = await fetch(url, {
+      method: init.method,
+      headers: init.headers,
+      redirect: "error",
+    });
     return { ok: res.ok, status: res.status, statusText: res.statusText, json: () => res.json() };
   };
 }
@@ -386,6 +503,11 @@ function rawFetch(): FeedFetchLike {
       method: init.method,
       headers: init.headers,
       body: init.body,
+      // SAA-738: Node fetch follows redirects by default and re-sends the
+      // Authorization header cross-origin. A bearer token must never be
+      // forwarded to a redirect destination we did not intend, so fail the
+      // whole fetch on any redirect instead of leaking auth cross-origin.
+      redirect: "error",
     });
     return { ok: res.ok, status: res.status, statusText: res.statusText };
   };
@@ -541,6 +663,7 @@ export class BridgeRelay {
       && existing.config.pixelAgentsUrl === config.pixelAgentsUrl
       && existing.config.pixelAgentsUiUrl === config.pixelAgentsUiUrl
       && existing.config.pixelAgentsToken === authToken
+      && existing.config.pixelAgentsAllowedHttpHosts.join("\u0000") === config.pixelAgentsAllowedHttpHosts.join("\u0000")
       && existing.config.paperclipApiBaseUrl === config.paperclipApiBaseUrl
       && existing.config.paperclipApiToken === apiToken
       && existing.config.dialogPanePrivacyOptIn === config.dialogPanePrivacyOptIn

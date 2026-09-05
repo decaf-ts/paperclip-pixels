@@ -86,6 +86,19 @@ export const SCREENSHOT_DIR = "screenshots";
  */
 export const SKIP_WHEN_UNWIRED = process.env.PAPERCLIP_PIXEL_E2E_NO_GATE !== "1";
 
+/**
+ * FR-19 deployed-stack office specs (SAA-694): the bridge plugin's feed
+ * wiring, applied idempotently to the seed company by the spec when the
+ * company has no plugin config yet. The feed URL default is the compose
+ * stack's shared-netns loopback (deploy/docker scratch compose for SAA-694);
+ * the feed token must equal the pixel-agents container's
+ * PAPERCLIP_PIXEL_FEED_TOKEN; the webview URL is the tokened standalone URL
+ * the office iframe embeds (the `?token=` privileged form).
+ */
+export const PIXEL_FEED_URL = str("PAPERCLIP_PIXEL_E2E_FEED_URL", "http://127.0.0.1:8081");
+export const PIXEL_FEED_TOKEN = process.env.PAPERCLIP_PIXEL_E2E_FEED_TOKEN ?? "";
+export const PIXEL_WEBVIEW_URL = process.env.PAPERCLIP_PIXEL_E2E_WEBVIEW_URL ?? "";
+
 /** Resolve a path relative to the e2e/ directory. */
 export function e2ePath(relative: string): string {
   return `${import.meta.dirname}/../${relative}`;
