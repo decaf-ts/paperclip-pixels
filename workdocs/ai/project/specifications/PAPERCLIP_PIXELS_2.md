@@ -16,7 +16,7 @@ jiraIssueId: "none"
 jiraUpdatedAt: "none"
 jiraSyncState: "disabled"
 createdAt: "2026-09-01T03:22:52Z"
-updatedAt: "2026-09-05T04:45:00Z"
+updatedAt: "2026-09-05T17:35:00Z"
 ---
 
 # PAPERCLIP_PIXELS-2: Pixel Agents Plugin Architecture (Fork) + Paperclip Plugin Character/Settings/Assets
@@ -26,12 +26,12 @@ updatedAt: "2026-09-05T04:45:00Z"
 | Field | Value |
 | --- | --- |
 | Task type | `specification` |
-| Status | blocked (Revision 2 recorded 2026-09-05 via the amendment milestone [SAA-715](/SAA/issues/SAA-715); the implementation re-plan [SAA-716](/SAA/issues/SAA-716) closed `done` and its Phase 1–4 implementation tickets [SAA-717](/SAA/issues/SAA-717)–[SAA-720](/SAA/issues/SAA-720) are all closed `done`; the Phase 5 record content is recorded through this milestone [SAA-721](/SAA/issues/SAA-721); the prior plan's final phase gate [SAA-457](/SAA/issues/SAA-457) remains open) |
+| Status | blocked — closing (Revision 2 recorded 2026-09-05 via the amendment milestone [SAA-715](/SAA/issues/SAA-715); the implementation re-plan [SAA-716](/SAA/issues/SAA-716) closed `done` and its Phase 1–4 implementation tickets [SAA-717](/SAA/issues/SAA-717)–[SAA-720](/SAA/issues/SAA-720) are all closed `done`; the Phase 5 record content is recorded through [SAA-721](/SAA/issues/SAA-721); the WS5 final gate [SAA-457](/SAA/issues/SAA-457) closed `done` 2026-09-05 with its commit gate executed (see Snapshot "Blocked by"); every direct child of [SAA-447](/SAA/issues/SAA-447) is `done`; the completion documentation milestone [SAA-770](/SAA/issues/SAA-770) recorded this revision, after which the parent owner (CEO) verifies and closes the domain root) |
 | Priority | medium |
 | Assignee | CEO |
 | Parent | none (domain root) |
-| Blocked by | SAA-457 (WS5 final phase gate, `blocked` on the e2e environment chain) — observed 2026-09-05T04:45:00Z; every other prior blocker closed `done`: the amendment [SAA-715](/SAA/issues/SAA-715), the re-plan [SAA-716](/SAA/issues/SAA-716), and the WS0–WS4 workstream parents SAA-454/455/456/458/459 (close-gate commits as previously recorded: fork `c634c15`/`ade5601`/`a063063`, plugin repo `f92c058`/`4489e28`/`c47aefa`). The Revision 2 Phase 1–4 change sets (SAA-717–SAA-720) are `done` but uncommitted in the shared working trees (fork `pixel-agents/` atop HEAD `a063063`; plugin repo atop HEAD `c47aefa`), awaiting the CTO-owned single user-approved commit per ticket per `git-ops`; the outer repo's `pixel-agents` submodule pointer update (`3537e14` → `a063063`) also remains uncommitted |
-| Observed at | 2026-09-05T04:45:00Z |
+| Blocked by | [SAA-770](/SAA/issues/SAA-770) (the completion documentation milestone, `in_progress` — publishes this revision) — observed 2026-09-05T17:30:00Z; every other blocker closed `done`: the WS0–WS5 workstream parents SAA-454/455/456/458/459 including WS5 [SAA-457](/SAA/issues/SAA-457) (final gate, closed with the [SAA-694](/SAA/issues/SAA-694)-authored Playwright visual-validation specs green against the deployed stack, the stale `tests/e2e/` copy retired, and gate reviews code docs [SAA-758](/SAA/issues/SAA-758)/security [SAA-759](/SAA/issues/SAA-759) PASS/QA sign-off [SAA-760](/SAA/issues/SAA-760) PASS/tech docs [SAA-761](/SAA/issues/SAA-761)), the initialize milestone [SAA-449](/SAA/issues/SAA-449), the CTO gate [SAA-448](/SAA/issues/SAA-448), the amendment [SAA-715](/SAA/issues/SAA-715), the re-plan [SAA-716](/SAA/issues/SAA-716), and the Phase 1–4 tickets [SAA-717](/SAA/issues/SAA-717)–[SAA-720](/SAA/issues/SAA-720). Delivery commits on record: fork (`pixel-agents/`, `main`) `c634c15` → `ade5601` → `a063063` → `8ca80d3` (the WS5 gate commit — capability arbitration, base plugin, guard suites, standalone visual-validation e2e; 22 files, +3818/−15; against the approved fingerprint package, gate reviews [SAA-758](/SAA/issues/SAA-758)–[SAA-761](/SAA/issues/SAA-761), approval card accepted 2026-09-05); plugin repo (`master`) `6ac209a` (WS3 per-agent character system) → `bea90da` (WS0 plugin quick wins) → `f92c058` → `4489e28` → `c47aefa` → `f6929c1` (the WS5 gate commit — visual-validation + hardening e2e coverage with updated core and fork submodules; 29 files, +3544/−153; exact ref from the gate's correction comment: `f6929c161b5125442f6f64f6fe02309e188e715f`). Both commits were verified byte-exact against the approved fingerprints before execution and both trees are clean afterward (only pre-declared excluded untracked paths remain: `allure-results/`, `.claude/settings.local.json`, future-spec draft `PAPERCLIP_PIXELS_3.md`); the `pixel-agents` submodule pointer update is included in `f6929c1`; **neither commit is pushed** (push requires a separate explicit request) — documentation work product edits to this record and `plan.md` remain uncommitted and await the domain root's single user-approved commit per `git-ops` |
+| Observed at | 2026-09-05T17:30:00Z |
 
 Paperclip is authoritative for all lifecycle fields in this snapshot. The product
 scope is board-authored and locked, living verbatim in the parent issue
@@ -78,7 +78,10 @@ bridge-port `completion` milestone [SAA-544](/SAA/issues/SAA-544) (delivery
   matrix, override rules, operator configuration guidance, and migration
   notes derived from the Phase 1–4 completion evidence
   ([SAA-717](/SAA/issues/SAA-717)–[SAA-720](/SAA/issues/SAA-720)) as
-  **Revision 2 Phase 5** below.
+  **Revision 2 Phase 5** below — and, most recently, the `completion`
+  documentation milestone [SAA-770](/SAA/issues/SAA-770), which recorded the
+  final snapshot, the four CEO-resolved callout fold-in checks, and the
+  closing Result entry below.
 
 ## Revision 2 — Board Directive: Base-Plugin / Host / Paperclip-Override Architecture (2026-09-05)
 
@@ -455,6 +458,14 @@ this record; it is owned by the implementation re-plan
 [SAA-716](/SAA/issues/SAA-716) under the parent owner, per the board
 directive's five-phase strategy (R2.5) and delivery notes (R2.9).
 
+> **Resolution note (2026-09-05, [SAA-770](/SAA/issues/SAA-770)).** The
+> re-plan [SAA-716](/SAA/issues/SAA-716) adjudicated the mapping as Revision 2
+> Phases 1–5 (recorded above and in the Snapshot); WS5
+> ([SAA-457](/SAA/issues/SAA-457)) closed `done` and both delivery commits
+> (`8ca80d3` fork / `f6929c1` plugin repo, unpushed) were executed through
+> the SAA-457 commit gate. This "open items" framing is therefore resolved as
+> recorded here and kept as history.
+
 ## Revision 2 Phase 5 — Stabilize And Document (record milestone)
 
 Recorded through the Phase 5 record milestone [SAA-721](/SAA/issues/SAA-721),
@@ -733,9 +744,12 @@ transport isolation + Phase 4 transport guards; 6 compatibility, regression,
 and security tests pass — Phase 4 suites plus the unchanged legacy suites; 7
 operators can reason about runtime behavior from configuration alone — Phase
 5.3 above). The formal checking of the §R2.7 checklist remains the parent
-owner's at domain-root close, which still awaits the WS5 gate
-([SAA-457](/SAA/issues/SAA-457)) and the CTO-owned single-commit gates; the
-checklist above is left unchecked accordingly.
+owner's at domain-root close — **as of this revision the two prior waits are
+resolved**: WS5 ([SAA-457](/SAA/issues/SAA-457)) closed `done` 2026-09-05 with
+its visual-validation specs green on the deployed stack, and both CTO/CEO-gate
+commits were executed (fork `8ca80d3`, plugin repo `f6929c1` — unpushed, clean
+trees); the checklist above is left unchecked because the §R2.7 formal check
+is the parent owner's act at domain-root close, not an executor claim.
 
 ## Overview
 
@@ -2575,6 +2589,62 @@ state `blocked` → CEO resumes to decompose under CTO execution, carrying
 - Repository edits left uncommitted for the technical parent ticket executor
   to include in the domain root's single user-approved commit per `git-ops`.
 
+### 2026-09-05T17:35:00Z - Delivery Documentation Specialist
+
+- Woke on the `completion` documentation milestone
+  [SAA-770](/SAA/issues/SAA-770) under the specification domain root
+  [SAA-447](/SAA/issues/SAA-447): the standard completion pass — fold the four
+  CEO-resolved callouts, refresh the Paperclip Snapshot for the parent's
+  close, add the final Execution Log and Result entries, and verify the
+  `plan.md` index row.
+- **Callout fold-in check (all four verified folded; nothing left to fold).**
+  (a) Character-UI placement — CEO decision 1 (plugin's Pixel Office page, no
+  core change; SDK `detailTab` documented as a future option) is recorded in
+  Out Of Scope, FR-14, the Decisions table, and the Dependencies row.
+  (b) Dialog-pane privacy — CEO decision 2 (`dialogPanePrivacyOptIn`, default
+  OFF, redaction/truncation plugin-side per PAPERCLIP_PIXELS-1 NFR-7) is
+  recorded in FR-5, the Decisions table, the WS4-C sections, and the Decision
+  2 dependencies row. (c) Paperclip context gauge omitted (CEO decision 3,
+  provider-agnostic metrics channel retained) is recorded in Out Of Scope,
+  the WS1 sections, and the Decisions table. (d) Random-default character
+  selection replaced by least-used-with-`hueShift` (CEO decision 4, reuse
+  formula hardened to `45 + ((round-1) * 47) % 315` after
+  [SAA-474](/SAA/issues/SAA-474)) is recorded in the Overview amendment, the
+  Decisions table, and the outcomes section. No technical content was decided
+  by the documentation specialist.
+- **Snapshot refresh.** Read back the lifecycle via the Paperclip API: all
+  direct children of [SAA-447](/SAA/issues/SAA-447) are `done` — WS0
+  [SAA-454](/SAA/issues/SAA-454), WS1 [SAA-455](/SAA/issues/SAA-455), WS2
+  [SAA-458](/SAA/issues/SAA-458), WS3 [SAA-456](/SAA/issues/SAA-456), WS4
+  [SAA-459](/SAA/issues/SAA-459), WS5 [SAA-457](/SAA/issues/SAA-457), the
+  initialize milestone [SAA-449](/SAA/issues/SAA-449), the CTO gate
+  [SAA-448](/SAA/issues/SAA-448), and the board-directive arc
+  [SAA-715](/SAA/issues/SAA-715)/[SAA-716](/SAA/issues/SAA-716) with Phases
+  1–5 ([SAA-717](/SAA/issues/SAA-717)–[SAA-721](/SAA/issues/SAA-721));
+  [SAA-447](/SAA/issues/SAA-447) is blocked only on this milestone. The WS5
+  gate closed `done` with the approval card accepted: fork commit `8ca80d3`
+  and plugin-repo commit `f6929c1` (exact ref
+  `f6929c161b5125442f6f64f6fe02309e188e715f`, per the gate's correction
+  comment which replaced a guessed URL), both verified byte-exact against
+  the approved fingerprints, trees clean afterward, **nothing pushed**. A
+  later angle on the record: the Phase 1–5 change sets are no longer
+  "uncommitted" — they were committed by those gate commits — so the
+  Snapshot, §R2.7 note, and §R2.11 note were annotated accordingly (the
+  wake context's "uncommitted Phase 1–5 working-tree change sets" phrasing
+  was superseded by the 16:59–17:24 gate events).
+- **Editorial notes applied:** §R2.11 resolution note (re-plan adjudication +
+  WS5 close + commits); §R2.7 evidence-note update (waits resolved; checklist
+  checking remains the parent owner's act); Snapshot prose pointer to this
+  milestone. Frontmatter `updatedAt` bumped to `2026-09-05T17:35:00Z`.
+- **Result entry** appended below recording the delivery-closed state.
+- **`plan.md` verification:** the `PAPERCLIP_PIXELS-2` Domain Roots Index row
+  refreshed to the observed close state and a plan execution-log row added
+  for this pass (see `workdocs/ai/project/plan.md`).
+- Jira gate disabled (`JIRA_ENABLED` not `true`); no Jira workflow invoked.
+- Repository edits (this record and `plan.md`) left uncommitted for the
+  technical parent ticket executor / domain root's single user-approved
+  commit per `git-ops`; no branches or PRs created by this milestone.
+
 ## Changed Artifacts
 
 | Path | Purpose |
@@ -2870,6 +2940,9 @@ untouched, nothing pushed); rides the single user-approved commit on
 | 2026-09-05T04:46:00Z | Delivery Documentation Specialist ([SAA-721](/SAA/issues/SAA-721)) | `node <skill-root>/scripts/validate-domain-record.mjs workdocs/ai/project/specifications/PAPERCLIP_PIXELS_2.md` (re-run after all Phase 5 edits) | Pass | `Valid domain record` (exit 0) — recorded in the closing milestone comment |
 | 2026-09-05T10:14:00Z | Delivery Documentation Specialist ([SAA-741](/SAA/issues/SAA-741)) | Handoff validation read-back: CTO ruling comment on [SAA-740](/SAA/issues/SAA-740) via the Paperclip API (posted 2026-09-05T10:10:58Z; issue `done`); as-built facts on the current tree — `src/pixel-agents-plugin/feed-mapper.ts` (rising edge `issue.checked_out`/`agent.run.started` at lines 353–372, falling edge `agent.run.finished|failed|cancelled` at lines 385–411, `issue.updated` consuming `title`/`assigneeAgentId` only at lines 411–421, no issue-status → activity mapping anywhere in the mapper); presence of `e2e/paperclip/character-activity.spec.ts` | Pass | Ruling content matches the task-issued handoff verbatim in substance; the as-implemented mapper matches the ruling's description exactly (run edges and gates consumed, status not consumed); the run-edge spec file is present as reported |
 | 2026-09-05T10:22:00Z | Delivery Documentation Specialist ([SAA-741](/SAA/issues/SAA-741)) | `node <skill-root>/scripts/validate-domain-record.mjs workdocs/ai/project/specifications/PAPERCLIP_PIXELS_2.md` (re-run after the FR-19 ruling edits) | Pass | `Valid domain record` (exit 0) — recorded in the closing milestone comment |
+| 2026-09-05T17:28:00Z | Delivery Documentation Specialist ([SAA-770](/SAA/issues/SAA-770)) | Lifecycle read-back via the Paperclip API for the snapshot refresh: [SAA-447](/SAA/issues/SAA-447) + every named child/milestone (SAA-448/449/454/455/456/457/458/459/715/716/717/718/719/720/721) | Pass | [SAA-447](/SAA/issues/SAA-447) `blocked`, blocked only on [SAA-770](/SAA/issues/SAA-770); **all** read-back children `done` incl. WS5 [SAA-457](/SAA/issues/SAA-457) — matches the refreshed Snapshot |
+| 2026-09-05T17:28:00Z | Delivery Documentation Specialist ([SAA-770](/SAA/issues/SAA-770)) | Repo read-back + gate-evidence read-back: WS5 gate comments on [SAA-457](/SAA/issues/SAA-457) (approval-card closure 17:23:40Z + correction 17:24:28Z via the Paperclip API); both trees' `git log --oneline` + `git status --porcelain`; fork `main`) and outer `git status` | Pass | Fork: `8ca80d3` atop `a063063`/`ade5601`/`c634c15` (WS1→WS2→WS4→WS5 gate chain as recorded); plugin repo: `f6929c1` atop `c47aefa`/`4489e28`/`f92c058`/`bea90da`/`6ac209a` — exact histories match the Snapshot's commit chains; both trees clean (only pre-declared excluded untracked paths: `allure-results/`, `.claude/settings.local.json`, `PAPERCLIP_PIXELS_3.md`); no submodule diff pending in the outer repo; nothing pushed; gate commit fact (`8ca80d3`/`f6929c1`) and the correction-comment exact ref confirmed |
+| 2026-09-05T17:29:00Z | Delivery Documentation Specialist ([SAA-770](/SAA/issues/SAA-770)) | Callout fold-in read-back over the record body (CEO decisions 1–4): Out Of Scope/FR-5/FR-14/Decisions/Dependencies rows and the decision-4 hardened formula text | Pass | All four callouts already folded in the body with their final resolved content (placement/no-core-change; `dialogPanePrivacyOptIn` default OFF with plugin-side redaction/truncation; gauge omitted for the Paperclip provider with the provider-agnostic metrics channel retained; least-used-with-`hueShift` default `45 + ((round-1) * 47) % 315`) — no fold-in gaps found |
 
 ## Result
 
@@ -3143,3 +3216,22 @@ owner at domain-root close, which awaits WS5 ([SAA-457](/SAA/issues/SAA-457),
 still blocked on the e2e environment) and the CTO-owned single-commit gates —
 all Phase 1–4 changes remain uncommitted in the shared working trees (fork
 atop `a063063`, plugin repo atop `c47aefa`).
+
+**Completion (2026-09-05, [SAA-770](/SAA/issues/SAA-770)):** delivery of the
+five-phase Revision 2 migration is closed at the evidence level. WS5
+([SAA-457](/SAA/issues/SAA-457)) closed `done` with its Playwright
+visual-validation specs green against the deployed stack on the gate-closed
+tree; the WS5 commit gate was executed (fork `8ca80d3`, plugin repo `f6929c1`
+— both trees clean afterward, submodule pointer included, **nothing
+pushed**). Every direct child of [SAA-447](/SAA/issues/SAA-447) is `done`.
+All four CEO-resolved callouts are verified folded into this record's body
+(placement, dialog-pane privacy, context gauge, least-used character
+default). The record body is final in content; what remains for the parent
+owner (CEO): (1) the §R2.7 formal checklist check at domain-root close —
+every criterion's level evidence is on record above; (2) the single
+user-approved commit carrying this record's and `plan.md`'s final revisions
+per `git-ops`; (3) the carried docs flags (top-level `README.md` live-relay
+refresh; `AGENTS.md` governance wording — CTO) and the specification-key
+formalization item; (4) no push of the unpushed gate commits without a
+separate explicit approval. On this milestone's completion the parent
+closes `done`.
