@@ -16,7 +16,7 @@ on:
 
 jobs:
   trivy-vuln:
-    uses: decaf-ts/reusable-actions/.github/workflows/trivy-scan.yml@master
+    uses: decaf-ts/reusable-actions/.github/workflows/trivy-scan.yml@8896e8b258d40f7e8cbddb0f28ba3d7ff61cda13 # master
     with:
       scan-type: "vuln"
       severity: "HIGH,CRITICAL"
@@ -25,7 +25,7 @@ jobs:
     secrets: inherit
 
   trivy-dep:
-    uses: decaf-ts/reusable-actions/.github/workflows/trivy-scan.yml@master
+    uses: decaf-ts/reusable-actions/.github/workflows/trivy-scan.yml@8896e8b258d40f7e8cbddb0f28ba3d7ff61cda13 # master
     with:
       scan-type: "dep"
       exit-code: "0"
