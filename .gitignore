@@ -26,3 +26,8 @@ workdocs/locks/*
 /plugins/pixel-agents/dist
 /plugins/paperclip/node_modules
 /plugins/paperclip/dist
+
+# Release credentials at any workspace depth
+.token
+.npmtoken
+/release-artifacts/

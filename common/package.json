@@ -1,7 +1,7 @@
 {
   "name": "paperclip-pixels-common",
   "version": "0.1.0",
-  "description": "Neutral paperclip-pixels wire contract package: DTOs, Zod validation, operation ids, error codes, schemaVersion compatibility rules, and fixture builders shared by the Paperclip plugin and the Pixel Agents plugin. Schemas only — imports no other package.",
+  "description": "Neutral paperclip-pixels wire contract package: DTOs, Zod validation, operation ids, error codes, schemaVersion compatibility rules, and fixture builders shared by the Paperclip plugin and the Pixel Agents plugin. Schemas only \u2014 imports no other package.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -20,7 +20,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "prepare-release": "npm run lint && npm run typecheck && npm run build && npm test && npm pack --dry-run",
+    "release": "bash bin/tag-release.sh"
   },
   "keywords": [
     "paperclip",

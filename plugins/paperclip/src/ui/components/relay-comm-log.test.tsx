@@ -75,14 +75,16 @@ describe("RelayCommLog", () => {
 
   it("advances the beforeSeq cursor on Load more and accumulates pages", async () => {
     const callParams: Array<Record<string, unknown>> = [];
+    const firstPage = page([entry(20)], 19);
+    const secondPage = page([entry(19)], null);
     usePluginDataImpl.mockImplementation((...args: unknown[]) => {
       const params = (args[1] ?? {}) as Record<string, unknown>;
       callParams.push(params);
       const beforeSeq = params.beforeSeq;
       if (beforeSeq === undefined) {
-        return { data: page([entry(20)], 19), loading: false, error: null, refresh: jest.fn() };
+        return { data: firstPage, loading: false, error: null, refresh: jest.fn() };
       }
-      return { data: page([entry(19)], null), loading: false, error: null, refresh: jest.fn() };
+      return { data: secondPage, loading: false, error: null, refresh: jest.fn() };
     });
 
     render(<RelayCommLog companyId="co" />);
@@ -98,9 +100,10 @@ describe("RelayCommLog", () => {
   });
 
   it("resets the log when the page size selector changes", async () => {
+    const resultPage = page([entry(20)], null);
     usePluginDataImpl.mockImplementation(() => {
       return {
-        data: page([entry(20)], null),
+        data: resultPage,
         loading: false,
         error: null,
         refresh: jest.fn(),

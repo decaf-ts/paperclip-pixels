@@ -42,22 +42,22 @@ function servePage({
   connected = false,
   pixelAgentsUiUrl = "http://localhost:8090",
 }: { connected?: boolean; pixelAgentsUiUrl?: string } = {}) {
+  // SDK query results retain their identity until a response changes.
+  const snapshot = makeDataResult({
+    data: makeSnapshot({
+      agents: [makeAgentView({ projection: makeProjection({ agentId: "agent-a", name: "Alice" }) })],
+      observedAt: new Date().toISOString(),
+    }),
+    loading: false,
+    error: null,
+  });
+  const visual = makeDataResult({ data: makeVisual({ pixelAgentsUiUrl }), loading: false, error: null });
+  const empty = makeDataResult({ data: null });
   usePluginDataImpl.mockImplementation((...args: unknown[]) => {
     const key = String(args[0]);
-    if (key === "bridge-snapshot") {
-      return makeDataResult({
-        data: makeSnapshot({
-          agents: [makeAgentView({ projection: makeProjection({ agentId: "agent-a", name: "Alice" }) })],
-          observedAt: new Date().toISOString(),
-        }),
-        loading: false,
-        error: null,
-      });
-    }
-    if (key === "visual-settings") {
-      return makeDataResult({ data: makeVisual({ pixelAgentsUiUrl }), loading: false, error: null });
-    }
-    return makeDataResult({ data: null });
+    if (key === "bridge-snapshot") return snapshot;
+    if (key === "visual-settings") return visual;
+    return empty;
   });
   usePluginStreamImpl.mockReturnValue(makeStreamResult({ connected }));
 }

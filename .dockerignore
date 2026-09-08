@@ -38,3 +38,8 @@ pixel-agents/.changeset
 pixel-agents/.git
 pixel-agents/e2e
 pixel-agents/docs
+
+# Never include local release credentials in image contexts
+**/.token
+**/.npmtoken
+release-artifacts

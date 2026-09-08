@@ -20,7 +20,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "prepare-release": "npm run lint && npm run typecheck && npm run build && npm test && npm pack --dry-run",
+    "release": "bash bin/tag-release.sh"
   },
   "keywords": [
     "paperclip",

@@ -90,11 +90,12 @@ const layout: OfficeLayout = {
 };
 
 function serveAll() {
+  const snapshot = makeSnapshot();
   usePluginDataImpl.mockImplementation((...args: unknown[]) => {
     const key = args[0] as string;
     switch (key) {
       case "bridge-snapshot":
-        return makeDataResult({ data: makeSnapshot() });
+        return makeDataResult({ data: snapshot });
       case "metrics-series":
         return makeDataResult({ data: metricsResult });
       case "relay-comms":
@@ -156,13 +157,14 @@ describe("PixelOfficeConfigPage", () => {
   });
 
   it("surfaces a metrics error envelope instead of charts", async () => {
+    const snapshot = makeSnapshot();
     serveAll();
     usePluginDataImpl.mockImplementation((...args: unknown[]) => {
       const key = args[0] as string;
       if (key === "metrics-series") {
         return makeDataResult({ data: { schemaVersion: 1, error: "company-not-found" } });
       }
-      if (key === "bridge-snapshot") return makeDataResult({ data: makeSnapshot() });
+      if (key === "bridge-snapshot") return makeDataResult({ data: snapshot });
       return makeDataResult({ data: null });
     });
     render(<PixelOfficeConfigPage context={{ companyId: "co" } as never} />);

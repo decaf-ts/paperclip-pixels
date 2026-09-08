@@ -640,20 +640,18 @@ describe("AgentCharacterComposer — save", () => {
 
 describe("PixelOfficePage — Whole-sheet/Composer appearance-mode toggle", () => {
   it("defaults to the whole-sheet picker and toggles to the composer", async () => {
-    usePluginDataImpl.mockImplementation((...args: unknown[]) => {
-      const key = String(args[0]);
-      if (key === BRIDGE_DATA_KEYS.snapshot) {
-        return makeDataResult({
-          data: makeSnapshot({
-            agents: [makeAgent("agent-aaaa", "Alice")],
-            observedAt: new Date().toISOString(),
-          }),
-          loading: false,
-          error: null,
-        });
-      }
-      return makeDataResult({ data: makeVisual(), loading: false, error: null });
+    const snapshot = makeDataResult({
+      data: makeSnapshot({
+        agents: [makeAgent("agent-aaaa", "Alice")],
+        observedAt: new Date().toISOString(),
+      }),
+      loading: false,
+      error: null,
     });
+    const visual = makeDataResult({ data: makeVisual(), loading: false, error: null });
+    usePluginDataImpl.mockImplementation((...args: unknown[]) =>
+      String(args[0]) === BRIDGE_DATA_KEYS.snapshot ? snapshot : visual,
+    );
     usePluginStreamImpl.mockReturnValue(makeStreamResult({ connected: false }));
 
     render(<PixelOfficePage context={{ companyId: "co" } as never} />);
