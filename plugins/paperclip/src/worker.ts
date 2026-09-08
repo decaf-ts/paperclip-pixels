@@ -170,7 +170,11 @@ class BridgeRuntime {
     }, 30_000);
 
     this.persistenceTimer = setInterval(() => {
-      void this.persistAllBuckets();
+      this.persistAllBuckets().catch((err) => {
+        this.ctx.logger.error("Bucket persistence failed on interval; retrying next tick", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
     }, 60_000);
   }
 
@@ -919,6 +923,26 @@ const getOrBootstrapCompany = async (companyId: string): Promise<CompanyRuntime 
           }
         } catch {
           errors.push("pixelAgentsUrl is not a valid URL");
+        }
+      }
+    }
+    // SAA-1052 C1: the browser-reachable Pixel Agents URL is embedded as the
+    // office `<iframe>` `src`, so it must be http(s) only — a javascript:,
+    // data:, file: or custom scheme is an XSS / script-injection vector and is
+    // rejected here (and, as a fail-closed runtime backstop, in
+    // `parseRelayConfig`). The config schema also constrains it via `pattern`.
+    const uiUrl = config.pixelAgentsUiUrl;
+    if (uiUrl != null) {
+      if (typeof uiUrl !== "string" || uiUrl.trim().length === 0) {
+        errors.push("pixelAgentsUiUrl must be a non-empty string when present");
+      } else {
+        try {
+          const parsedUi = new URL(uiUrl);
+          if (parsedUi.protocol !== "http:" && parsedUi.protocol !== "https:") {
+            errors.push("pixelAgentsUiUrl must be an http(s) URL");
+          }
+        } catch {
+          errors.push("pixelAgentsUiUrl is not a valid URL");
         }
       }
     }

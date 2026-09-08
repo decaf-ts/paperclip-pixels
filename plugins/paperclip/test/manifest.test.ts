@@ -117,6 +117,18 @@ describe("manifest", () => {
       expect(properties.pixelAgentsUrl).toMatchObject({ type: "string", format: "uri" });
     });
 
+    it("declares pixelAgentsUiUrl as an http(s)-only uri-format string (SAA-1052 C1)", () => {
+      // The browser-reachable Pixel Agents URL is embedded as the office
+      // <iframe> src; a javascript:/data:/file:/custom scheme is an XSS vector,
+      // so the schema constrains it to http(s) via `pattern`.
+      expect(properties.pixelAgentsUiUrl).toMatchObject({
+        type: "string",
+        format: "uri",
+        pattern: "^https?://",
+        default: "http://localhost:8090",
+      });
+    });
+
     it("declares pixelAgentsTokenRef as a secret-ref accepting Paperclip's object binding", () => {
       expect(properties.pixelAgentsTokenRef).toMatchObject({
         format: "secret-ref",

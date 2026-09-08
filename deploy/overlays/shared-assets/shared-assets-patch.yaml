@@ -1,0 +1,65 @@
+# Shared sprites/characters asset delivery (PAPERCLIP_PIXELS-2 condition C2).
+#
+# Patches both Deployments in the base to mount the SAME shared-asset hostPath
+# volume at /opt/paperclip-pixel-shared-assets. The catalog loaders are
+# redirected to the mounted catalog with the PIXEL_*_CATALOG env overrides so
+# the shared asset set is delivered by volume instead of only image-baked.
+#
+# The image-baked copies remain the default fallback: drop this overlay (or
+# unset the PIXEL_*_CATALOG env) and the defaults in each image's
+# resolveCharacterCatalogDir / resolveCompositionCatalogDir are used.
+#
+# Least-privilege notes (deploy/SECURITY.md):
+#   - The volume is mounted read-only; the workloads only read the catalogs.
+#   - The image at the mount is the operator's own content, not user-supplied
+#     runtime data — hostPath is acceptable for the single-node minikube
+#     reference, but production should use a RWX PVC or a proper object-store
+#     mount so the assets are shared across nodes (hostPath is per-node).
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pixel-agents
+  namespace: paperclip-pixels
+spec:
+  template:
+    spec:
+      containers:
+        - name: pixel-agents
+          env:
+            - name: PIXEL_CHARACTER_CATALOG
+              value: /opt/paperclip-pixel-shared-assets/characters/catalog.json
+          volumeMounts:
+            - name: shared-assets
+              mountPath: /opt/paperclip-pixel-shared-assets
+              readOnly: true
+      volumes:
+        - name: shared-assets
+          hostPath:
+            path: /opt/paperclip-pixels/shared-assets
+            type: DirectoryOrCreate
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: paperclip
+  namespace: paperclip-pixels
+spec:
+  template:
+    spec:
+      containers:
+        - name: paperclip
+          env:
+            - name: PIXEL_CHARACTER_CATALOG
+              value: /opt/paperclip-pixel-shared-assets/characters/catalog.json
+            - name: PIXEL_COMPOSITION_CATALOG
+              value: /opt/paperclip-pixel-shared-assets/composition/catalog.json
+          volumeMounts:
+            - name: shared-assets
+              mountPath: /opt/paperclip-pixel-shared-assets
+              readOnly: true
+      volumes:
+        - name: shared-assets
+          hostPath:
+            path: /opt/paperclip-pixels/shared-assets
+            type: DirectoryOrCreate

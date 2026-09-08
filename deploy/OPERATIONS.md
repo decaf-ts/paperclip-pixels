@@ -143,6 +143,8 @@ Key configuration is exposed as chart values (`deploy/helm/paperclip-pixels/valu
 | `metrics.*` | ServiceMonitors + alert rules | enabled |
 | `backup.*` | Periodic Postgres + plugin-state backup | enabled |
 | `initialCompany.config` | Declarative first-company seed | empty |
+| `sharedAssets.enabled` | Mount the same shared-assets volume at `/opt/paperclip-pixel-shared-assets` in both workloads (PAPERCLIP_PIXELS-2 C2) | `false` |
+| `sharedAssets.existingClaim` | Reference a pre-created RWX PVC for the shared assets | empty |
 
 The Paperclip host's own env (from the deployment template): `PAPERCLIP_BIND`
 (must be `lan` in k8s), `PAPERCLIP_DEPLOYMENT_MODE=authenticated`,
@@ -236,6 +238,18 @@ WS3 merged-array path that would duplicate the characters in the picker. This
 gives a fresh two-plugin deployment full appearance support — no manual
 `addExternalAssetDirectory` needed. No per-surface change is required;
 compose, k8s, and helm all consume the same image.
+
+**Shared-asset volume delivery (PAPERCLIP_PIXELS-2 C2):** the same catalog can
+also be delivered by a **shared volume** instead of only the baked copy. Set
+`sharedAssets.enabled` (helm) or apply the `deploy/overlays/shared-assets/`
+kustomize overlay (k8s) to mount `plugins/paperclip/assets` content at
+`/opt/paperclip-pixel-shared-assets` in **both** workloads and set the
+`PIXEL_CHARACTER_CATALOG` / `PIXEL_COMPOSITION_CATALOG` overrides. The baked
+copy remains the fallback while shared assets are disabled. The image must be
+rebuilt (Dockerfile.pixel-agents) to bake the
+`/opt/paperclip-pixel-shared-assets/characters` `externalAssetDirectories`
+grant so the WS4-C gate accepts the shared sheets. See
+[`README.md`](README.md#shared-spritescharacters-assets-paperclip_pixels-2-condition-c2).
 
 > **Protocol-compatibility check:** the two plugins must agree on the wire
 > `schemaVersion`. The chart ships independent health checks for each plugin

@@ -70,3 +70,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "paperclip-pixels.feedPort" -}}
 {{- default 8081 .Values.transport.feed.port -}}
 {{- end -}}
+
+{{- define "paperclip-pixels.sharedAssetsClaim" -}}
+{{- if .Values.sharedAssets.existingClaim -}}
+{{- .Values.sharedAssets.existingClaim -}}
+{{- else -}}
+{{- include "paperclip-pixels.fullname" . }}-shared-assets
+{{- end -}}
+{{- end -}}

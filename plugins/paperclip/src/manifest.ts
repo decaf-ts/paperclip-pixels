@@ -44,8 +44,9 @@ const relayConfigSchema: JsonSchema = {
       type: "string",
       title: "Pixel Agents browser URL",
       description:
-        "Browser-reachable URL embedded in the Pixel Office page. This is normally http://localhost:8090 for the bundled Compose deployment and is distinct from the worker-to-companion URL.",
+        "Browser-reachable URL embedded in the Pixel Office page. This is normally http://localhost:8090 for the bundled Compose deployment and is distinct from the worker-to-companion URL. Only the http: or https: scheme is accepted (javascript:, data:, file: and custom protocols are rejected, SAA-1052 C1).",
       format: "uri",
+      pattern: "^https?://",
       default: "http://localhost:8090",
     },
     pixelAgentsTokenRef: {

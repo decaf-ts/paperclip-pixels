@@ -4,7 +4,10 @@ import { BRIDGE_SCHEMA_VERSION } from "../src/core/index.js";
 import { DATA_KEYS, JOB_KEYS, STATE_KEYS, STATE_NAMESPACES } from "../src/constants.js";
 import manifest from "../src/manifest.js";
 import plugin from "../src/worker.js";
+import * as persistence from "../src/persistence.js";
 import { pluginDefinition } from "./typing.js";
+
+vi.mock("../src/persistence.js", { spy: true });
 import {
   AGENT_CEO_ID,
   AGENT_DEV_ID,
@@ -22,13 +25,16 @@ import {
 type IntervalHandle = ReturnType<typeof setInterval>;
 
 const intervalHandles: IntervalHandle[] = [];
+const intervalCallbacks: Array<{ handler: () => void; timeout: number }> = [];
 
 beforeEach(() => {
   intervalHandles.length = 0;
+  intervalCallbacks.length = 0;
   const original = setInterval;
   vi.spyOn(globalThis, "setInterval").mockImplementation(((handler: () => void, timeout?: number, ...args: unknown[]) => {
     const handle = original(handler, timeout, ...args) as unknown as IntervalHandle;
     intervalHandles.push(handle);
+    intervalCallbacks.push({ handler, timeout: timeout ?? 0 });
     return handle;
   }) as unknown as typeof setInterval);
 });
@@ -932,5 +938,75 @@ describe("worker onValidateConfig (M2 cleartext token rejection)", () => {
     const def = pluginDefinition(plugin);
     const result = await def.onValidateConfig!({ pixelAgentsUrl: "https://pa.example" });
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("worker onValidateConfig pixelAgentsUiUrl scheme (SAA-1052 C1)", () => {
+  it("accepts an http(s) pixelAgentsUiUrl at save time", async () => {
+    const def = pluginDefinition(plugin);
+    for (const url of ["http://localhost:8090", "https://pa.example/office"]) {
+      const result = await def.onValidateConfig!({ pixelAgentsUiUrl: url });
+      expect(result.ok).toBe(true);
+    }
+  });
+
+  it("rejects a non-http(s) pixelAgentsUiUrl scheme at save time", async () => {
+    const def = pluginDefinition(plugin);
+    for (const url of [
+      "javascript:alert(1)",
+      "data:text/html,<script>alert(1)</script>",
+      "file:///etc/passwd",
+      "ftp://x",
+    ]) {
+      const result = await def.onValidateConfig!({ pixelAgentsUiUrl: url });
+      expect(result.ok).toBe(false);
+      expect(result.errors).toContain("pixelAgentsUiUrl must be an http(s) URL");
+    }
+  });
+
+  it("rejects an unparseable pixelAgentsUiUrl at save time", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({ pixelAgentsUiUrl: "not-a-url" });
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("pixelAgentsUiUrl is not a valid URL");
+  });
+
+  it("rejects a non-http(s) pixelAgentsUiUrl alongside otherwise-valid relay config", async () => {
+    const def = pluginDefinition(plugin);
+    const result = await def.onValidateConfig!({
+      pixelAgentsUrl: "https://pa.example",
+      pixelAgentsUiUrl: "javascript:alert(1)",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("pixelAgentsUiUrl must be an http(s) URL");
+  });
+});
+
+describe("worker persistence interval rejection handling (SAA-1055 / C4)", () => {
+  it("catches a rejected persistence tick, logs it, and keeps retrying instead of rethrowing", async () => {
+    const { harness } = seedStandardWorld();
+    const errorSpy = vi.spyOn(harness.ctx.logger, "error");
+    await setupWorker(harness);
+
+    const persistCompact = vi.mocked(persistence.persistCompactBuckets);
+    persistCompact.mockRejectedValue(new Error("persist-boom"));
+
+    try {
+      const persistenceTimer = intervalCallbacks.find((c) => c.timeout === 60_000)?.handler;
+      expect(persistenceTimer).toBeDefined();
+
+      expect(() => persistenceTimer!()).not.toThrow();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(errorSpy.mock.calls[0][0]).toMatch(/Bucket persistence failed on interval/);
+      expect(errorSpy.mock.calls[0][1]).toMatchObject({ error: "persist-boom" });
+
+      expect(() => persistenceTimer!()).not.toThrow();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(errorSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      persistCompact.mockRestore();
+    }
   });
 });

@@ -107,6 +107,16 @@ spec:
             - name: PAPERCLIP_PIXEL_FEED_SERVER_KEY_PATH
               value: "/feed-certs/server-key.pem"
             {{- end }}
+            {{- if .Values.sharedAssets.enabled }}
+            # Shared sprites/characters asset delivery (PAPERCLIP_PIXELS-2 C2):
+            # redirect the character catalog loader to the shared volume so the
+            # shared asset set is delivered by volume instead of only image-baked.
+            # The WS1 externalAssetDirectories grant for this path is baked into
+            # the image (Dockerfile.pixel-agents) so the WS4-C gate accepts the
+            # shared sheets; the baked copy is the fallback when this is off.
+            - name: PIXEL_CHARACTER_CATALOG
+              value: "/opt/paperclip-pixel-shared-assets/characters/catalog.json"
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ include "paperclip-pixels.secretName" . }}
@@ -114,6 +124,11 @@ spec:
             {{- if .Values.global.tls.feedCA }}
             - name: feed-certs
               mountPath: /feed-certs
+              readOnly: true
+            {{- end }}
+            {{- if .Values.sharedAssets.enabled }}
+            - name: shared-assets
+              mountPath: /opt/paperclip-pixel-shared-assets
               readOnly: true
             {{- end }}
           readinessProbe:
@@ -139,4 +154,9 @@ spec:
                 path: server.pem
               - key: FEED_SERVER_KEY
                 path: server-key.pem
+        {{- end }}
+        {{- if .Values.sharedAssets.enabled }}
+        - name: shared-assets
+          persistentVolumeClaim:
+            claimName: {{ include "paperclip-pixels.sharedAssetsClaim" . }}
         {{- end }}

@@ -147,6 +147,24 @@ paperclipData:
   storage: 10Gi
   storageClass: ""
 
+# Shared sprites/characters asset delivery (PAPERCLIP_PIXELS-2 condition C2).
+# When enabled, the chart mounts the SAME shared-assets volume at
+# /opt/paperclip-pixel-shared-assets in BOTH the paperclip host (office UI)
+# and the pixel-agents pod, and points the catalog loaders at the mounted
+# catalog via the PIXEL_*_CATALOG env overrides. The image-baked assets stay
+# the default fallback while this is disabled.
+sharedAssets:
+  enabled: false
+  # Size / storageClass for the PVC the chart creates (ignored when
+  # existingClaim is set).
+  storage: 1Gi
+  storageClass: ""
+  # Reference a pre-created PersistentVolumeClaim to reuse an operator-managed
+  # volume. The volume must be populated with `plugins/paperclip/assets`
+  # content (characters/ + composition/). Use this (or a ReadWriteMany PVC)
+  # when the assets must be shared across nodes.
+  existingClaim: ""
+
 # Ingress. Enabled for the public Paperclip UI/API. Pixel Agents stays
 # cluster-internal (no external UI) by default. TLS is the default when the
 # ingress is enabled: cert-manager issues the certificate (recommended) unless

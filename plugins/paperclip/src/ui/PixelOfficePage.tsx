@@ -40,6 +40,21 @@ function FullscreenIcon({ exit }: { exit: boolean }) {
   );
 }
 
+/**
+ * Whether an office iframe `src` is a safely embeddable http(s) URL
+ * (SAA-1052 C1). Anything else — `javascript:`, `data:`, `file:`, or a
+ * custom protocol — is rejected so the config-derived value can never be
+ * planted as a script-injection vector in the office `<iframe>`.
+ */
+function isSafeOfficeUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function PixelOfficePage({ context }: PluginPageProps) {
   if (!context.companyId) {
     return (
@@ -62,6 +77,9 @@ function PixelOfficePageInner({ companyId }: { companyId: string }) {
   const [appearanceMode, setAppearanceMode] = useState<"wholeSheet" | "composition">("wholeSheet");
   const [officeFullscreen, setOfficeFullscreen] = useState(false);
   const visual = usePluginData<VisualSettingsData>(BRIDGE_DATA_KEYS.visualSettings, { companyId });
+  const officeUiUrl = visual.data?.pixelAgentsUiUrl;
+  const officeUiSafe =
+    officeUiUrl !== undefined && officeUiUrl.length > 0 && isSafeOfficeUrl(officeUiUrl);
 
   const handleSendToCompany = useCallback((text: string) => {
     setIntakePrefill(text);
@@ -139,7 +157,7 @@ function PixelOfficePageInner({ companyId }: { companyId: string }) {
         </div>
       ) : null}
 
-      {visual.data?.pixelAgentsUiUrl ? (
+      {officeUiSafe ? (
         <section
           data-testid="pixel-office-frame"
           style={{
@@ -170,19 +188,37 @@ function PixelOfficePageInner({ companyId }: { companyId: string }) {
             >
               <iframe
                 title="Pixel Agents office"
-                src={visual.data.pixelAgentsUiUrl}
+                src={officeUiUrl}
                 style={{ width: "100%", height: "100%", border: "1px solid #9994", borderRadius: 10 }}
+                sandbox="allow-scripts allow-forms allow-popups"
                 allow="clipboard-read; clipboard-write"
               />
             </div>
           ) : (
             <iframe
               title="Pixel Agents office"
-              src={visual.data.pixelAgentsUiUrl}
+              src={officeUiUrl}
               style={{ width: "100%", minHeight: 620, border: "1px solid #9994", borderRadius: 10 }}
+              sandbox="allow-scripts allow-forms allow-popups"
               allow="clipboard-read; clipboard-write"
             />
           )}
+        </section>
+      ) : officeUiUrl ? (
+        <section
+          role="alert"
+          data-testid="pixel-office-frame-refused"
+          style={{
+            border: "1px solid #a00000",
+            borderRadius: 8,
+            padding: 8,
+            background: "#fff0f0",
+          }}
+        >
+          Office unavailable: the configured Pixel Agents URL uses a scheme
+          this page cannot safely embed. Set the{" "}
+          <code>pixelAgentsUiUrl</code> setting to an{" "}
+          <code>http://</code> or <code>https://</code> address.
         </section>
       ) : null}
 

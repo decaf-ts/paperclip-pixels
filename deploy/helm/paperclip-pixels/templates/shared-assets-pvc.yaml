@@ -1,0 +1,31 @@
+{{- /*
+Shared sprites/characters asset delivery (PAPERCLIP_PIXELS-2 condition C2).
+
+Created only when sharedAssets.enabled and no existingClaim is referenced.
+Mounted at /opt/paperclip-pixel-shared-assets in BOTH the paperclip host and
+the pixel-agents pod (see templates/paperclip.yaml and
+templates/pixel-agents.yaml). Populate the claim with `plugins/paperclip/assets`
+content (characters/ + composition/) before/after provisioning — see
+deploy/README.md "Shared sprites/characters assets".
+
+accessModes: ReadWriteOnce is the single-node reference default. For
+multi-node production, reference an operator-managed ReadWriteMany claim via
+sharedAssets.existingClaim so both pods can share the volume.
+*/ -}}
+{{- if and .Values.sharedAssets.enabled (not .Values.sharedAssets.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "paperclip-pixels.fullname" . }}-shared-assets
+  namespace: {{ include "paperclip-pixels.namespace" . }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- with .Values.sharedAssets.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.sharedAssets.storage }}
+{{- end }}

@@ -1110,6 +1110,50 @@ construction: the bridge is a non-authoritative observer — disabling the
 plugin removes the graphical surface without touching business state. Full
 runbook detail lives in `deploy/README.md`.
 
+**Shared-asset volume delivery (C2).** The plugin's sprite/character catalogs
+(`plugins/paperclip/assets/characters` + `assets/composition`) are baked into
+both container images (§07 catalog row), but C2 additionally requires the
+same asset set to be deliverable by **shared volume** across all three
+deployment targets, with the baked copy remaining the **default fallback**
+whenever the volume wiring is disabled. Uniform mechanism: the
+`shared-assets` volume is mounted read-only at
+`/opt/paperclip-pixel-shared-assets` in **both** the Paperclip
+paperclip-pixel-host workload and the pixel-agents workload, and the catalog
+loaders in both plugins are redirected to it with the
+`PIXEL_CHARACTER_CATALOG` / `PIXEL_COMPOSITION_CATALOG` env overrides (absent
+overrides = the baked copy). Per-target delivery: the compose
+bridge-stack bind-mounts the repo's `plugins/paperclip/assets` into both
+services (source overridable via `PAPERCLIP_PIXELS_SHARED_ASSETS`); the k8s
+base manifests stay baked-only and an **opt-in kustomize overlay**
+(`deploy/overlays/shared-assets/`) patches both Deployments with a hostPath
+volume (single-node reference; multi-node/replica production must use a
+ReadWriteMany PVC or a CSI mount — hostPath is per-node); the helm chart
+gains a `sharedAssets` values block (`enabled` + optional `existingClaim`)
+that creates or reuses the PVC and mounts it in both workloads. Breach note:
+the pixel-agents image grants only the shared path's `characters` subdirectory
+as a WS1 `externalAssetDirectories` entry (never the mount root), so the same
+WS4-C privilege-gate / no-duplicate-catalog rule as the baked grant holds;
+this grant exists only in `Dockerfile.pixel-agents` and is therefore itself
+baked. Read-only guarantee: the k8s overlay and the helm chart mount the
+volume `readOnly: true` in both workloads; the compose dev stack's
+bind-mount is read-write (dev-trust posture), so between compose and
+`deploy/SECURITY.md` there is a small wording delta to reconcile at the
+hardening pass.
+
+**Publish workflow supply-chain pinning (C3).** The credential-bearing
+publish workflows — root `.github/workflows/publish.yml` (paperclip plugin +
+host/embedding image build-and-push) and the pixel-agents fork's
+`.github/workflows/publish-extension.yml` (marketplace publish + binary
+release + VSIX artifact) — pin **every third-party GitHub Action to a full
+commit SHA** (`actions/checkout`, `actions/setup-node`,
+`actions/upload-artifact`, `docker/setup-buildx-action`,
+`docker/login-action`, `docker/build-push-action`,
+`HaaLeo/publish-vscode-extension`, `softprops/action-gh-release`), each with
+the floating tag recorded as an inline comment. Accepted scope deviation
+(recorded on SAA-1051, follow-up not a condition failure):
+`release-gate.yml` / `trivy-scan.yml@master` stay floating because they are
+release-gate workflows, not credential-bearing publish workflows.
+
 **E2E verification stack.** The canonical Playwright suite lives at the repo
 root under `e2e/` (relocated from `tests/e2e/` so the new WS0 specs import
 its fixtures/helpers from their final location). It runs against the
@@ -1182,7 +1226,7 @@ Storage strategy — one authoritative home per datum:
 | Business state (companies, agents, issues, runs, approvals, costs) | Paperclip DB | Untouched by the bridge; no schema changes |
 | Derived bridge state (compact buckets, last-reconciled-at, leadership agent id, schema version) | plugin `ctx.state`, `bridge` namespace, company/instance scopes | Survives restarts; repaired by periodic reconciliation |
 | Per-agent character assignments | plugin `ctx.state`, `characters` namespace, `agent-character` key, **agent scope** (scopeId = agent id) | Single source of truth; first SDK `scopeKind: "agent"` usage; frozen contract shape |
-| Character catalog + sheets | Static package data (`assets/characters/` at the repo root and mirrored in `plugins/paperclip/assets/characters/`, shipped in the plugin package's `files` and vendored by `deploy/docker/build-plugin-bundle.sh` into the host image) | Validated fail-closed at load; per-entry source + license provenance |
+| Character catalog + sheets | Static package data (`assets/characters/` at the repo root and mirrored in `plugins/paperclip/assets/characters/`, shipped in the plugin package's `files` and vendored by `deploy/docker/build-plugin-bundle.sh` into the host image); C2 additionally allows the same catalog set to be **volume-delivered** into both containerized workloads via `PIXEL_CHARACTER_CATALOG` / `PIXEL_COMPOSITION_CATALOG` overrides pointing at a mounted `shared-assets` volume, with the baked copy remaining the default fallback (§06) | Validated fail-closed at load; per-entry source + license provenance |
 | Declared-agent roster cache | Embedding surface, in-memory `DeclaredAgentCache` (`plugins/pixel-agents/src/feed-server.ts`) | Backs the plugin's on-start re-declaration; never authoritative — the worker's next reconcile re-declares everyone (declare is an idempotent upsert) |
 | Plugin-declared sheet catalogs | Fork plugin host (server memory, resolved + decoded) + webview per-plugin sheet store (snapshot mirror) | Decoded through the appearance asset gate (grants = operator external asset directories); snapshot semantics; retracted when the plugin stops, re-declared on start (§5.7) |
 | Per-agent plugin appearance assignment | Fork server, `AgentState.pluginAppearance` (in-memory, not persisted — plugin agents re-declare on start) | Server-evaluated index into the owning plugin's current catalog; replayed on reconnect via `existingAgents.agentMeta.pluginAppearance`; unset = built-in palette rendering |
@@ -1209,6 +1253,7 @@ carries no personal or prompt content, and survives plugin upgrades through
 | Bridge ↔ Pixel Agents runtime | In-process, no network hop | The embedding module registers through the plugin-host API inside the server process — the bridge holds no websocket and no fork-side secret; `invokePluginAction` is privilege-gated like `setHooksEnabled` (plugin actions run first-party code) |
 | Secrets | Operator-configured `pixelAgentsTokenRef` / `paperclipApiTokenRef`; embedding env `PAPERCLIP_PIXEL_FEED_TOKEN` / `PAPERCLIP_PIXEL_API_TOKEN` | Secret references only in Paperclip config, resolved at call time; never logged, never persisted; the feed token is required (fail-closed startup), the reply-forwarder API token is optional (replies fail closed `forwarderNotConfigured` without it) |
 | Outbound HTTP | Worker pushes routed through SDK-gated `ctx.http.fetch` (audited) | One documented exception: the feed push uses a narrowly-scoped raw `fetch` because the host SSRF filter categorically blocks the loopback sidecar destination |
+| Operator UI surface (Pixel Office iframe, C1) | The bridge's Pixel Office page embeds the browser-reachable Pixel Agents UI in an iframe; only a validated http(s) URL may ride that surface | `pixelAgentsUiUrl` accepts only an `http:`/`https:` scheme — validated by the manifest's `^https?://` `instanceConfigSchema` pattern (`plugins/paperclip/src/manifest.ts`; the field description records that `javascript:`, `data:`, `file:` and custom protocols are rejected) and re-asserted behind a rendering guard (`isSafeOfficeUrl` returns true only for parsed `http:`/`https:` URLs, `PixelOfficePage.tsx`), so an invalid/absent URL renders the office fallback instead of an arbitrary document; both office iframes carry `sandbox="allow-scripts allow-forms allow-popups"` — notably **no `allow-same-origin`** — so the embedded document cannot reach sibling-frame storage/origin power, plus `allow="clipboard-read; clipboard-write"` for the bridge's own clipboard interactions |
 | Dialog-pane conversation feed (WS4-C) | Conversation extracts leave the plugin only pre-redacted and truncated — the raw sensitive prompt never rides the wire; fuller extracts are per-company opt-in | Always-on secret redaction (bearer/basic/assignment/credential-shaped-run patterns → `[redacted]`); mode-dependent truncation (toggle OFF ≤ 120 chars, ON ≤ 480); shared 600-char composed-line clamp; `dialogPanePrivacyOptIn` parsed strict-true in `parseRelayConfig` (anything but `=== true` is OFF) and boolean-validated by the worker, mapper rebuilt on toggle change; feed apply side re-clamps (≤ 8 lines/batch, 600-char re-clamp, fail-closed 400 when no dialog sink) as defense in depth |
 
 Identity and access model: actions execute with the host-authenticated actor

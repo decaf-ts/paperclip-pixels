@@ -149,6 +149,16 @@ spec:
             - name: PAPERCLIP_FEED_CLIENT_KEY_PATH
               value: "/feed-certs/client-key.pem"
             {{- end }}
+            {{- if .Values.sharedAssets.enabled }}
+            # Shared sprites/characters asset delivery (PAPERCLIP_PIXELS-2 C2):
+            # redirect the character/composition catalog loaders to the shared
+            # volume so the shared asset set is delivered by volume instead of
+            # only image-baked. The baked copy is the fallback when this is off.
+            - name: PIXEL_CHARACTER_CATALOG
+              value: "/opt/paperclip-pixel-shared-assets/characters/catalog.json"
+            - name: PIXEL_COMPOSITION_CATALOG
+              value: "/opt/paperclip-pixel-shared-assets/composition/catalog.json"
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ include "paperclip-pixels.secretName" . }}
@@ -161,6 +171,11 @@ spec:
             {{- if .Values.global.tls.feedCA }}
             - name: feed-certs
               mountPath: /feed-certs
+              readOnly: true
+            {{- end }}
+            {{- if .Values.sharedAssets.enabled }}
+            - name: shared-assets
+              mountPath: /opt/paperclip-pixel-shared-assets
               readOnly: true
             {{- end }}
           # In authenticated/private exposure /api/health returns 403 for
@@ -197,6 +212,11 @@ spec:
               - key: FEED_CLIENT_KEY
                 path: client-key.pem
               {{- end }}
+        {{- end }}
+        {{- if .Values.sharedAssets.enabled }}
+        - name: shared-assets
+          persistentVolumeClaim:
+            claimName: {{ include "paperclip-pixels.sharedAssetsClaim" . }}
         {{- end }}
 {{- if .Values.paperclipData.storageClass }}
 ---

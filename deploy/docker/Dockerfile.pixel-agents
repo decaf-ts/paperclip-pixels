@@ -80,6 +80,14 @@ COPY plugins/pixel-agents/dist/pixel-agents-embedding.cjs /opt/paperclip-pixel-e
 # pixel-agents image so the embedding's ancestor walk finds it. Without it a
 # fresh two-plugin deployment degrades to built-in palettes
 # (paperclip_appearance_catalog_unavailable).
+#
+# This baked copy is the DEFAULT fallback (PAPERCLIP_PIXELS-2 condition C2):
+# a deployment that delivers the shared sprites/characters assets via a
+# volume (compose/k8s/helm `shared-assets`) mounts that volume at
+# /opt/paperclip-pixel-shared-assets and points the catalog loader at it with
+# the PIXEL_CHARACTER_CATALOG env override — see deploy/README.md "Shared
+# sprites/characters assets". The baked copy is used whenever that override
+# is absent, so an image without the shared volume still works.
 COPY plugins/paperclip/assets /opt/paperclip-pixel-embedding/assets
 
 # Pixel Agents persists server registry + layout under ~/.pixel-agents/.
@@ -94,8 +102,18 @@ COPY plugins/paperclip/assets /opt/paperclip-pixel-embedding/assets
 # character array (the retired WS3 merged-array path), which would duplicate
 # the characters in the picker. The server re-reads config on every gate
 # call / declaration; its own writes preserve `externalAssetDirectories`.
+#
+# The second grant (/opt/paperclip-pixel-shared-assets/characters) covers the
+# shared-asset volume mount (PAPERCLIP_PIXELS-2 condition C2): when the
+# shared volume overrides the catalog via PIXEL_CHARACTER_CATALOG, the sheets
+# live under that granted subdirectory, so the WS4-C `declareCharacterCatalog`
+# gate still accepts them. It names the characters subdir (not the mount
+# root) for the same reason as the embedding copy above, and it is inert when
+# the shared volume is not mounted (the dir just does not exist). The baked
+# copy at /opt/paperclip-pixel-embedding/assets/characters stays granted as
+# the default fallback.
 RUN mkdir -p /home/node/.pixel-agents \
-  && printf '%s\n' '{"externalAssetDirectories":["/opt/paperclip-pixel-embedding/assets/characters"]}' \
+  && printf '%s\n' '{"externalAssetDirectories":["/opt/paperclip-pixel-embedding/assets/characters","/opt/paperclip-pixel-shared-assets/characters"]}' \
     > /home/node/.pixel-agents/config.json \
   && chown -R node:node /home/node /app
 

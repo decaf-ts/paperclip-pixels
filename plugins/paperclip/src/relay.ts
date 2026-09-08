@@ -304,6 +304,29 @@ export function parseRelayConfig(
   const pixelAgentsUiUrl = typeof raw.pixelAgentsUiUrl === "string" && raw.pixelAgentsUiUrl.trim().length > 0
     ? raw.pixelAgentsUiUrl.trim()
     : "http://localhost:8090";
+  // SAA-1052 C1: the browser-reachable Pixel Agents URL is embedded as the
+  // office `<iframe>` `src`, so a non-http(s) scheme (javascript:, data:,
+  // file:, or a custom protocol) is an XSS / script-injection vector. This is
+  // the runtime fail-closed backstop for config that predates (or bypassed)
+  // the save-time `onValidateConfig` gate — the same posture as the
+  // https-when-token transport checks above. A rejection here also makes
+  // `getPixelAgentsUiUrl` fall back to the safe default, because the relay is
+  // left unconfigured for the company.
+  try {
+    const parsedUi = new URL(pixelAgentsUiUrl);
+    if (parsedUi.protocol !== "http:" && parsedUi.protocol !== "https:") {
+      throw new RelayTransportContractError(
+        `pixelAgentsUiUrl must be an http(s) URL; refusing to embed `
+          + `${parsedUi.protocol}//… as the office iframe source`,
+      );
+    }
+  } catch (err) {
+    if (err instanceof RelayTransportContractError) throw err;
+    throw new RelayTransportContractError(
+      `pixelAgentsUiUrl must be a valid http(s) URL; refusing to embed an `
+        + `invalid office iframe source`,
+    );
+  }
   const configuredApiUrl = typeof raw.paperclipApiBaseUrl === "string" ? raw.paperclipApiBaseUrl.trim() : "";
   const paperclipApiBaseUrl = configuredApiUrl.length > 0 ? configuredApiUrl : DEFAULT_PAPERCLIP_API_BASE_URL;
   // SAA-738: mirror the feed-token transport contract above for the

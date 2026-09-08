@@ -260,6 +260,37 @@ describe("parseRelayConfig", () => {
   });
 });
 
+describe("parseRelayConfig pixelAgentsUiUrl scheme (SAA-1052 C1 regression)", () => {
+  // The browser-reachable Pixel Agents URL is embedded as the office <iframe>
+  // src; a non-http(s) scheme (javascript:, data:, file:, custom) is an XSS /
+  // script-injection vector. `onValidateConfig` rejects it at save time; this
+  // is the runtime fail-closed backstop (the relay is left disabled, so
+  // `getPixelAgentsUiUrl` falls back to the safe default).
+  it("defaults pixelAgentsUiUrl to the bundled localhost URL when unset or blank", () => {
+    expect(parseRelayConfig({}).pixelAgentsUiUrl).toBe("http://localhost:8090");
+    expect(parseRelayConfig({ pixelAgentsUiUrl: "   " }).pixelAgentsUiUrl).toBe("http://localhost:8090");
+  });
+
+  it("accepts an http(s) pixelAgentsUiUrl", () => {
+    expect(
+      parseRelayConfig({ pixelAgentsUiUrl: "https://pa.example/office" }).pixelAgentsUiUrl,
+    ).toBe("https://pa.example/office");
+    expect(parseRelayConfig({ pixelAgentsUiUrl: "http://localhost:8090" }).pixelAgentsUiUrl).toBe("http://localhost:8090");
+  });
+
+  it("rejects a non-http(s) pixelAgentsUiUrl scheme", () => {
+    for (const url of [
+      "javascript:alert(1)",
+      "data:text/html,<script>alert(1)</script>",
+      "file:///etc/passwd",
+      "ftp://x",
+      "not-a-url",
+    ]) {
+      expect(() => parseRelayConfig({ pixelAgentsUiUrl: url })).toThrow(RelayTransportContractError);
+    }
+  });
+});
+
 describe("parseRelayConfig transport contract (SAA-557, security F1 regression)", () => {
   // https-when-token enforcement: a configured feed token must never travel
   // over cleartext http: to a non-loopback host. `onValidateConfig` rejects

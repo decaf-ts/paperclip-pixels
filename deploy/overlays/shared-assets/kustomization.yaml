@@ -1,0 +1,31 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Shared sprites/characters asset delivery (PAPERCLIP_PIXELS-2 condition C2).
+#
+# This overlay mounts the SAME shared-asset hostPath volume at
+# /opt/paperclip-pixel-shared-assets in BOTH the paperclip host (office UI)
+# and the pixel-agents pod, and points the catalog loaders at the mounted
+# catalog via the PIXEL_*_CATALOG env overrides. It is an opt-in overlay so
+# the base manifests keep the image-baked assets as the default fallback — a
+# deployment that does not apply this overlay still works with the baked copy.
+#
+# To use it, populate the hostPath directory with the shared asset set
+# (the same content as `plugins/paperclip/assets`: `characters/` and
+# `composition/`), then build with:
+#
+#   kustomize build deploy/overlays/shared-assets | kubectl apply -f -
+#
+# On a single-node minikube the host path lives on the minikube node; copy
+# the assets there first, e.g.:
+#
+#   minikube ssh -- sudo mkdir -p /opt/paperclip-pixels/shared-assets
+#   minikube ssh -- sudo cp -r plugins/paperclip/assets/* /opt/paperclip-pixels/shared-assets/
+#
+# Production multi-node deployments should swap the hostPath for a
+# ReadWriteMany PVC (or a ConfigMap/object-store mounted via a CSI driver)
+# populated by a seed Job — see deploy/README.md "Shared sprites/characters
+# assets". See deploy/SECURITY.md for the least-privilege notes.
+resources:
+  - ../../k8s
+patchesStrategicMerge:
+  - shared-assets-patch.yaml

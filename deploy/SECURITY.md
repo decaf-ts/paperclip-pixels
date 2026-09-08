@@ -83,6 +83,25 @@ is `IfNotPresent`, so a running deployment never silently picks up a mutable
 `:latest` tag. `:local` images (`imagePullPolicy: Never`) are the **dev** path
 only.
 
+## Shared assets volume (PAPERCLIP_PIXELS-2 C2)
+
+The shared sprites/characters catalogs can be delivered by a volume instead of
+only the image-baked copy. Least-privilege rules:
+
+- The volume is mounted **read-only** in both workloads — the app only reads
+  the catalogs; it never writes to the shared-assets mount.
+- The content is **operator-supplied static assets** (`plugins/paperclip/assets`
+  content), not user/submission runtime data; there is no untrusted write path
+  into the volume.
+- The k8s overlay uses a **hostPath** (single-node minikube reference only).
+  hostPath is per-node, so multi-replica/production deployments must use a
+  ReadWriteMany PVC or an object-store/CSI mount so both workloads on any node
+  can share the same asset set.
+- The pixel-agents image grants only the `characters` **subdirectory** of the
+  shared path as an `externalAssetDirectories` entry (never the mount root), so
+  the retired WS3 merged-array `buildAssetCache` path does not duplicate the
+  characters in the picker — same rule as the baked grant.
+
 ## Threat model (summary)
 
 | Threat | Control |

@@ -427,6 +427,78 @@ host allowlist answers unknown `Host` headers with
 the `PAPERCLIP_PUBLIC_URL` hostname) — keep them consistent if you rename the
 service or change the forwarder target.
 
+## Shared sprites/characters assets (PAPERCLIP_PIXELS-2 condition C2)
+
+The shared sprite/character catalogs (`plugins/paperclip/assets/characters` +
+`plugins/paperclip/assets/composition`) are **image-baked** into both the
+paperclip-pixel-host (`/opt/paperclip-pixel-plugin/assets`) and pixel-agents
+(`/opt/paperclip-pixel-embedding/assets`) images, so they are rebuilt with the
+image. Condition C2 requires the same shared asset set to be deliverable by
+**volume** instead of only baked. This is wired across all three deploy
+targets, and the baked copy stays the **default fallback** (a container
+without the shared-asset volume keeps working).
+
+The mechanism is uniform: a shared-assets volume is mounted at
+`/opt/paperclip-pixel-shared-assets` in **both** the paperclip host and the
+pixel-agents pod, containing the same `characters/` + `composition/` content
+as `plugins/paperclip/assets`. The catalog loaders are pointed at the mounted
+catalog with the `PIXEL_CHARACTER_CATALOG` /
+`PIXEL_COMPOSITION_CATALOG` env overrides (honored by both plugins'
+`resolveCharacterCatalogDir` / `resolveCompositionCatalogDir`). When those
+overrides are absent (the default), the image-baked copy is used.
+
+> **Pixel Agents grant note:** the pixel-agents image grants
+> `/opt/paperclip-pixel-shared-assets/characters` as a WS1
+> `externalAssetDirectories` entry (in addition to the baked
+> `/opt/paperclip-pixel-embedding/assets/characters`), so the WS4-C
+> `declareCharacterCatalog` privilege gate accepts the shared sheets. The
+> privilege gate points at the shared catalog only when `PIXEL_CHARACTER_CATALOG`
+> is set (shared assets enabled); otherwise the baked grant path is used.
+
+### Compose (dev)
+
+`deploy/docker/docker-compose.bridge-stack.yml` bind-mounts the repo's
+`plugins/paperclip/assets` into both services at
+`/opt/paperclip-pixel-shared-assets` and sets the catalog overrides. Override
+the source with `PAPERCLIP_PIXELS_SHARED_ASSETS` (e.g. a populated volume /
+external checkout). Removing the `volumes:` + env block reverts to the baked
+copy.
+
+### Kubernetes (minikube / kustomize)
+
+The base manifests (`deploy/k8s/`) stay baked-only. An **opt-in overlay**
+`deploy/overlays/shared-assets/` mounts the same `shared-assets` hostPath
+volume at `/opt/paperclip-pixel-shared-assets` in both Deployments and sets the
+catalog overrides:
+
+```bash
+# populate the host path (minikube node), then apply the overlay
+minikube ssh -- sudo mkdir -p /opt/paperclip-pixels/shared-assets
+minikube ssh -- sudo cp -r plugins/paperclip/assets/* /opt/paperclip-pixels/shared-assets/
+kustomize build deploy/overlays/shared-assets | kubectl apply -f -
+```
+
+The overlay is deliberately opt-in so the base manifests keep the baked copy
+as the fallback. hostPath is the single-node reference choice; production with
+replicas across nodes should use a **ReadWriteMany PVC** (or an object-store /
+CSI mount) populated by a seed Job — hostPath is per-node.
+
+### Helm (values-driven)
+
+`deploy/helm/paperclip-pixels` adds a `sharedAssets` values block. When
+`sharedAssets.enabled` is `true` the chart mounts the shared-assets PVC at
+`/opt/paperclip-pixel-shared-assets` in both workloads and sets the catalog
+overrides; it also creates a `*-shared-assets` PVC (unless
+`sharedAssets.existingClaim` references your own), and keeps the baked copy as
+the fallback while disabled. Populate the claim with `plugins/paperclip/assets`
+content.
+
+```bash
+helm upgrade --install paperclip-pixels deploy/helm/paperclip-pixels \
+  --set secrets.betterAuthSecret=...,secrets.feedToken=...,secrets.postgresPassword=... \
+  --set sharedAssets.enabled=true
+```
+
 ## How the bridge plugin gets loaded (no manual admin step)
 
 Paperclip's `POST /api/plugins/install` requires an instance-admin session in

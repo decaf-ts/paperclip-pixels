@@ -38,7 +38,10 @@ function makeVisual(overrides: Partial<VisualSettingsData> = {}): VisualSettings
   };
 }
 
-function servePage({ connected = false }: { connected?: boolean } = {}) {
+function servePage({
+  connected = false,
+  pixelAgentsUiUrl = "http://localhost:8090",
+}: { connected?: boolean; pixelAgentsUiUrl?: string } = {}) {
   usePluginDataImpl.mockImplementation((...args: unknown[]) => {
     const key = String(args[0]);
     if (key === "bridge-snapshot") {
@@ -52,7 +55,7 @@ function servePage({ connected = false }: { connected?: boolean } = {}) {
       });
     }
     if (key === "visual-settings") {
-      return makeDataResult({ data: makeVisual(), loading: false, error: null });
+      return makeDataResult({ data: makeVisual({ pixelAgentsUiUrl }), loading: false, error: null });
     }
     return makeDataResult({ data: null });
   });
@@ -108,5 +111,44 @@ describe("PixelOfficePage — fullscreen office viewing", () => {
       expect(screen.queryByTestId("pixel-office-fullscreen-overlay")).toBeNull(),
     );
     expect(screen.getByTestId("pixel-office-fullscreen")).toBeTruthy();
+  });
+});
+
+describe("PixelOfficePage — office iframe hardening (SAA-1052 C1)", () => {
+  it("sandboxes the office iframe without the allow-same-origin + allow-scripts escape combo", async () => {
+    servePage();
+    render(<PixelOfficePage context={{ companyId: "co" } as never} />);
+    await ready();
+
+    const normalFrame = screen.getByTestId("pixel-office-frame").querySelector("iframe");
+    expect(normalFrame).toBeTruthy();
+    const sandbox = normalFrame?.getAttribute("sandbox") ?? "";
+    expect(sandbox).toBeTruthy();
+    expect(sandbox).toContain("allow-scripts");
+    expect(sandbox).not.toContain("allow-same-origin");
+    const tokens = sandbox.split(/\s+/).filter(Boolean).sort();
+    expect(tokens).not.toEqual(["allow-same-origin", "allow-scripts"].sort());
+
+    fireEvent.click(screen.getByTestId("pixel-office-fullscreen"));
+    await waitFor(() =>
+      expect(screen.getByTestId("pixel-office-fullscreen-overlay")).toBeTruthy(),
+    );
+    const fullscreenFrame = screen
+      .getByTestId("pixel-office-fullscreen-overlay")
+      .querySelector("iframe");
+    expect(fullscreenFrame).toBeTruthy();
+    expect(fullscreenFrame?.getAttribute("sandbox")).toBe(sandbox);
+  });
+
+  it("renders a visible refused message instead of an iframe when the UI URL is not http(s)", async () => {
+    servePage({ pixelAgentsUiUrl: "javascript:alert(1)" });
+    render(<PixelOfficePage context={{ companyId: "co" } as never} />);
+    await ready();
+
+    expect(screen.queryByTestId("pixel-office-frame")).toBeNull();
+    expect(document.querySelector("iframe")).toBeNull();
+    const refused = screen.getByTestId("pixel-office-frame-refused");
+    expect(refused).toBeTruthy();
+    expect(refused.textContent).toMatch(/http/);
   });
 });

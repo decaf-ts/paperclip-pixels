@@ -94,8 +94,22 @@ services:
       PAPERCLIP_PIXEL_FEED_TOKEN: "${PAPERCLIP_PIXEL_FEED_TOKEN:?set PAPERCLIP_PIXEL_FEED_TOKEN}"
       PAPERCLIP_PIXEL_FEED_URL: "http://pixel-agents:8081"
       PAPERCLIP_PIXEL_ALLOWED_HTTP_HOSTS: "pixel-agents"
+      # Shared sprites/characters asset delivery (PAPERCLIP_PIXELS-2 C2): the
+      # same `plugins/paperclip/assets` directory is mounted at
+      # /opt/paperclip-pixel-shared-assets in BOTH this host and the
+      # pixel-agents container (see below). The catalog loaders are pointed at
+      # the mounted catalog via the PIXEL_*_CATALOG overrides, so the shared
+      # asset set is delivered by volume instead of only image-baked. The
+      # baked copy (plugins/paperclip/assets baked into the image) remains the
+      # fallback when the mount/env are removed.
+      PIXEL_CHARACTER_CATALOG: "/opt/paperclip-pixel-shared-assets/characters/catalog.json"
+      PIXEL_COMPOSITION_CATALOG: "/opt/paperclip-pixel-shared-assets/composition/catalog.json"
     volumes:
       - paperclip-data:/paperclip
+      # Bind the repo's shared assets. Override the host path with
+      # PAPERCLIP_PIXELS_SHARED_ASSETS (e.g. to a checked-out assets dir or a
+      # populated volume). Default resolves to <repo>/plugins/paperclip/assets.
+      - ${PAPERCLIP_PIXELS_SHARED_ASSETS:-../../plugins/paperclip/assets}:/opt/paperclip-pixel-shared-assets
 
   pixel-agents:
     image: pixel-agents:local
@@ -116,6 +130,17 @@ services:
       PAPERCLIP_PIXEL_FEED_TOKEN: "${PAPERCLIP_PIXEL_FEED_TOKEN:?set PAPERCLIP_PIXEL_FEED_TOKEN (shared secret for the plugin feed endpoint; configure the same value as the Paperclip plugin's pixelAgentsTokenRef secret)}"
       PAPERCLIP_PIXEL_API_BASE_URL: "http://paperclip:3100"
       PAPERCLIP_PIXEL_API_TOKEN: "${PAPERCLIP_PIXEL_API_TOKEN:-}"
+      # Shared sprites/characters asset delivery (PAPERCLIP_PIXELS-2 C2): the
+      # same `plugins/paperclip/assets` directory mounted into this container
+      # at /opt/paperclip-pixel-shared-assets. The character catalog loader is
+      # pointed at the mounted catalog via PIXEL_CHARACTER_CATALOG. The baked
+      # copy (/opt/paperclip-pixel-embedding/assets) remains the fallback when
+      # the mount/env are removed; the WS1 externalAssetDirectories grant for
+      # the shared assets path is baked into the image (Dockerfile.pixel-agents)
+      # so the WS4-C declareCharacterCatalog gate accepts the shared sheets.
+      PIXEL_CHARACTER_CATALOG: "/opt/paperclip-pixel-shared-assets/characters/catalog.json"
+    volumes:
+      - ${PAPERCLIP_PIXELS_SHARED_ASSETS:-../../plugins/paperclip/assets}:/opt/paperclip-pixel-shared-assets
 
 volumes:
   pgdata:
