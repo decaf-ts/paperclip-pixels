@@ -2,7 +2,8 @@
 
 Brings up an ephemeral, reproducible live Paperclip instance (embedded
 Postgres, `local_trusted` loopback, no login) and loads the Pixel bridge plugin
-— this repo's own root package, `@decaf-ts/paperclip-pixels` — via the
+— this repo's independent Paperclip plugin package,
+`@decaf-ts/paperclip-pixels-plugin` (at `plugins/paperclip`) — via the
 **real** Paperclip plugin-loader (`POST /api/plugins/install`, local-path
 install).
 
@@ -12,9 +13,9 @@ Boots the Paperclip server **from the `paperclip/` git-submodule source** with
 an ephemeral embedded Postgres (no `DATABASE_URL`), then installs the plugin
 from its built `dist/`. This (option B) is used instead of the Docker
 quickstart because the plugin's built `dist/worker.js` is fully self-contained
-(esbuild inlines `src/core`, `src/pixel-agents-provider`, the plugin SDK, and
-zod — see `scripts/build.mjs`), so it resolves on the host filesystem with
-nothing to vendor; running the *server* from source (rather than the
+(esbuild inlines `plugins/paperclip/src/core`, the plugin SDK, and zod — see
+`plugins/paperclip/scripts/build.mjs`), so it resolves on the host filesystem
+with nothing to vendor; running the *server* from source (rather than the
 published image) keeps the whole stack's dependency graph in one place for
 fast iteration.
 
@@ -39,7 +40,7 @@ From the repo root:
 ```bash
 # 0. One-time prerequisites (submodule deps with devDeps, plugin built).
 ( cd paperclip && env -u NODE_ENV NODE_ENV=development CI=true pnpm install --frozen-lockfile )
-npm run build
+( cd plugins/paperclip && npm run build )
 
 # 1. Reproducible one-shot bring-up + plugin load + evidence + teardown:
 scripts/integration-host/run.sh

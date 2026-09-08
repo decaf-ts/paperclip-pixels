@@ -1,0 +1,43 @@
+# Dev-only chart values. Keeps the local single-node minikube/compose path
+# working: locally built images (`:local`), pullPolicy Never, single replica,
+# no PDB, and cleartext HTTP for the (still internal) feed host. This is the
+# development reference path; production must use values.production.yaml.
+# Do NOT use these values in a shared/production cluster.
+
+image:
+  pullPolicy: Never
+  paperclipHost:
+    repository: paperclip-pixel-host
+    tag: local
+    digest: ""
+  pixelAgents:
+    repository: pixel-agents
+    tag: local
+    digest: ""
+
+replicaCount:
+  paperclip: 1
+  pixelAgents: 1
+  postgres: 1
+
+pdb:
+  enabled: false
+
+transport:
+  feed:
+    scheme: http
+    allowedHttpHosts:
+      - pixel-agents
+
+backup:
+  enabled: false
+
+metrics:
+  enabled: false
+
+# Inline secrets are acceptable for a single-node dev install. In production,
+# reference secrets.existingSecret instead.
+secrets:
+  betterAuthSecret: "change-me-dev"
+  feedToken: "change-me-dev-feed-token"
+  postgresPassword: "postgres"

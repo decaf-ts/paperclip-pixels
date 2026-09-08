@@ -20,8 +20,9 @@ import path from "node:path";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-// A downstream consumer (`npm install @decaf-ts/paperclip-pixels`) never has
-// the `paperclip/` submodule at all — that's the normal case, not a
+// A downstream consumer of the published plugin packages
+// (`@decaf-ts/paperclip-pixels-plugin` / `@decaf-ts/pixel-agents-paperclip-plugin`)
+// never has the `paperclip/` submodule at all — that's the normal case, not a
 // misconfiguration, so stay silent and exit 0. Only warn when `paperclip/`
 // exists but a specific nested package is missing (a contributor forgot
 // `git submodule update --init`).

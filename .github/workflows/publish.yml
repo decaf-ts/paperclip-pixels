@@ -1,0 +1,124 @@
+name: "Publish (provenance-aware)"
+
+# Release-triggered, provenance-aware npm + container publishing. The board's
+# registry/container auth keys are injected through secrets and referenced here
+# by name, so they drop in later without rewriting this workflow. No real
+# credentials are committed.
+#
+# Provenance/evidence:
+#   - npm: `--provenance` uses the GitHub OIDC token (id-token: write) so each
+#     published package carries SLSA provenance; a CycloneDX SBOM is generated
+#     and uploaded as a detached release asset alongside the publish.
+#   - container: docker buildx emits OIDC provenance + SBOM attestations
+#     (`provenance: true`, `sbom: true`) and records the image digest.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  npm:
+    name: "npm publish: ${{ matrix.package }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - common
+          - plugins/paperclip
+          - plugins/pixel-agents
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org/
+      - name: Build pinned paperclip SDK
+        run: node scripts/ci/build-paperclip-sdk.mjs
+      - name: Build + pack package
+        run: |
+          node scripts/ci/prepare-package.mjs "${{ matrix.package }}"
+          npm --prefix "${{ matrix.package }}" install --no-audit --no-fund
+          npm --prefix "${{ matrix.package }}" run build
+          npm --prefix "${{ matrix.package }}" pack --dry-run
+      - name: Generate CycloneDX SBOM
+        run: |
+          npm --prefix "${{ matrix.package }}" sbom --sbom-format cyclonedx --omit=dev > "${{ matrix.package }}/sbom.cdx.json" || true
+      - name: Publish (provenance)
+        run: |
+          npm --prefix "${{ matrix.package }}" publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.package }}
+          path: ${{ matrix.package }}/sbom.cdx.json
+          if-no-files-found: warn
+
+  container:
+    name: "Container publish"
+    runs-on: ubuntu-latest
+    needs: [npm]
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - { name: "paperclip-pixel-host", dockerfile: "deploy/docker/Dockerfile.paperclip-pixel-host" }
+          - { name: "pixel-agents", dockerfile: "deploy/docker/Dockerfile.pixel-agents" }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Build the three package artifacts for image context
+        run: |
+          set -euo pipefail
+          node scripts/ci/build-paperclip-sdk.mjs
+          node scripts/ci/prepare-package.mjs common
+          node scripts/ci/prepare-package.mjs plugins/paperclip
+          npm --prefix plugins/paperclip install --no-audit --no-fund
+          npm --prefix plugins/paperclip run build
+          node scripts/ci/prepare-package.mjs plugins/pixel-agents
+          npm --prefix plugins/pixel-agents install --no-audit --no-fund
+          npm --prefix plugins/pixel-agents run build
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.REGISTRY_USER || 'decaf-ts-admin' }}
+          password: ${{ secrets.REGISTRY_TOKEN || secrets.GH_PAT || secrets.GH_TOKEN }}
+      - name: Build and push with provenance + SBOM
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.image.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          provenance: true
+          sbom: true
+          tags: |
+            ghcr.io/decaf-ts/${{ matrix.image.name }}:${{ github.ref_name }}
+            ghcr.io/decaf-ts/${{ matrix.image.name }}:latest
+      - name: Record image digest (digest-pinned)
+        run: |
+          set -euo pipefail
+          DIGEST="${{ steps.build.outputs.digest }}"
+          echo "pinned digest: $DIGEST"
+          echo "digest=$DIGEST" >> "$GITHUB_STEP_SUMMARY"

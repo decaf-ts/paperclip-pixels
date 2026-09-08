@@ -1,0 +1,58 @@
+name: "Integration matrix"
+
+# Paperclip-plugin N/N-1 against Pixel-Agents-plugin N/N-1, using common's
+# compatibility fixtures (PAPERCLIP_PIXELS-2 R3-WS2, migration-plan step 3
+# second half). The board waived full version-drift control ("we control
+# versioning"), so this is a cheap upgrade-order proof: for each declared
+# version pairing, both plugins must agree with `paperclip-pixels-common`'s
+# wire-schema rules and never depend on each other.
+#
+# The `include` list is the version-pair matrix. Today only N = 0.6.0 exists
+# for both plugins; when the first N-1 (or published prior) becomes available
+# it is added here (e.g. paperclip 0.5.x against pixel-agents 0.6.0) and the
+# same harness re-proves the upgrade order.
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: "Node major version to run the matrix under."
+        required: false
+        type: string
+        default: "24"
+  workflow_dispatch:
+
+jobs:
+  matrix:
+    name: "paperclip ${{ matrix.paperclip }} x pixel-agents ${{ matrix.pixel-agents }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - paperclip: "0.6.0"
+            pixel-agents: "0.6.0"
+            label: "N/N"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+      - name: Build common contract
+        run: node scripts/ci/prepare-package.mjs common
+      - name: Build Paperclip plugin
+        run: |
+          node scripts/ci/prepare-package.mjs plugins/paperclip
+          npm --prefix plugins/paperclip install --no-audit --no-fund
+          npm --prefix plugins/paperclip run build
+      - name: Build Pixel-Agents plugin
+        run: |
+          node scripts/ci/prepare-package.mjs plugins/pixel-agents
+          npm --prefix plugins/pixel-agents install --no-audit --no-fund
+          npm --prefix plugins/pixel-agents run build
+      - name: Run compatibility matrix harness
+        run: node scripts/ci/compat-matrix.mjs "${{ matrix.paperclip }}" "${{ matrix.pixel-agents }}"

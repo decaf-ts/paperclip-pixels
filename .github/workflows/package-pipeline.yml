@@ -1,0 +1,78 @@
+name: "Package clean-clone pipeline"
+
+# Reusable clean-clone pipeline for one of the three publishable packages
+# (common | plugins/paperclip | plugins/pixel-agents). Each package is
+# validated independently from a fresh checkout: typecheck, lint, build, all
+# tests and an `npm pack --dry-run` smoke. The paperclip plugin additionally
+# builds the pinned `paperclip/` submodule's plugin SDK (the reference-only
+# submodule is git-ignored for its dist/), and every plugin package resolves the
+# intentionally unpublished `paperclip-pixels-common` locally.
+#
+# Called by the release gate and by package-ci.yml with a `package` input.
+
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: "Relative package directory: common | plugins/paperclip | plugins/pixel-agents"
+        required: true
+        type: string
+      node-version:
+        description: "Node major version to run the pipeline under."
+        required: false
+        type: string
+        default: "24"
+
+jobs:
+  pipeline:
+    name: "${{ inputs.package }} pipeline"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["${{ inputs.node-version }}"]
+    steps:
+      - name: Checkout (recursive submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Build pinned paperclip plugin SDK
+        if: inputs.package == 'plugins/paperclip'
+        run: node scripts/ci/build-paperclip-sdk.mjs
+
+      - name: Bootstrap package (local common + SDK links)
+        run: node scripts/ci/prepare-package.mjs "${{ inputs.package }}"
+
+      - name: Install package dependencies
+        run: npm install --no-audit --no-fund
+        working-directory: ${{ inputs.package }}
+
+      - name: Typecheck
+        run: npm run typecheck --if-present
+        working-directory: ${{ inputs.package }}
+
+      - name: Lint
+        run: npm run lint --if-present
+        working-directory: ${{ inputs.package }}
+
+      - name: Build
+        run: npm run build --if-present
+        working-directory: ${{ inputs.package }}
+
+      - name: Run tests
+        run: |
+          SCRIPT=$(node -e "const p=require('./package.json'); console.log((p.scripts && p.scripts['test:all']) ? 'test:all' : 'test')")
+          npm run "$SCRIPT"
+        working-directory: ${{ inputs.package }}
+
+      - name: Package smoke (npm pack --dry-run)
+        run: npm pack --dry-run
+        working-directory: ${{ inputs.package }}

@@ -10,17 +10,19 @@
 #
 # The fork's generic `--plugin <module>` startup loader (server/src/plugins/
 # moduleLoader.ts) is pointed at the Paperclip bridge embedding module
-# (dist/pixel-agents-embedding.cjs — built from this repo's
-# src/pixel-agents-plugin/embedding.ts by `npm run build` at the repo root,
-# BEFORE this image is built; the runbook's step 1). The module registers the
+# (plugins/pixel-agents/dist/pixel-agents-embedding.cjs — built from this
+# repo's independent Pixel Agents plugin package
+# `plugins/pixel-agents/src/embedding.ts` by `npm --prefix plugins/pixel-agents
+# run build` BEFORE this image is built; the runbook's step 1). The module
+# registers the
 # Paperclip plugin through the in-process plugin host and serves the relay's
 # POST /api/plugin-feed endpoint on its own sidecar listener (default
 # 127.0.0.1:8081; bind/port/token via PAPERCLIP_PIXEL_FEED_* env — see the
 # module's doc comment). All Paperclip-specific glue lives in that module;
 # the fork itself stays provider-agnostic.
 #
-# Build (from the repo root, submodules initialized, plugin repo built):
-#   npm install && npm run build        # produces dist/pixel-agents-embedding.cjs
+# Build (from the repo root, submodules initialized, plugin packages built):
+#   npm --prefix plugins/pixel-agents run build   # produces plugins/pixel-agents/dist/pixel-agents-embedding.cjs
 #   docker build -t pixel-agents:local -f deploy/docker/Dockerfile.pixel-agents .
 #
 # Run:  docker run --rm -p 8080:8080 \
@@ -60,14 +62,42 @@ COPY --from=builder /build/dist ./dist
 COPY --from=builder /build/package.json ./package.json
 COPY --from=builder /build/node_modules ./node_modules
 
-# Paperclip bridge embedding module (this repo's own code, self-contained
-# bundle: node built-ins external, zero runtime deps). The retired
-# bin/paperclip-pixel-relay.js sidecar (impersonation path, WS2-C) is gone —
-# the bridge now runs in-process behind the CLI's generic --plugin loader.
-COPY dist/pixel-agents-embedding.cjs /opt/paperclip-pixel-embedding/pixel-agents-embedding.cjs
+# Paperclip bridge embedding module (the independent Pixel Agents plugin
+# package's own bundle, self-contained: node built-ins external, zero runtime
+# deps). The retired bin/paperclip-pixel-relay.js sidecar (impersonation
+# path, WS2-C) is gone — the bridge now runs in-process behind the CLI's
+# generic --plugin loader.
+COPY plugins/pixel-agents/dist/pixel-agents-embedding.cjs /opt/paperclip-pixel-embedding/pixel-agents-embedding.cjs
+
+# ── WS3 character/appearance catalog ─────────────────────────────────────
+# The embedding's `resolveCharacterCatalogDir` walks up from this module's
+# own location looking for `assets/characters/catalog.json`; vendoring the
+# Paperclip plugin's catalogue beside the embedding module makes the WS4-C
+# `declareCharacterCatalog` (and the WS4-A appearance adoption) work in the
+# two-plugin topology, matching the former combined build. The catalogue is
+# the same CC0 sheet set the host image vendors at
+# /opt/paperclip-pixel-plugin/assets/characters — this copy lives in the
+# pixel-agents image so the embedding's ancestor walk finds it. Without it a
+# fresh two-plugin deployment degrades to built-in palettes
+# (paperclip_appearance_catalog_unavailable).
+COPY plugins/paperclip/assets /opt/paperclip-pixel-embedding/assets
 
 # Pixel Agents persists server registry + layout under ~/.pixel-agents/.
-RUN mkdir -p /home/node/.pixel-agents && chown -R node:node /home/node /app
+#
+# Seed the WS1 `externalAssetDirectories` grant so the plugin host's
+# `PluginAppearanceAssetGate` accepts the character sheets declared through
+# `declareCharacterCatalog` (the WS4-A privilege gate refuses any sheet
+# outside an operator-granted directory). The grant deliberately names the
+# `assets/characters` subdirectory, NOT the embedding root: the gate only
+# needs the sheet paths inside the grant, while the root grant would ALSO
+# make the startup `buildAssetCache` merge the catalog into the built-in
+# character array (the retired WS3 merged-array path), which would duplicate
+# the characters in the picker. The server re-reads config on every gate
+# call / declaration; its own writes preserve `externalAssetDirectories`.
+RUN mkdir -p /home/node/.pixel-agents \
+  && printf '%s\n' '{"externalAssetDirectories":["/opt/paperclip-pixel-embedding/assets/characters"]}' \
+    > /home/node/.pixel-agents/config.json \
+  && chown -R node:node /home/node /app
 
 USER node
 ENV HOME=/home/node

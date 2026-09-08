@@ -1,0 +1,80 @@
+{{- if .Values.backup.enabled }}
+{{- $full := include "paperclip-pixels.fullname" . }}
+{{- $ns := include "paperclip-pixels.namespace" . }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $full }}-backup
+  namespace: {{ $ns }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  {{- if .Values.backup.storageClass }}
+  storageClassName: {{ .Values.backup.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.backup.storage }}
+---
+# Periodic backup: Postgres logical dump + Paperclip home (plugin state) archive.
+# Backups are written to the `{{ $full }}-backup` PVC and pruned to the retention
+# count. See deploy/BACKUP_RESTORE.md for the restore procedure.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $full }}-backup
+  namespace: {{ $ns }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsUser: 999
+            runAsGroup: 999
+            fsGroup: 999
+          containers:
+            - name: backup
+              image: postgres:17-alpine
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "-ec"]
+              args:
+                - |
+                  set -e
+                  TS=$(date -u +%Y%m%d-%H%M%S)
+                  echo "backup start $TS"
+                  # 1. Postgres logical dump
+                  pg_dump -h {{ $full }}-postgres -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc \
+                    | gzip > /backup/postgres-$TS.dump.gz
+                  echo "postgres dump ok"
+                  # 2. Paperclip home (plugin state) archive from the mounted PVC
+                  tar czf /backup/paperclip-home-$TS.tar.gz -C /paperclip .
+                  echo "paperclip home archive ok"
+                  # 3. Prune to retention count
+                  ls -1 /backup | sort | head -n -{{ add .Values.backup.retention 0 }} | xargs -r -I{} rm -f /backup/{}
+                  echo "backup retention pruned"
+              envFrom:
+                - secretRef:
+                    name: {{ include "paperclip-pixels.secretName" . }}
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+                - name: paperclip-home
+                  mountPath: /paperclip
+                  readOnly: true
+          volumes:
+            - name: backup
+              persistentVolumeClaim:
+                claimName: {{ $full }}-backup
+            - name: paperclip-home
+              persistentVolumeClaim:
+                claimName: {{ $full }}-data
+{{- end }}

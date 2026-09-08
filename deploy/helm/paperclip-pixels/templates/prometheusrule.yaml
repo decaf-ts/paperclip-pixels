@@ -1,0 +1,62 @@
+{{- if and .Values.metrics.enabled .Values.metrics.alerting.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "paperclip-pixels.fullname" . }}
+  namespace: {{ include "paperclip-pixels.namespace" . }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: paperclip-pixels-feed
+      rules:
+        # Feed stall: no feed operation has been acknowledged/pushed for 5m.
+        - alert: PixelAgentsFeedStall
+          expr: |
+            time() - max(paperclip_pixel_feed_ack_timestamp_seconds) > 300
+            unless (paperclip_pixel_feed_ack_timestamp_seconds == 0)
+          for: 5m
+          labels:
+            severity: warning
+            component: paperclip-pixel-feed
+          annotations:
+            summary: "Pixel Agents feed has stalled"
+            description: "No feed acknowledgement for 5 minutes. The Paperclip bridge is not reaching Pixel Agents."
+        # Feed loss: consecutive failed feed pushes over a threshold.
+        - alert: PixelAgentsFeedLoss
+          expr: |
+            increase(paperclip_pixel_feed_push_errors_total[5m]) > 20
+          for: 5m
+          labels:
+            severity: critical
+            component: paperclip-pixel-feed
+          annotations:
+            summary: "Pixel Agents feed pushes are failing"
+            description: "More than 20 feed push errors in 5 minutes; operations may be lost."
+    - name: paperclip-pixels-reconcile
+      rules:
+        # Reconciliation failure: the periodic bridge-reconcile job has not
+        # completed successfully.
+        - alert: PixelBridgeReconcileFailures
+          expr: |
+            increase(paperclip_pixel_reconcile_errors_total[10m]) > 0
+          for: 10m
+          labels:
+            severity: warning
+            component: paperclip-pixel-reconcile
+          annotations:
+            summary: "Pixel bridge reconciliation is failing"
+            description: "The periodic reconciliation job reported errors in the last 10 minutes."
+        # Reconciliation hasn't run at all recently (job stuck / not scheduled).
+        - alert: PixelBridgeReconcileStale
+          expr: |
+            time() - max(paperclip_pixel_reconcile_last_success_timestamp_seconds) > 3600
+            unless (paperclip_pixel_reconcile_last_success_timestamp_seconds == 0)
+          for: 30m
+          labels:
+            severity: warning
+            component: paperclip-pixel-reconcile
+          annotations:
+            summary: "Pixel bridge reconciliation has not succeeded for 1h"
+            description: "No successful reconcile in over an hour; the bridge feed may be drifting."
+{{- end }}

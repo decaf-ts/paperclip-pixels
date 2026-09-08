@@ -1,26 +1,19 @@
 ### Scripts
 
-The following npm scripts are available for development:
+The repo root is a private npm **workspace root** (not a publishable package): `"workspaces": ["common", "plugins/paperclip", "plugins/pixel-agents"]`. There is no combined root build or test suite — every build/test runs inside the package that owns the code.
 
-- `preinstall` - will run only on the first install to trigger the dep update. will self delete;
-- `do-install` - sets a `TOKEN` environment variable to the contents of `.token` and runs npm install (useful when you
-  have private dependencies);
-- `flash-forward` - updates all dependencies. Take care, This may not be desirable is some cases;
-- `reset` - updates all dependencies. Take care, This may not be desirable is some cases;
-- `build` - builds the code (via gulp `gulpfile.js`) in development mode (generates `lib` and `dist` folder);
-- `build:prod` - builds the code (via gulp `gulpfile.js`) in production mode (generates `lib` and `dist` folder);
-- `test` - runs unit tests;
-- `test:integration` - runs it tests;
-- `test:all` - runs all tests;
-- `lint` - runs es lint on the code folder;
-- `lint-fix` - tries to auto-fix the code folder;
-- `prepare-release` - defines the commands to run prior to a new tag (defaults to linting, building production code,
-  running tests and documentation generation);
-- `release` - triggers a new tag being pushed to master (via `./bin/tag_release.sh`);
-- `clean-publish` - cleans the package.json for publishing;
-- `coverage` - runs all test, calculates coverage and generates badges for readme;
-- `drawings` - compiles all DrawIO `*.drawio` files in the `workdocs/drawings` folder to png and moves them to
-  the `workdocs/resources` folder;
-- `uml` - compiles all PlantUML `*.puml` files in the `workdocs/uml` folder to png and moves them to
-  the `workdocs/resources` folder;
-- `docs` - compiles all the coverage, drawings, uml, jsdocs and md docs into a readable web page under `./docs`;
+Root-level scripts (orchestration only):
+
+- `postinstall` (`scripts/link-paperclip-sdk.mjs`) - symlinks the Paperclip plugin SDK reference packages from the `paperclip/` submodule into `node_modules/@paperclipai/` (run automatically on `npm install`);
+- `lint` - ESLint across all workspace packages (`npm run lint --workspaces`);
+- `prepare-release` - lint + typecheck + build + tests across all workspace packages, run before tagging;
+- `release` - tags a release via `./bin/tag-release.sh`;
+- `pixel-agents:sync-legacy` - syncs the fork's legacy branch bookkeeping (`scripts/sync-pixel-agents-legacy.mjs`).
+
+Per-package scripts (run from inside each package directory):
+
+- `common` (`paperclip-pixels-common`) - `build`, `typecheck`, `test` (vitest), `test:watch`, `lint`;
+- `plugins/pixel-agents` (`@decaf-ts/pixel-agents-paperclip-plugin`) - `build` (tsc output plus the self-contained `dist/pixel-agents-embedding.cjs` the fork's generic `--plugin` loader loads), `typecheck`, `test` (vitest), `test:watch`, `lint`;
+- `plugins/paperclip` (`@decaf-ts/paperclip-pixels-plugin`) - `build` / `build:worker` / `build:ui` / `build:types` (esbuild worker + UI bundle + declaration types), `typecheck` / `typecheck:ui`, `lint`, and the test suites: `test:domain` (jest), `test:worker` (vitest), `test` (UI, jest + jsdom + React Testing Library), `test:perf`, and `test:all` (all suites in sequence).
+
+Tip: `npm run build --workspaces` (or `npm run test --workspaces`) runs a script across all three packages from the root; `common` runs first because both plugins depend on it.

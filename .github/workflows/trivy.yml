@@ -1,0 +1,33 @@
+name: "Trivy"
+
+# Thin caller of the decaf-ts reusable Trivy scan action
+# (decaf-ts/reusable-actions). Dependency/vulnerability audit on PR + push, and
+# the weekly dependency-update pass that drives Renovate. The release gate also
+# audits the tree (sbom-audit); this workflow owns the recurring surface.
+
+on:
+  push:
+    branches: [master, main]
+    tags: ["v*"]
+  pull_request:
+  schedule:
+    - cron: "23 2 * * 1"
+  workflow_dispatch:
+
+jobs:
+  trivy-vuln:
+    uses: decaf-ts/reusable-actions/.github/workflows/trivy-scan.yml@master
+    with:
+      scan-type: "vuln"
+      severity: "HIGH,CRITICAL"
+      exit-code: "1"
+      upload-artifact: true
+    secrets: inherit
+
+  trivy-dep:
+    uses: decaf-ts/reusable-actions/.github/workflows/trivy-scan.yml@master
+    with:
+      scan-type: "dep"
+      exit-code: "0"
+      upload-artifact: false
+    secrets: inherit

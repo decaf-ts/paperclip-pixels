@@ -1,0 +1,33 @@
+{{- if .Values.pdb.enabled }}
+{{- if gt (int .Values.replicaCount.paperclip) 1 }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "paperclip-pixels.fullname" . }}
+  namespace: {{ include "paperclip-pixels.namespace" . }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.paperclip.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "paperclip-pixels.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: paperclip
+{{- end }}
+{{- if gt (int .Values.replicaCount.pixelAgents) 1 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "paperclip-pixels.fullname" . }}-pixel-agents
+  namespace: {{ include "paperclip-pixels.namespace" . }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.pixelAgents.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "paperclip-pixels.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: pixel-agents
+{{- end }}
+{{- end }}

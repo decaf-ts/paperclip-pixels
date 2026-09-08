@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 2,
+  "parts": [
+    {
+      "id": "skin-0",
+      "kind": "skin",
+      "name": "Fair skin",
+      "layer": 0,
+      "file": "skin-0.svg",
+      "palette": 0,
+      "source": "Paperclip Pixels WS5b synthesized composition placeholder",
+      "license": "CC0-1.0",
+      "variants": [
+        {
+          "direction": "down",
+          "file": "skin-0.svg"
+        },
+        {
+          "direction": "up",
+          "file": "skin-0.svg"
+        },
+        {
+          "direction": "right",
+          "file": "skin-0.svg"
+        }
+      ]
+    },
+    {
+      "id": "skin-1",
+      "kind": "skin",
+      "name": "Tan skin",
+      "layer": 1,
+      "file": "skin-1.svg",
+      "palette": 1,
+      "source": "Paperclip Pixels WS5b synthesized composition placeholder",
+      "license": "CC0-1.0",
+      "variants": [
+        {
+          "direction": "down",
+          "file": "skin-1.svg"
+        },
+        {
+          "direction": "up",
+          "file": "skin-1.svg"
+        },
+        {
+          "direction": "right",
+          "file": "skin-1.svg"
+        }
+      ]
+    },
+    {
+      "id": "clothing-0",
+      "kind": "clothing",
+      "name": "Blue shirt",
+      "layer": 2,
+      "file": "clothing-0.svg",
+      "palette": 0,
+      "source": "Paperclip Pixels WS5b synthesized composition placeholder",
+      "license": "CC0-1.0",
+      "variants": [
+        {
+          "direction": "down",
+          "file": "clothing-0.svg"
+        },
+        {
+          "direction": "up",
+          "file": "clothing-0.svg"
+        },
+        {
+          "direction": "right",
+          "file": "clothing-0.svg"
+        }
+      ]
+    },
+    {
+      "id": "clothing-1",
+      "kind": "clothing",
+      "name": "Red shirt",
+      "layer": 3,
+      "file": "clothing-1.svg",
+      "palette": 1,
+      "source": "Paperclip Pixels WS5b synthesized composition placeholder",
+      "license": "CC0-1.0",
+      "variants": [
+        {
+          "direction": "down",
+          "file": "clothing-1.svg"
+        },
+        {
+          "direction": "up",
+          "file": "clothing-1.svg"
+        },
+        {
+          "direction": "right",
+          "file": "clothing-1.svg"
+        }
+      ]
+    },
+    {
+      "id": "accessory-glasses",
+      "kind": "accessory",
+      "name": "Glasses",
+      "layer": 4,
+      "file": "accessory-glasses.svg",
+      "palette": 0,
+      "source": "Paperclip Pixels WS5b synthesized composition placeholder",
+      "license": "CC0-1.0",
+      "variants": [
+        {
+          "direction": "down",
+          "file": "accessory-glasses.svg"
+        },
+        {
+          "direction": "up",
+          "file": "accessory-glasses.svg"
+        },
+        {
+          "direction": "right",
+          "file": "accessory-glasses.svg"
+        }
+      ]
+    },
+    {
+      "id": "hair-0",
+      "kind": "hair",
+      "name": "Brown hair",
+      "layer": 5,
+      "file": "hair-0.svg",
+      "palette": 0,
+      "source": "Paperclip Pixels WS5b synthesized composition placeholder",
+      "license": "CC0-1.0",
+      "variants": [
+        {
+          "direction": "down",
+          "file": "hair-0.svg"
+        },
+        {
+          "direction": "up",
+          "file": "hair-0.svg"
+        },
+        {
+          "direction": "right",
+          "file": "hair-0.svg"
+        }
+      ]
+    },
+    {
+      "id": "hair-1",
+      "kind": "hair",
+      "name": "Black hair",
+      "layer": 6,
+      "file": "hair-1.svg",
+      "palette": 1,
+      "source": "Paperclip Pixels WS5b synthesized composition placeholder",
+      "license": "CC0-1.0",
+      "variants": [
+        {
+          "direction": "down",
+          "file": "hair-1.svg"
+        },
+        {
+          "direction": "up",
+          "file": "hair-1.svg"
+        },
+        {
+          "direction": "right",
+          "file": "hair-1.svg"
+        }
+      ]
+    },
+    {
+      "id": "face-0",
+      "kind": "face",
+      "name": "Default face",
+      "layer": 7,
+      "file": "face-0.svg",
+      "palette": 0,
+      "source": "Paperclip Pixels WS5b synthesized composition placeholder",
+      "license": "CC0-1.0",
+      "variants": [
+        {
+          "direction": "down",
+          "file": "face-0.svg"
+        },
+        {
+          "direction": "up",
+          "file": "face-0.svg"
+        },
+        {
+          "direction": "right",
+          "file": "face-0.svg"
+        }
+      ]
+    }
+  ]
+}

@@ -26,10 +26,8 @@ and adding a `.token` file containing your access token to the private registrie
 
 ### Installation
 
-Run `npm install` (or `npm run do-install` if you have private dependencies and a `.token` file) to install the dependencies:
+Run `npm install` to install the dependencies. The workspace root's `postinstall` hook (`scripts/link-paperclip-sdk.mjs`) symlinks the Paperclip plugin SDK reference packages from the `paperclip/` submodule into `node_modules/@paperclipai/` (they cannot be installed from a registry — see the [Developer Guide](DeveloperGuide.md#building-and-testing)).
 
-If this is the first time you are running this command it will also:
- - update this repository's dependencies to their latest version;
- - creates a `.token` file which you can leave empty unless you have private dependencies or publish to private registries
- - delete this 'first run script' file and npm call from the `package.json`;
- - try to commit the updated `package.json` and deleted files (having ssh access helps here);
+The extracted packages install the same way, each in its own directory: `common/`, `plugins/paperclip/`, and `plugins/pixel-agents/`.
+
+> **Upgrading from the old combined root package?** The repo root is no longer a published npm package — it is a private workspace root, and the former single combined entry is removed and no longer shipped. Build/install the three workspace packages above instead; see the upgrade path in the [package README](../../README.md#upgrading-from-the-former-combined-package) and the deployment runbook in [`deploy/README.md`](../../deploy/README.md#upgrading-a-deployment-from-the-former-combined-package).

@@ -1,13 +1,13 @@
 /**
- * WS0 — Pixel Office sidebar entry as a native single-line row (spec
- * PAPERCLIP_PIXELS-2, WS0 task 1; UI implementation SAA-461, test-side spec
- * SAA-481).
+ * WS0 / R3-WS4b — Pixel Office native Office menu (spec PAPERCLIP_PIXELS-2,
+ * WS0 task 1; UI implementation SAA-461, test-side spec SAA-481; R3-WS4b
+ * turns the single row into an Office menu with Design/View + Configuration).
  *
- * AC ("Plugin chrome"): the plugin's sidebar entry renders as a single-line
- * native-style menu entry — one `Pixel Office` text line (no nested
- * two-line block), the same pill geometry/typography/hover highlight classes
- * as the host's own `SidebarNavItem` rows, and a plugin-owned inline SVG icon —
- * sits inside the host sidebar, and clicking it navigates to the plugin page
+ * AC ("Plugin chrome"): the plugin's sidebar menu renders two native-style
+ * rows — `Design/View` (the Pixel Office page) and `Configuration` — under an
+ * `Office` group label, each with the same pill geometry/typography/hover
+ * highlight classes as the host's own `SidebarNavItem` rows and a plugin-owned
+ * inline SVG icon. Clicking the Design/View row navigates to the plugin page
  * (`pixel-office-page`). The obsolete SAA-231 chrome (two-line entry with a
  * `<strong>` headline and a secondary text line about other plugin pages) must
  * not render again.
@@ -44,12 +44,12 @@ const HOST_ROW_CLASS_PARTS = [
   "transition-colors",
 ] as const;
 
-test.describe("WS0 — Pixel Office sidebar entry is a native single-line row", () => {
+test.describe("WS0/R3-WS4b — Pixel Office native Office menu (Design/View + Configuration)", () => {
   test.beforeEach(async ({ api }) => {
     await gatePixelOffice(api);
   });
 
-  test("renders one testid-anchored native row with the WS0 label inside the host sidebar", async ({ page }) => {
+  test("renders the Office menu (Design/View + Configuration) inside the host sidebar", async ({ page }) => {
     await page.goto(`${HOST_BASE_URL}/`, { waitUntil: "domcontentloaded" });
 
     // The dashboard SPA mounts the sidebar asynchronously; sample with a
@@ -58,18 +58,26 @@ test.describe("WS0 — Pixel Office sidebar entry is a native single-line row", 
     const wrapper = page.locator("aside").first().getByTestId(PIXEL_OFFICE_SIDEBAR_ENTRY_TESTID);
     await expect(
       wrapper,
-      "Pixel Office sidebar entry wrapper is not rendered inside the host sidebar (SAA-461 WS0 UI not served)",
+      "Pixel Office sidebar menu wrapper is not rendered inside the host sidebar (SAA-461 WS0 UI not served)",
     ).toBeVisible({ timeout: STATE_CHANGE_WAIT_MS });
+
+    const menuLabel = wrapper.getByTestId("pixel-office-menu-label");
+    await expect(menuLabel).toHaveText("Office");
 
     const link = page.locator("aside").first().getByTestId(PIXEL_OFFICE_SIDEBAR_TESTID);
     await expect(link).toBeVisible({ timeout: STATE_CHANGE_WAIT_MS });
     await expect(wrapper.getByTestId(PIXEL_OFFICE_SIDEBAR_TESTID)).toHaveCount(1);
 
-    // Single text line with the WS0 label only. The obsolete SAA-231 two-line
-    // entry (`<strong>` headline + a secondary plugin-pages text line) must
-    // not render again.
+    // The Configuration child renders as a sibling menu row.
+    const configLink = wrapper.getByTestId("pixel-office-sidebar-config-link");
+    await expect(configLink).toBeVisible({ timeout: STATE_CHANGE_WAIT_MS });
+    await expect(configLink).toHaveAttribute("href", /pixel-office-configuration/);
+
+    // Single text line per row. The obsolete SAA-231 two-line entry
+    // (`<strong>` headline + a secondary plugin-pages text line) must not
+    // render again.
     const linkText = await link.innerText();
-    expect(linkText.trim()).toBe("Pixel Office");
+    expect(linkText.trim()).toBe("Design/View");
     await expect(link.locator("strong")).toHaveCount(0);
     await expect(link.locator("svg")).toBeVisible();
 

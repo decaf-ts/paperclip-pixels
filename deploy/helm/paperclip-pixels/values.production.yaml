@@ -1,0 +1,72 @@
+# Production reference values for the paperclip-pixels chart.
+#
+# Every value here is a production gate. Do NOT check in secret material — the
+# Secret is referenced by name (secrets.existingSecret) and created out-of-band
+# from your secret manager (see deploy/SECURITY.md and deploy/scripts/install.sh).
+#
+# This is an EXAMPLE: fill in your real registry digests (from the CI publish
+# step's "Record image digest" output) before installing.
+
+secrets:
+  # The chart does NOT render secret material; it reads an operator-managed
+  # Secret. Required keys:
+  #   BETTER_AUTH_SECRET, PAPERCLIP_PIXEL_FEED_TOKEN,
+  #   PAPERCLIP_PIXEL_API_TOKEN (optional), POSTGRES_USER, POSTGRES_PASSWORD,
+  #   POSTGRES_DB, DATABASE_URL, FEED_CA, FEED_SERVER_CERT, FEED_SERVER_KEY,
+  #   FEED_CLIENT_CERT, FEED_CLIENT_KEY
+  existingSecret: paperclip-pixels-prod-secrets
+
+image:
+  # Digest-pinned immutable images. Replace the digest with the byte-exact
+  # digest recorded by the CI publish step (publish.yml, "Record image digest"),
+  # and set the matching version tag.
+  paperclipHost:
+    tag: "0.1.0"
+    digest: "sha256:REPLACE_WITH_REAL_DIGEST"
+  pixelAgents:
+    tag: "0.1.0"
+    digest: "sha256:REPLACE_WITH_REAL_DIGEST"
+
+replicaCount:
+  paperclip: 3
+  pixelAgents: 2
+  postgres: 1
+
+# HA sizing: at least 2 replicas so the PodDisruptionBudget can keep the bridge
+# up during a node drain. See deploy/OPERATIONS.md "HA sizing".
+pdb:
+  enabled: true
+  paperclip: { minAvailable: 1 }
+  pixelAgents: { minAvailable: 1 }
+  postgres: { minAvailable: 1 }
+
+transport:
+  # https + mTLS is the production default. Cleartext HTTP only for explicitly
+  # declared trusted internal hosts (leave empty in production).
+  feed:
+    scheme: https
+    port: 8081
+    allowedHttpHosts: []
+
+ingress:
+  enabled: true
+  className: nginx
+  host: pixels.example.com
+  certManager:
+    enabled: true
+    clusterIssuer: letsencrypt
+
+metrics:
+  enabled: true
+  serviceMonitors: true
+  alerting:
+    enabled: true
+
+backup:
+  enabled: true
+  schedule: "0 2 * * *"
+  retention: 7
+  storage: 20Gi
+
+postgres:
+  storage: 20Gi

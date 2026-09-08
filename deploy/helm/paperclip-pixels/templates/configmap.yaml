@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "paperclip-pixels.fullname" . }}-company-init
+  namespace: {{ include "paperclip-pixels.namespace" . }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+data:
+  # Declarative initial company configuration. Mounted into the Paperclip host
+  # at /paperclip/instances/default/company-init.yaml and consumed by the
+  # bootstrap entrypoint / deploy/scripts/init-company.sh on first boot so the
+  # first company and the plugin's company-scoped configuration (pixelAgentsUrl,
+  # pixelAgentsTokenRef, allowed cleartext hosts) are applied without manual
+  # per-company UI steps.
+  company.yaml: |
+{{ .Values.initialCompany.config | default "# (no initial company seeded)\n" | indent 4 }}

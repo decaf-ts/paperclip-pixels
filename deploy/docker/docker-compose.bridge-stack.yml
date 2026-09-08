@@ -1,9 +1,12 @@
 # Docker-compose fallback for the Paperclip Pixel Agents bridge stack.
 #
 # Use this when minikube/k8s is unavailable. It mirrors the k8s manifests in
-# deploy/k8s/ one-to-one. Build the images first (repo root):
+# deploy/k8s/ one-to-one. Build the plugin packages first, then the images
+# (from the repo root; each Dockerfile vendors its own plugin artifact):
 #
-#   npm install && npm run build     # plugin bundles, incl. the embedding module
+#   npm --prefix common run build \
+#     && npm --prefix plugins/paperclip run build \
+#     && npm --prefix plugins/pixel-agents run build   # plugin bundles + embedding module
 #   docker build -t paperclip-pixel-host:local \
 #     -f deploy/docker/Dockerfile.paperclip-pixel-host .
 #   docker build -t pixel-agents:local \
@@ -80,6 +83,17 @@ services:
       PAPERCLIP_PIXEL_PLUGIN_PATH: "/opt/paperclip-pixel-plugin"
       DATABASE_URL: "postgres://paperclip:paperclip@db:5432/paperclip"
       BETTER_AUTH_SECRET: "${PAPERCLIP_AUTH_SECRET:?set PAPERCLIP_AUTH_SECRET}"
+      # Relay-feed wiring (SAA-961 Finding 2): the worker->feed push is
+      # company-scoped plugin config. Pass the same feed token + feed URL +
+      # allowed cleartext hosts to the host so the baked-in bootstrap init
+      # (deploy/scripts/init-company.sh) can register the token as a company
+      # secret and apply the plugin config on first boot (best-effort) or via
+      # the documented one-time `docker compose exec paperclip
+      # /usr/local/bin/init-company.sh http://127.0.0.1:3100` after the first
+      # company exists.
+      PAPERCLIP_PIXEL_FEED_TOKEN: "${PAPERCLIP_PIXEL_FEED_TOKEN:?set PAPERCLIP_PIXEL_FEED_TOKEN}"
+      PAPERCLIP_PIXEL_FEED_URL: "http://pixel-agents:8081"
+      PAPERCLIP_PIXEL_ALLOWED_HTTP_HOSTS: "pixel-agents"
     volumes:
       - paperclip-data:/paperclip
 

@@ -1,0 +1,160 @@
+# Default-deny + explicit allow model for the Paperclip Pixel Agents bridge.
+#
+# These policies require a CNI that enforces NetworkPolicy (Calico, Cilium,
+# Weave). They implement the production principle: the plugin feed is the only
+# way into Pixel Agents, and nothing else is reachable unless explicitly
+# allowed. The feed port is unreachable unless a policy admits it.
+#
+# Note on kubelet probes: with a default-deny Ingress, the CNI must permit
+# node->pod health probes (Calico/Cilium do by default). If your probes fail
+# after enabling these policies, reconcile the CNI's host-endpoint / probe
+# handling (see deploy/SECURITY.md).
+{{- $ns := include "paperclip-pixels.namespace" . }}
+{{- $full := include "paperclip-pixels.fullname" . }}
+{{- $feedPort := include "paperclip-pixels.feedPort" . }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-default-deny
+  namespace: {{ $ns }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Cross-component reachability is namespaced and explicit.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-allow-internal
+  namespace: {{ $ns }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3100   # paperclip host API (reply forwarder target)
+        - protocol: TCP
+          port: 8080   # pixel-agents UI (cluster-internal)
+        - protocol: TCP
+          port: 5432   # postgres
+        - protocol: TCP
+          port: 9299   # metrics (all pods in this ns, for in-cluster service monitors)
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - podSelector: {}
+        - namespaceSelector: {}
+---
+# Feed channel: ONLY the Paperclip pod(s) may reach the pixel-agents feed port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-feed-from-paperclip
+  namespace: {{ $ns }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: pixel-agents
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: paperclip
+      ports:
+        - protocol: TCP
+          port: {{ $feedPort }}
+---
+# Postgres is reachable only from the Paperclip pod(s).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-postgres-from-paperclip
+  namespace: {{ $ns }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: paperclip
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Public ingress controller may reach the Paperclip host UI/API. The
+# ingress-nginx namespace must exist for this policy to admit traffic; keep the
+# value in the chart (or run the controller in this namespace via
+# podSelector).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-ingress-to-paperclip
+  namespace: {{ $ns }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: paperclip
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3100
+{{- if .Values.metrics.enabled }}
+---
+# Prometheus / ServiceMonitor scrapes the metrics ports. The monitoring
+# namespace must exist; add its label here or run the scraper in this namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $full }}-metrics-scrape
+  namespace: {{ $ns }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [paperclip, pixel-agents]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 9299
+{{- end }}

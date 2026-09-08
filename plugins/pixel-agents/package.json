@@ -1,0 +1,51 @@
+{
+  "name": "@decaf-ts/pixel-agents-paperclip-plugin",
+  "version": "0.6.0",
+  "description": "Independent Pixel Agents plugin surface for the Paperclip <-> Pixel Agents bridge: manifest + lifecycle registration, the mountable `POST /api/plugin-feed` endpoint, idempotent feed-operation application, the WS4-A/WC4 appearance adoption, reverse-action intake/feedback forwarding, and the feed mapper + HTTP sink for the combined-entry interim. Depends only on `paperclip-pixels-common`.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "prebuild": "rimraf dist",
+    "build": "tsc -p tsconfig.json && node scripts/build-embedding.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint ."
+  },
+  "keywords": [
+    "paperclip",
+    "pixel-agents",
+    "plugin",
+    "feed",
+    "manifest"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "paperclip-pixels-common": "0.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.28.1",
+    "eslint": "^9.12.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.11.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.68.0",
+    "vitest": "^4.1.11"
+  }
+}

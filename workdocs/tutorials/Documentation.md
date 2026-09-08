@@ -1,26 +1,13 @@
 ## Documentation
 
-The repository proposes a way to generate documentation that while still not ideal, produces verys consitest results.
+This repository's documentation lives in two places:
 
-In the code you see an example on how to properly document each code object, but the overall structure is:
-  - each package is a `@module`;
-  - Classes and Interfaces are categorized into `@category` and `@subcategory`;
-  - All other objects are categorized by `@namespace` and `@memberOf`;
-  - Enums and const are declared as `@const` and both must describe their properties as `@property` (when constants are objects);
-  - Interfaces must declare their methods `@method`;
+- **Hand-written docs**, kept current as the system changes (never versioned snapshots):
+  - [`README.md`](../../README.md) — what the bridge is, the two-plugin architecture, install/configure/run, the full configuration reference;
+  - [`workdocs/tutorials/`](./) — user and developer guides;
+  - [`workdocs/ai/architecture-handbook.md`](../ai/architecture-handbook.md) — components, contracts, trust boundaries, security, decisions and risks;
+  - [`deploy/README.md`](../../deploy/README.md) — the reference deployment and its runbook;
+  - the `pixel-agents/` fork's own `FORK.md`/`DIVERGENCE.md` governance and divergence log.
+- **Per-ticket domain records** under `workdocs/ai/project/` (specifications, plan) — owned by the Delivery Documentation Specialist; read and link them, do not edit them.
 
-There are 3 steps the generating the documentation (automated in CI):
- - `npm run drawings` - generates png files from each drawing in the `workdocs/drawings` folder and moves them to the `workdocs/resources` folder (requires Docker);
- - `npm run uml` - generates png files from each PlantUML diagram in the `workdocs/uml` folder and moves them to the `workdocs/resources` folder (requires Docker);
- - `npm run docs` - this has several stages, defined under the `gulp docs` (gulpfile.js):
-   - compiles the Readme file via md compile:
-     - enables keeping separate files for sections that are then joined into a single file;
-     - Allows keeping specific files in the jsdocs tutorial folder so they show up on their own menu;
-   - compiles the documentation from the source code using jsdocs:
-     - uses the better docs template with the category and component plugins
-     - uses the mermaid jsdoc plugin to embue uml diagrams in the docs
-     - includes a nav link to the test coverage results;
-   - copies the jsdoc and mds to `/docs`;
-   - copies the `./workdocs/{drawings, uml, assets, resources}` to `./docs`;
-
-The produced `docs` folder contains the resulting documentation;
+Source-level API documentation uses the JSDoc configuration in `jsdocs.json` (better-docs). The repository template's generated-docs pipeline (`npm run docs`/`drawings`/`uml` gulp stages, publishing a compiled site under `./docs`) is **not wired up in this repository** — no such scripts exist here; do not reference them. Diagrams in the hand-written docs are inline Mermaid where possible.

@@ -1,0 +1,8 @@
+{{- if ne (include "paperclip-pixels.namespace" .) .Release.Namespace }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "paperclip-pixels.namespace" . }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+{{- end }}

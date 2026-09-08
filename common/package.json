@@ -1,0 +1,51 @@
+{
+  "name": "paperclip-pixels-common",
+  "version": "0.1.0",
+  "description": "Neutral paperclip-pixels wire contract package: DTOs, Zod validation, operation ids, error codes, schemaVersion compatibility rules, and fixture builders shared by the Paperclip plugin and the Pixel Agents plugin. Schemas only — imports no other package.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "prebuild": "rimraf dist",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint ."
+  },
+  "keywords": [
+    "paperclip",
+    "pixel-agents",
+    "contract",
+    "zod",
+    "dto",
+    "schema"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^24.0.0",
+    "eslint": "^9.12.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.11.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.68.0",
+    "vitest": "^4.1.11"
+  }
+}

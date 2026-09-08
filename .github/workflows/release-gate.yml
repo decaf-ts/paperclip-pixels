@@ -1,0 +1,212 @@
+name: "Release gate"
+
+# One actual release gate for the paperclip-pixels repository
+# (PAPERCLIP_PIXELS-2 R3-M4b). Replaces the retired, stale per-script
+# workflows. Validates, from the outer tree: submodule init, fork
+# (check-types + webview) checks, clean-clone pipelines for the three
+# publishable packages (`common` + both plugins, never the removed combined
+# root build), package smoke (`npm pack --dry-run` per publishable package),
+# the Paperclip-plugin N/N-1 vs Pixel-Agents-plugin N/N-1 integration matrix,
+# the Node-24 embedding-artifact build/runtime check (the Pixel Agents
+# plugin's `pixel-agents-embedding.cjs`), image build, and an SBOM +
+# dependency audit. Publishing (npm/container) is provenance-aware and lives
+# in publish.yml (release-triggered, credentials injected, never here).
+#
+# No combined-package build is maintained: the `outer-build-test` and
+# `integration-contract` jobs that `npm run build` the root combined entry
+# were dropped in R3-M4 and replaced by the per-package clean-clone pipelines.
+
+on:
+  push:
+    branches: [master, main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: release-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Validate every workflow with actionlint before anything else runs.
+  # ---------------------------------------------------------------------------
+  lint-workflows:
+    name: "actionlint"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          version=1.7.12
+          curl -sSL "https://github.com/rhysd/actionlint/releases/download/v${version}/actionlint_${version}_linux_amd64.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP"
+          sudo mv "$RUNNER_TEMP/actionlint" /usr/local/bin/actionlint
+          actionlint --version
+      - name: Lint all workflows
+        run: |
+          shopt -s nullglob
+          actionlint -color .github/workflows/*.yml .github/workflows/*.yaml
+
+  # ---------------------------------------------------------------------------
+  # Pixel-Agents fork checks (check-types + webview tests). The fork is
+  # reference-only: it must be self-contained (never import outer source).
+  # ---------------------------------------------------------------------------
+  fork-checks:
+    name: "Fork checks"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["24"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Fork install
+        run: npm ci --no-audit --no-fund
+        working-directory: pixel-agents
+      - name: Fork check-types
+        run: npm run check-types
+        working-directory: pixel-agents
+      - name: Fork webview tests
+        run: npm run test:webview
+        working-directory: pixel-agents
+
+  # ---------------------------------------------------------------------------
+  # Clean-clone independence: each publishable package passes its own pipeline.
+  # ---------------------------------------------------------------------------
+  clean-clone:
+    name: "Clean-clone: ${{ matrix.package }}"
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ["common", "plugins/paperclip", "plugins/pixel-agents"]
+    uses: ./.github/workflows/package-pipeline.yml
+    with:
+      package: ${{ matrix.package }}
+
+  # ---------------------------------------------------------------------------
+  # Paperclip-plugin N/N-1 vs Pixel-Agents-plugin N/N-1 matrix.
+  # ---------------------------------------------------------------------------
+  integration-matrix:
+    name: "Integration matrix"
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["24"]
+    uses: ./.github/workflows/integration-matrix.yml
+    with:
+      node-version: ${{ matrix.node-version }}
+
+  # ---------------------------------------------------------------------------
+  # Node 24 artifact build + runtime check for the Pixel Agents plugin's own
+  # CJS embedding bundle (plugins/pixel-agents/dist/pixel-agents-embedding.cjs).
+  # Module format explicit (no import.meta leaking into CJS); loads under Node 24.
+  # ---------------------------------------------------------------------------
+  node24-artifact:
+    name: "Node 24 artifact/runtime"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Build pixel-agents plugin embedding bundle
+        run: |
+          set -euo pipefail
+          node scripts/ci/prepare-package.mjs plugins/pixel-agents
+          npm --prefix plugins/pixel-agents install --no-audit --no-fund
+          npm --prefix plugins/pixel-agents run build
+      - name: Verify module format (no import.meta in CJS artifact)
+        run: |
+          set -euo pipefail
+          if grep -q "import.meta" plugins/pixel-agents/dist/pixel-agents-embedding.cjs; then
+            echo "FATAL: import.meta leaked into the CJS embedding artifact"
+            exit 1
+          fi
+          echo "OK: embedding artifact is explicit CJS, no import.meta"
+      - name: Load embedding artifact under Node 24
+        run: |
+          node --input-type=module -e "
+            const m = await import('./plugins/pixel-agents/dist/pixel-agents-embedding.cjs');
+            const r = m.register;
+            if (typeof r !== 'function') { console.error('register missing'); process.exit(1); }
+            console.log('Node', process.version, 'loaded embedding register:', typeof r);
+          "
+
+  # ---------------------------------------------------------------------------
+  # Image build (no push; publish.yml owns provenance-aware publishing).
+  # Builds the two plugin artifacts + common, then builds both images.
+  # ---------------------------------------------------------------------------
+  image-build:
+    name: "Image build"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Build pinned paperclip SDK
+        run: node scripts/ci/build-paperclip-sdk.mjs
+      - name: Build the three package artifacts
+        run: |
+          set -euo pipefail
+          node scripts/ci/prepare-package.mjs common
+          node scripts/ci/prepare-package.mjs plugins/paperclip
+          npm --prefix plugins/paperclip install --no-audit --no-fund
+          npm --prefix plugins/paperclip run build
+          node scripts/ci/prepare-package.mjs plugins/pixel-agents
+          npm --prefix plugins/pixel-agents install --no-audit --no-fund
+          npm --prefix plugins/pixel-agents run build
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build pixel-agents image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.pixel-agents
+          push: false
+          load: true
+          tags: pixel-agents:local-ci
+      - name: Build paperclip host image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.paperclip-pixel-host
+          push: false
+          load: true
+          tags: paperclip-pixel-host:local-ci
+
+  # ---------------------------------------------------------------------------
+  # SBOM + dependency audit (via the decaf-ts reusable trivy-scan, which
+  # uploads trivy-report.json and fails the job on HIGH/CRITICAL findings).
+  # ---------------------------------------------------------------------------
+  sbom-audit:
+    name: "SBOM + dependency audit"
+    needs: [clean-clone]
+    uses: decaf-ts/reusable-actions/.github/workflows/trivy-scan.yml@master
+    with:
+      scan-type: "vuln"
+      severity: "HIGH,CRITICAL"
+      exit-code: "1"
+      upload-artifact: true
+    secrets: inherit

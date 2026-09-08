@@ -1,12 +1,7 @@
-apiVersion: v1
-kind: Secret
-metadata:
-  name: paperclip-secrets
-  namespace: paperclip-pixels
-type: Opaque
-stringData:
-  # Required by the Paperclip host (Better Auth). Change for any non-local use.
-  BETTER_AUTH_SECRET: paperclip-pixels-dev-auth-secret-change-me
+# Secret material is NOT committed. The `paperclip-secrets` Secret is generated
+# by kustomize from the git-ignored `deploy/k8s/secrets.env` (see
+# kustomization.yaml / secrets.env.example). Copy secrets.env.example to
+# secrets.env and fill it in before applying.
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -96,6 +91,19 @@ spec:
             # by the loopback bootstrap (local_trusted = no-auth admin).
             - name: PAPERCLIP_PIXEL_PLUGIN_PATH
               value: "/opt/paperclip-pixel-plugin"
+            # Relay-feed wiring (SAA-961 Finding 2): the worker->feed push is
+            # company-scoped plugin config (pixelAgentsUrl / pixelAgentsTokenRef /
+            # pixelAgentsAllowedHttpHosts). The feed token rides the
+            # `paperclip-secrets` Secret (PAPERCLIP_PIXEL_FEED_TOKEN via envFrom);
+            # these envs supply the feed URL + trusted cleartext host so the
+            # baked-in init-company.sh can register the token as a company secret
+            # and apply the plugin config (best-effort on first boot, or via the
+            # documented one-time `kubectl exec ... init-company.sh` after the
+            # first company exists).
+            - name: PAPERCLIP_PIXEL_FEED_URL
+              value: "http://pixel-agents:8081"
+            - name: PAPERCLIP_PIXEL_ALLOWED_HTTP_HOSTS
+              value: "pixel-agents"
           envFrom:
             - secretRef: { name: postgres-credentials }
             - secretRef: { name: paperclip-secrets }

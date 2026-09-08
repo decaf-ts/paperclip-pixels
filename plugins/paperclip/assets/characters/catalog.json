@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 1,
+  "characters": [
+    {
+      "id": "pixel-agents:char-0",
+      "name": "Character 1",
+      "palette": 0,
+      "file": "char_0.png",
+      "source": "Pixel Agents built-in / MetroCity-derived",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "pixel-agents:char-1",
+      "name": "Character 2",
+      "palette": 1,
+      "file": "char_1.png",
+      "source": "Pixel Agents built-in / MetroCity-derived",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "pixel-agents:char-2",
+      "name": "Character 3",
+      "palette": 2,
+      "file": "char_2.png",
+      "source": "Pixel Agents built-in / MetroCity-derived",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "pixel-agents:char-3",
+      "name": "Character 4",
+      "palette": 3,
+      "file": "char_3.png",
+      "source": "Pixel Agents built-in / MetroCity-derived",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "pixel-agents:char-4",
+      "name": "Character 5",
+      "palette": 4,
+      "file": "char_4.png",
+      "source": "Pixel Agents built-in / MetroCity-derived",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "pixel-agents:char-5",
+      "name": "Character 6",
+      "palette": 5,
+      "file": "char_5.png",
+      "source": "Pixel Agents built-in / MetroCity-derived",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-6",
+      "name": "Character 7",
+      "palette": 6,
+      "file": "char_6.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_0.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-7",
+      "name": "Character 8",
+      "palette": 7,
+      "file": "char_7.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_1.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-8",
+      "name": "Character 9",
+      "palette": 8,
+      "file": "char_8.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_2.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-9",
+      "name": "Character 10",
+      "palette": 9,
+      "file": "char_9.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_3.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-10",
+      "name": "Character 11",
+      "palette": 10,
+      "file": "char_10.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_4.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-11",
+      "name": "Character 12",
+      "palette": 11,
+      "file": "char_11.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_5.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-12",
+      "name": "Character 13",
+      "palette": 12,
+      "file": "char_12.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_0.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-13",
+      "name": "Character 14",
+      "palette": 13,
+      "file": "char_13.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_1.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-14",
+      "name": "Character 15",
+      "palette": 14,
+      "file": "char_14.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_2.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-15",
+      "name": "Character 16",
+      "palette": 15,
+      "file": "char_15.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_3.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-16",
+      "name": "Character 17",
+      "palette": 16,
+      "file": "char_16.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_4.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-17",
+      "name": "Character 18",
+      "palette": 17,
+      "file": "char_17.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_5.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-18",
+      "name": "Character 19",
+      "palette": 18,
+      "file": "char_18.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_0.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-19",
+      "name": "Character 20",
+      "palette": 19,
+      "file": "char_19.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_1.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-20",
+      "name": "Character 21",
+      "palette": 20,
+      "file": "char_20.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_2.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-21",
+      "name": "Character 22",
+      "palette": 21,
+      "file": "char_21.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_3.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-22",
+      "name": "Character 23",
+      "palette": 22,
+      "file": "char_22.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_4.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "paperclip-pixels:char-23",
+      "name": "Character 24",
+      "palette": 23,
+      "file": "char_23.png",
+      "source": "Generated: hue-rotated derivative of CC0 MetroCity sheet char_5.png (scripts/generate-character-variants.mjs)",
+      "license": "CC0-1.0"
+    }
+  ]
+}

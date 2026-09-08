@@ -1,0 +1,15 @@
+apiVersion: v2
+name: paperclip-pixels
+description: Production-grade deployment of the Paperclip Pixel Agents bridge stack (Paperclip plugin + Pixel Agents plugin + Postgres) as a single chart.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/decaf-ts/paperclip-pixels
+kubeVersion: ">=1.27.0"
+keywords:
+  - paperclip
+  - pixel-agents
+  - pixels
+  - plugin
+maintainers:
+  - name: with-ai DevOps Engineer

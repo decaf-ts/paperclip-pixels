@@ -12,8 +12,17 @@
 /.npmtoken
 /node_modules
 /.env
+# Local k8s secret values (never commit). Keep the *.example template in-repo.
+/deploy/k8s/secrets.env
+/deploy/k8s/secrets.env.local
 workdocs/locks/*
 !workdocs/locks/.gitkeep
 .saa*
 /.pnpm-store
 /allure-results/server
+/common/node_modules
+/common/dist
+/plugins/pixel-agents/node_modules
+/plugins/pixel-agents/dist
+/plugins/paperclip/node_modules
+/plugins/paperclip/dist

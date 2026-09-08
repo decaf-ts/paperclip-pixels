@@ -10,14 +10,15 @@
 # install the Pixel bridge plugin from its built `dist/` via the real
 # `POST /api/plugins/install` route (local-path install).
 #
-# Why not Docker quickstart: the plugin is this repo's own root package
-# (`@decaf-ts/paperclip-pixels`) and its built dist/worker.js is fully
-# self-contained (core + pixel-agents-provider + the plugin SDK + zod all
-# inlined by esbuild — see scripts/build.mjs), so it resolves on the host
-# filesystem with nothing to vendor. The host's plugin-loader adds the tsx
-# loader for any local-path install (plugin-loader.ts: `activePlugin.packagePath
-# && tsx exists`), which is only needed for the Paperclip *server* itself
-# (run from source here, not the published image).
+# Why not Docker quickstart: the plugin is this repo's independent Paperclip
+# plugin package (`@decaf-ts/paperclip-pixels-plugin`, at `plugins/paperclip`)
+# and its built dist/worker.js is fully self-contained (core + the plugin SDK
+# + zod all inlined by esbuild — see plugins/paperclip/scripts/build.mjs), so
+# it resolves on the host filesystem with nothing to vendor. The host's
+# plugin-loader adds the tsx loader for any local-path install
+# (plugin-loader.ts: `activePlugin.packagePath && tsx exists`), which is only
+# needed for the Paperclip *server* itself (run from source here, not the
+# published image).
 #
 # Usage:
 #   scripts/integration-host/up.sh                 # defaults: port 13100
@@ -36,7 +37,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PAPERCLIP_SRC="$ROOT/paperclip"
-PLUGIN_DIR="$ROOT"
+PLUGIN_DIR="$ROOT/plugins/paperclip"
 SCRIPT_DIR="$ROOT/scripts/integration-host"
 STATE_FILE="${STATE_FILE:-$SCRIPT_DIR/.run-state}"
 
@@ -109,8 +110,8 @@ fi
 
 # 2. Plugin built? (dist/worker.js + dist/manifest.js).
 if [[ ! -f "$PLUGIN_DIR/dist/worker.js" || ! -f "$PLUGIN_DIR/dist/manifest.js" ]]; then
-  log "Plugin dist missing; building @decaf-ts/paperclip-pixels..."
-  ( cd "$PLUGIN_DIR" && npm run build ) || fail "Plugin build failed. Run: (npm run build)"
+  log "Plugin dist missing; building @decaf-ts/paperclip-pixels-plugin (plugins/paperclip)..."
+  ( cd "$PLUGIN_DIR" && npm run build ) || fail "Plugin build failed. Run: (cd plugins/paperclip && npm run build)"
 fi
 [[ -f "$PLUGIN_DIR/dist/worker.js" ]] || fail "plugin dist/worker.js missing"
 [[ -f "$PLUGIN_DIR/dist/manifest.js" ]] || fail "plugin dist/manifest.js missing"

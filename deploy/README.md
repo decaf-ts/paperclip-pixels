@@ -5,6 +5,16 @@ Reproducible deployment of the Paperclip Pixel Agents bridge stack on a local
 without k8s). Specification: PAPERCLIP_PIXELS-1; plugin-architecture rework:
 PAPERCLIP_PIXELS-2 (WS2-C bridge port + WS2-D embedding surface).
 
+> **Production deployment (Revision 3, WS6):** this README documents the
+> **development reference** path (`:local` images, single node). For a
+> production-grade install use the **single Helm chart**
+> [`deploy/helm/paperclip-pixels`](helm/paperclip-pixels) — immutable
+> digest-pinned images, externalized secrets, TLS/mTLS default, NetworkPolicies,
+> ingress, HA sizing, backup/restore, and observability. Operator docs:
+> [`OPERATIONS.md`](OPERATIONS.md) · [`SECURITY.md`](SECURITY.md) ·
+> [`OBSERVABILITY.md`](OBSERVABILITY.md) ·
+> [`BACKUP_RESTORE.md`](BACKUP_RESTORE.md) · [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
+
 ## Stack
 
 | Component | Image | Port | Role |
@@ -13,9 +23,20 @@ PAPERCLIP_PIXELS-2 (WS2-C bridge port + WS2-D embedding surface).
 | Paperclip host | `paperclip-pixel-host:local` | 3100 | Paperclip API + UI, with the bridge plugin loaded |
 | Pixel Agents | `pixel-agents:local`         | 8080 (UI/WS), 8081 (plugin feed) | Pixel Agents standalone server (SPA + WS) **with the Paperclip bridge embedding module loaded in-process** via the fork CLI's generic `--plugin` loader |
 
-The bridge plugin is published as [`@decaf-ts/paperclip-pixels`](..) (source: repo root — `src/`) and runs as a **forked worker child
-process of the Paperclip host** (loaded via `installPlugin({ localPath })`
-in this reference deployment; a real install uses `installPlugin({ packageName: "@decaf-ts/paperclip-pixels" })` instead — see the [package README](../README.md#install)),
+The bridge is two plugins joined by a neutral contract package (board
+Revision 3 target shape): `paperclip-pixels-common` (schemas only,
+`./common`), the Paperclip-side plugin `@decaf-ts/paperclip-pixels-plugin`
+(source `plugins/paperclip/`), and the Pixel Agents-side plugin
+`@decaf-ts/pixel-agents-paperclip-plugin` (source
+`plugins/pixel-agents/`). This reference deployment builds those three
+packages and vendors the two plugin artifacts into the images: the host
+image vendors the Paperclip plugin's pre-built `plugins/paperclip/dist/`,
+and the pixel-agents image vendors the embedding bundle
+`plugins/pixel-agents/dist/pixel-agents-embedding.cjs`. The plugin runs
+as a **forked worker child process of the Paperclip host** (loaded via
+`installPlugin({ localPath })` in this reference deployment; a real
+install uses `installPlugin({ packageName: "@decaf-ts/paperclip-pixels-plugin" })`
+instead — see the [package README](../README.md#install-and-run-two-plugin-deployment)),
 not as its own pod. The host image vendors the built plugin at
 `/opt/paperclip-pixel-plugin` and installs it at first boot via a loopback
 `local_trusted` bootstrap (no-auth admin), then restarts in `authenticated`/lan
@@ -32,12 +53,16 @@ relay bin and wired the replacement):
 
 - The Pixel Agents container runs the fork CLI with
   `--plugin /opt/paperclip-pixel-embedding/pixel-agents-embedding.cjs`
-  (this repo's `src/pixel-agents-plugin/embedding.ts`, bundled by
-  `npm run build` and vendored into the image). Through the fork's generic
-  plugin-module loader the module registers the Paperclip plugin in-process
-  (manifest + reply actions through the WS2-A1/A2 plugin host) and serves
-  `POST /api/plugin-feed` on its own sidecar listener (`:8081`).
-- The Paperclip worker's relay (`src/relay.ts`) pushes feed-operation
+  (canonical source `plugins/pixel-agents/src/embedding.ts`, bundled by
+  `npm run build` in `plugins/pixel-agents` into
+  `plugins/pixel-agents/dist/pixel-agents-embedding.cjs` and vendored
+  into the image).
+  Through the fork's generic plugin-module loader the module registers the
+  Paperclip plugin in-process (manifest + reply actions through the WS2-A1/A2
+  plugin host) and serves `POST /api/plugin-feed` on its own sidecar listener
+  (`:8081`).
+- The Paperclip worker's relay (`plugins/paperclip/src/relay.ts`) pushes
+  feed-operation
   batches (agent declarations, status, activity, removals — plus
   palette/hueShift seats) to that endpoint; the embedding surface applies
   them through the plugin's sanctioned agent/team source. Characters,
@@ -62,19 +87,43 @@ The Paperclip-side plugin config (`pixelAgentsUrl`) defaults to
 `http://127.0.0.1:8081` — right for the common single-machine "try it out"
 case, but **wrong for the containerized topologies here**, where the
 embedding surface runs in the pixel-agents container/pod, not the Paperclip
-one. **After creating your first company**, set `pixelAgentsUrl` to
-`http://pixel-agents:8081` (the feed listener's cluster address),
-`pixelAgentsTokenRef` to a Paperclip secret holding the same shared secret
-as `PAPERCLIP_PIXEL_FEED_TOKEN` on the plugin's instance config, and — since
-that is a cleartext `http:` internal host — `pixelAgentsAllowedHttpHosts` to
-`["pixel-agents"]` to declare it a trusted internal peer (SAA-734
-reconcile; the https-when-token contract otherwise rejects the feed+bearer
-token combination on a non-loopback host). Paperclip
-UI: Plugins → this plugin → Configure, or `POST /api/plugins/:id/config`;
-see the [package README](../README.md#configure-the-plugin). There
-is currently no automated way to set this before a company exists (Paperclip
-plugin config is company-scoped), so this is a one-time manual step per
-deployment, not something the entrypoint script can do for you.
+one. Plugin config is **company-scoped**, and a fresh deployment has zero
+`plugin_config` rows, so the worker→feed relay push does not fire until it is
+set. This repo automates that as a one-time bootstrap (SAA-961 Finding 2):
+`deploy/scripts/init-company.sh` registers the feed token as a company secret
+and applies `{ companyId, configJson: { pixelAgentsUrl, pixelAgentsTokenRef,
+pixelAgentsAllowedHttpHosts } }` via `POST /api/plugins/:id/config`. The host
+image vendors the script and the entrypoint calls it best-effort on first
+boot; run it once after the first company exists:
+
+```bash
+# compose dev path (env already supplies the feed URL/token/allowed hosts)
+docker compose -f deploy/docker/docker-compose.bridge-stack.yml exec paperclip \
+  /usr/local/bin/init-company.sh http://127.0.0.1:3100
+
+# k8s dev path (feed URL/token/allowed hosts come from the Deployment env)
+kubectl -n paperclip-pixels exec deploy/paperclip -- \
+  /usr/local/bin/init-company.sh http://127.0.0.1:3100
+
+# helm / production: set initialCompany.config (slug + relay fields) so the
+# first-boot entrypoint applies it, or run the same command with
+# PIXELS_COMPANY_ID / the feed env.
+```
+
+The script auto-discovers the company (by slug from `initialCompany.config`,
+or the single company) when `PIXELS_COMPANY_ID` is not supplied. It needs the
+feed token (`PAPERCLIP_PIXEL_FEED_TOKEN`) in the paperclip container to
+register the secret; the compose/k8s/helm deployments already pass it. The
+manual UI path (Plugins → this plugin → Configure) still works as a fallback.
+See `deploy/OPERATIONS.md` and the [package README](../README.md#configure-the-plugin).
+
+> Note: `pixelAgentsAllowedHttpHosts` is only required for a cleartext `http:`
+> `pixelAgentsUrl` pointing at a **non-loopback** host that is not in the
+> plugin's default trusted set; the https-when-token contract otherwise
+> rejects the feed+bearer token combination on such a host (SAA-734). The
+> helm chart renders `PAPERCLIP_PIXEL_ALLOWED_HTTP_HOSTS` from
+> `transport.feed.*` (including the actual `<svc>-pixel-agents` host) so the
+> templated feed URL is reachable.
 
 ## Build
 
@@ -86,13 +135,16 @@ build must run before either image is built.
 
 ```bash
 # from the repo root (submodules initialized: paperclip/, pixel-agents/)
-# 1. Build the bridge plugin first — the host image vendors the plugin's
-#    pre-built dist/ (worker + manifest + UI bundle), and the pixel-agents
-#    image vendors dist/pixel-agents-embedding.cjs (the in-process embedding
-#    module the fork CLI loads via --plugin). `npm run build` bundles the
-#    worker/manifest/embedding with esbuild then the UI with
-#    scripts/build-ui.mjs.
-( npm install && npm run build )
+# 1. Build the bridge packages first — the host image vendors the
+#    Paperclip plugin's pre-built plugins/paperclip/dist/ (worker +
+#    manifest + UI bundle), and the pixel-agents image vendors
+#    plugins/pixel-agents/dist/pixel-agents-embedding.cjs (the
+#    in-process embedding module the fork CLI loads via --plugin).
+#    `common` builds first (both plugins depend on it), then
+#    plugins/paperclip bundles the worker/manifest/UI with esbuild +
+#    scripts/build-ui.mjs and plugins/pixel-agents emits the tsc output
+#    plus the embedding bundle.
+( npm install && npm run build --workspaces )
 # 2. Build the images. The host image reuses the published Paperclip base
 #    (ghcr.io/paperclipai/paperclip:latest) and only adds the vendored bridge
 #    plugin + a bootstrap entrypoint. The pixel-agents image builds the
@@ -111,11 +163,13 @@ minikube start
 minikube image load paperclip-pixel-host:local
 minikube image load pixel-agents:local
 
-# The pixel-agents pod reads the feed shared secret + optional reply API key
-# from a k8s secret (see deploy/k8s/pixel-agents.yaml env):
-kubectl -n paperclip-pixels create secret generic paperclip-pixel-feed \
-  --from-literal=token="$(openssl rand -hex 32)" \
-  --from-literal=apiToken='<board-api-key>'
+# Secret material is never committed. Copy the template and fill in real
+# values (auth secret, feed shared token, board API key, Postgres creds);
+# kustomize generates the `paperclip-secrets` / `postgres-credentials` /
+# `paperclip-pixel-feed` Secrets from it (see deploy/k8s/kustomization.yaml):
+cp deploy/k8s/secrets.env.example deploy/k8s/secrets.env
+#   edit deploy/k8s/secrets.env  (set BETTER_AUTH_SECRET, PAPERCLIP_PIXEL_FEED_TOKEN,
+#   PAPERCLIP_PIXEL_API_TOKEN, POSTGRES_PASSWORD, DATABASE_URL)
 
 kubectl apply -k deploy/k8s/
 kubectl -n paperclip-pixels rollout status deploy/paperclip
@@ -146,6 +200,90 @@ PAPERCLIP_PIXEL_API_TOKEN=<board-api-key> \
 # UIs at http://localhost:3100 and http://localhost:8080
 ```
 
+## Upgrading a deployment from the former combined package
+
+Before the two-plugin rework, the images vendored the bridge artifacts from
+the repo root's single combined package (one npm entry; root `dist/` +
+`assets/` for the host image, root `dist/pixel-agents-embedding.cjs` for the
+pixel-agents image). **That combined entry is removed and no longer published
+or shipped; the two-plugin + `common` deployment is the only supported
+path.** The repo root is now a private workspace root — nothing is installed
+from it; the images vendor the per-package artifacts instead.
+
+What changed is **only where the vendored bridge artifacts come from**. The
+service topology, ports, environment variables, secrets flow, volumes, and
+the first-boot entrypoint bootstrap are all unchanged, so an upgrade is a
+rebuild + rolling redeploy:
+
+1. **Rebuild the bridge packages** (both images vendor the pre-built
+   `plugins/*/dist/`; `common` builds first — both plugins depend on it):
+
+   ```bash
+   # repo root — either builds all three packages:
+   npm install && npm run build --workspaces
+   # or per-package:
+   npm --prefix common run build \
+     && npm --prefix plugins/paperclip run build \
+     && npm --prefix plugins/pixel-agents run build
+   ```
+
+2. **Rebuild both images** from the repo root (unchanged commands; the
+   Dockerfiles now copy the per-package artifacts — the host image vendors
+   `plugins/paperclip/{package.json,dist,assets}` to
+   `/opt/paperclip-pixel-plugin`, the pixel-agents image vendors
+   `plugins/pixel-agents/dist/pixel-agents-embedding.cjs` to
+   `/opt/paperclip-pixel-embedding/`):
+
+   ```bash
+   docker build -t paperclip-pixel-host:local -f deploy/docker/Dockerfile.paperclip-pixel-host .
+   docker build -t pixel-agents:local         -f deploy/docker/Dockerfile.pixel-agents .
+   ```
+
+3. **Redeploy** exactly as you did before:
+
+   - **Compose (dev profile)** — same file, same env vars:
+
+     ```bash
+     PAPERCLIP_AUTH_SECRET=$(openssl rand -hex 32) \
+     PAPERCLIP_PIXEL_FEED_TOKEN=$(openssl rand -hex 32) \
+     PAPERCLIP_PIXEL_API_TOKEN=<board-api-key> \
+       docker compose -f deploy/docker/docker-compose.bridge-stack.yml up --build
+     ```
+
+     Named volumes (`pgdata`, `paperclip-data`) persist across the upgrade;
+     the Paperclip plugin state on `paperclip-data` survives because the
+     replacement plugin registers under the same plugin id
+     (`paperclip-pixel.paperclip-plugin`). For a local-path install the
+     registry row stores the vendored path (`/opt/paperclip-pixel-plugin` —
+     the same path in the old and new images), so once the new image runs,
+     the persisted row reactivates at boot against the new build's code: a
+     pure image swap, no plugin reinstall or data migration step.
+
+   - **Kubernetes (`deploy/k8s`)** — reload the rebuilt images and re-apply;
+     the manifests, generated Secrets, and env are unchanged:
+
+     ```bash
+     minikube image load paperclip-pixel-host:local
+     minikube image load pixel-agents:local
+     kubectl apply -k deploy/k8s/
+     kubectl -n paperclip-pixels rollout status deploy/paperclip
+     kubectl -n paperclip-pixels rollout status deploy/pixel-agents
+     ```
+
+   - **Helm chart ([`deploy/helm/paperclip-pixels`](helm/paperclip-pixels))**
+     — the chart deploys the two plugins + `common` by construction (the
+     host image vendors the Paperclip plugin, the pixel-agents image vendors
+     the embedding bundle, both built from the plugin packages). Pull the
+     newly built images by tag/digest and `helm upgrade` with the updated
+     `image.*.tag`/`image.*.digest` values; no values restructuring is
+     needed.
+
+No migration of the old combined package's `dist/` is needed — the images
+never read it. On the Paperclip side, config (`pixelAgentsUrl`,
+`pixelAgentsTokenRef`, `pixelAgentsAllowedHttpHosts`, …) and per-company
+plugin data carry over under the same plugin id; only re-save config if the
+feed listener address or shared secret changed.
+
 ## Rebuild + redeploy runbook (shared daemon, e2e stack)
 
 Runbook for the disposable e2e bridge stack (compose project
@@ -168,12 +306,12 @@ Consequences:
   HAProxy config at `/tmp/haproxy.cfg` when you need to verify the
   allowlist. Never disable or bypass the proxy.
 
-**1) Rebuild the plugin bundle from the current tree** (the host image
-vendors the pre-built `dist/`; see "Build" above):
+**1) Rebuild the plugin packages from the current tree** (the images
+vendor the pre-built `plugins/*/dist/`; see "Build" above):
 
 ```bash
 # repo root
-npm install && npm run build
+npm install && npm run build --workspaces
 ```
 
 **2) Rebuild both images** (repo root; requires `paperclip/` and
@@ -334,7 +472,7 @@ passes readiness/liveness without auth.
    Claude hook JSON body, pushed through the same-pod
    `paperclip-pixel-relay` CLI to the unmodified `/api/hooks/claude`
    endpoint) is **retired**: WS2-C ported the bridge onto the first-class
-   plugin feed (`src/pixel-agents-plugin/`, `src/relay.ts` pushing
+   plugin feed (the Pixel Agents-side plugin, with the worker relay pushing
    `POST /api/plugin-feed`), and WS2-D wired the embedding surface
    (in-process registration via the fork CLI's generic `--plugin` loader)
    and deleted the dead `bin/paperclip-pixel-relay.js`. The relay container,
@@ -342,7 +480,7 @@ passes readiness/liveness without auth.
    initContainer are gone from the deployment manifests with it.
 
 2. **RESOLVED — Bridge plugin packaging.** The worker now builds as a
-   self-contained esbuild bundle (`scripts/build.mjs`)
+   self-contained esbuild bundle (`plugins/paperclip/scripts/build.mjs`)
    with `@paperclip-pixel/core`, `@paperclipai/plugin-sdk`, `@paperclipai/shared`,
    and `zod` inlined; only Node built-ins/react/react-dom stay external.
    `deploy/docker/build-plugin-bundle.sh` now just copies `package.json` +
@@ -350,7 +488,7 @@ passes readiness/liveness without auth.
    dependency files or patching `exports` maps.
 
 3. **Two deployment-enabling defects were fixed in this work:**
-   - `src/constants.ts` — added the `jobs.schedule`
+   - `plugins/paperclip/src/constants.ts` — added the `jobs.schedule`
      capability (the host rejects install with "Capability 'jobs.schedule' is
      required when jobs are declared" because the manifest declares the
      `bridge-reconcile` job).

@@ -1,0 +1,189 @@
+/** Unique identifier for this Paperclip plugin. */
+export const PLUGIN_ID = "paperclip-pixel.paperclip-plugin";
+/** Semantic version of the plugin package. */
+export const PLUGIN_VERSION = "0.6.0";
+/** Version of the Paperclip Plugin API this manifest conforms to. */
+export const PLUGIN_API_VERSION = 1 as const;
+
+/** UI slot identifiers used by the plugin to register UI slots with the host. */
+export const UI_SLOT_IDS = {
+  page: "pixel-office-page",
+  /** R3-WS4b: dedicated Configuration page (operational metrics + relay comms +
+   *  office-layout configuration). */
+  configPage: "pixel-office-config-page",
+  sidebar: "pixel-office-sidebar",
+  /** R3-WS4b: agent-scoped detailTab rendered on each native agent detail page. */
+  detailTab: "agent-detail-character",
+} as const;
+
+/** Export names that correspond to each UI slot's React component. */
+export const UI_EXPORT_NAMES = {
+  page: "PixelOfficePage",
+  configPage: "PixelOfficeConfigPage",
+  sidebar: "PixelOfficeSidebar",
+  detailTab: "AgentCharacterDetailTab",
+} as const;
+
+/** Route segment under which the Pixel Office page is mounted in the host UI. */
+export const PIXEL_OFFICE_PAGE_ROUTE = "pixel-office";
+
+/** Route segment under which the Configuration page is mounted in the host UI. */
+export const PIXEL_OFFICE_CONFIG_PAGE_ROUTE = "pixel-office-configuration";
+
+/** Job identifiers used by the plugin's scheduled tasks. */
+export const JOB_KEYS = {
+  reconciliation: "bridge-reconcile",
+} as const;
+
+/** Action identifiers for UI interactions and plugin commands. */
+export const ACTION_KEYS = {
+  companySendMessage: "company.send-message",
+  agentReplyToFeedback: "agent.reply-to-feedback",
+  setAgentAppearance: "agent.set-pixel-appearance",
+  setAgentComposition: "agent.set-pixel-composition",
+  setOfficeLayout: "office.set-layout",
+} as const;
+
+/** Data endpoint keys exposed by the plugin for external consumption. */
+export const DATA_KEYS = {
+  bridgeSnapshot: "bridge-snapshot",
+  companySummary: "company-summary",
+  agentBehavior: "agent-behavior",
+  outstandingFeedback: "outstanding-feedback",
+  visualSettings: "visual-settings",
+  relayComms: "relay-comms",
+  metricsSeries: "metrics-series",
+  officeLayout: "office-layout",
+} as const;
+
+/** Stream channel names used for emitting plugin events. */
+export const STREAM_CHANNELS = {
+  bridge: "bridge",
+  behavior: "behavior",
+} as const;
+
+/** Returns the company‑scoped behavior stream channel name. */
+export function behaviorChannel(companyId: string): string {
+  return `behavior:${companyId}`;
+}
+
+/** Keys for plugin persisted state entries. */
+export const STATE_KEYS = {
+  compactBuckets: "compact-buckets",
+  lastReconciledAt: "last-reconciled-at",
+  schemaVersion: "schema-version",
+  leadershipAgentId: "leadership-agent-id",
+  /**
+   * Per-agent character assignment (WS3, spec PAPERCLIP_PIXELS-2 FR-13),
+   * stored in the plugin SDK's `agent` state scope (scopeId = agent id).
+   */
+  agentCharacter: "agent-character",
+  /**
+   * Per-agent v2 appearance assignment (R3-WS5b composition), stored in the
+   * plugin SDK's `agent` state scope. Carries the discriminated
+   * `wholeSheet | composition` appearance (the v2 envelope accepts a v1
+   * whole-sheet payload, so legacy assignments round-trip unchanged).
+   */
+  agentComposition: "agent-composition",
+  /** Bounded rolling relay-communications log (R3-WS4a), company scope. */
+  relayComms: "relay-comms",
+  /** Paperclip-hosted office-layout configuration (R3-WS4a), company scope. */
+  officeLayout: "office-layout",
+} as const;
+
+/** Namespaces used for grouping plugin persisted state. */
+export const STATE_NAMESPACES = {
+  bridge: "bridge",
+  /** Per-agent character assignments (WS3). */
+  characters: "characters",
+} as const;
+
+/** Default interval (in ms) for the bridge reconciliation job. */
+export const RECONCILIATION_DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
+
+/**
+ * List of Paperclip event types this plugin subscribes to. Cross-referenced
+ * 2026-08-31 against the host's full, authoritative catalog
+ * (`@paperclipai/shared`'s `PLUGIN_EVENT_TYPES`, 33 entries total) to find
+ * additional signal worth carrying into the bridge beyond the original 12.
+ * Deliberately still NOT subscribed: `company.*`, `project.*` (organizational,
+ * not agent-scoped — better fits Paperclip's own embedded UI than a
+ * per-character animation), `goal.*` (same reasoning), `issue.created`
+ * (no assignee yet, nothing agent-visual to say), `issue.relations.updated`
+ * (dependency-graph detail, sidecar-appropriate at best),
+ * `issue.document.deleted` (no honest "undo a Write" animation), and
+ * `activity.logged` (a generic catch-all for actions with no dedicated event
+ * type — subscribing risks duplicating the specific types below with noise).
+ */
+export const SUBSCRIBED_EVENT_TYPES = [
+  "agent.status_changed",
+  "agent.run.started",
+  "agent.run.finished",
+  "agent.run.failed",
+  "agent.run.cancelled",
+  "issue.updated",
+  "issue.comment.created",
+  "approval.created",
+  "approval.decided",
+  "budget.incident.opened",
+  "budget.incident.resolved",
+  "cost_event.created",
+  "agent.created",
+  "agent.error_cleared",
+  "issue.checked_out",
+  "issue.assignment_wakeup_requested",
+  "issue.document.created",
+  "issue.document.updated",
+] as const;
+
+/** Capability identifiers required by the plugin manifest. */
+export const MANIFEST_CAPABILITIES = [
+  "companies.read",
+  "projects.read",
+  "issues.read",
+  // Snapshot reconciliation must include queued/running issue runs; otherwise
+  // every restart and scheduled reconciliation incorrectly resets working
+  // agents to idle. The public SDK exposes these through issues.getSubtree.
+  "issue.subtree.read",
+  "issue.comments.read",
+  // L1: the reply action posts comments via ctx.issues.createComment.
+  // `issue.comments.create` covers plugin-agent-attributed comments; the
+  // handler relays a paired board user's reply with `actorUserId`, which the
+  // SDK gates behind `issue.comments.create_human_attributed` (the host
+  // independently re-verifies the user is an active company member).
+  "issue.comments.create",
+  "issue.comments.create_human_attributed",
+  "agents.read",
+  "approvals.read",
+  "goals.read",
+  "costs.read",
+  "events.subscribe",
+  "plugin.state.read",
+  "plugin.state.write",
+  "agent.sessions.create",
+  "agent.sessions.list",
+  "agent.sessions.send",
+  "agent.sessions.close",
+  // Required to resolve the operator-bound `pixelAgentsTokenRef` secret
+  // reference into the bearer token used by the relay's plugin feed sink. The
+  // raw token is never persisted in plugin config; only the secret_ref
+  // binding is.
+  "secrets.read-ref",
+  // The relay's outbound feed push to the embedding surface deliberately uses
+  // the Node global fetch (see relay.ts's "DELIBERATE ctx.http.fetch BYPASS"
+  // block: the host's private-IP SSRF filter cannot reach the operator's own
+  // sidecar), so this capability is re-checked against ctx.manifest at
+  // configure time instead of per call — fail-closed, never pushed without it.
+  "http.outbound",
+  "ui.page.register",
+  "ui.sidebar.register",
+  // R3-WS4b: agent-scoped detailTab (Character/metrics tab on each native
+  // agent detail page). The host only mounts the outlet when this capability
+  // is declared; the `entityTypes: ["agent"]` slot then renders our component.
+  "ui.detailTab.register",
+  "instance.settings.register",
+  // Required by the host's plugin-capability-validator: any non-empty
+  // manifest.jobs requires the `jobs.schedule` capability to be declared.
+  // The bridge schedules the `bridge-reconcile` job (see manifest.ts).
+  "jobs.schedule",
+] as const;

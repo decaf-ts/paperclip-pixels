@@ -1,0 +1,199 @@
+# Default values for the paperclip-pixels chart.
+#
+# These are PRODUCTION defaults. Nothing here is a secret, and no secret value
+# ships in the repo. All secret material is supplied at install time (see
+# SECRETS below and `deploy/scripts/install.sh`).
+#
+# Immutable images: the production default carries a digest (image.digest) so
+# deployments are immutable and reproducible. Populate the real digest from the
+# CI publish step's recorded digest (publish.yml "Record image digest"). See
+# `values.production.yaml` for a complete filled-in example.
+
+global:
+  namespace: paperclip-pixels
+  # TLS by default for the public ingress and for the in-cluster feed channel.
+  # Cleartext HTTP remains available via `transport.feed.scheme=http` for
+  # explicitly configured internal hosts (board amendment: default, not
+  # mandatory).
+  tls:
+    # Paths to the leaf certificate/key for the public ingress. Leave empty to
+    # use cert-manager + the clusterIssuer below (recommended) or to attach an
+    # externally managed secret via `ingress.tlsSecretName`.
+    ingressCert: ""
+    ingressKey: ""
+    # The in-cluster feed channel (paperclip -> pixel-agents) is mTLS by
+    # default. These are the CA, server cert/key, and client cert/key for the
+    # feed peer. Provide them via `--set-file` or an existing secret.
+    feedCA: ""
+    feedServerCert: ""
+    feedServerKey: ""
+    feedClientCert: ""
+    feedClientKey: ""
+
+image:
+  registry: ghcr.io/decaf-ts
+  pullPolicy: IfNotPresent
+  # paperclip-pixel-host is the Paperclip host with the bridge plugin baked in.
+  paperclipHost:
+    repository: paperclip-pixel-host
+    # Version tag and immutable digest. `digest` (a `sha256:...` value) pins the
+    # image; when left empty the tag is used.
+    tag: "0.1.0"
+    digest: ""
+  # pixel-agents is the standalone Pixel Agents host with the embedding module
+  # baked in.
+  pixelAgents:
+    repository: pixel-agents
+    tag: "0.1.0"
+    digest: ""
+
+# ---------------------------------------------------------------------------
+# Secrets. NO DEFAULTS. Supply at install time via `--set` / `--set-file`, a
+# values file, or `--set secrets.existingSecret=...` to reference your own
+# already-created Secret. The chart fails closed (install aborts) if required
+# secret inputs are missing and no existingSecret is referenced.
+# ---------------------------------------------------------------------------
+secrets:
+  # Reference an externally managed Secret (recommended for production). When
+  # set, the chart does NOT create a Secret and reads all keys from it.
+  # Keys expected:
+  #   BETTER_AUTH_SECRET, PAPERCLIP_PIXEL_FEED_TOKEN,
+  #   PAPERCLIP_PIXEL_API_TOKEN (optional), POSTGRES_USER, POSTGRES_PASSWORD,
+  #   POSTGRES_DB, DATABASE_URL, FEED_CA, FEED_SERVER_CERT, FEED_SERVER_KEY,
+  #   FEED_CLIENT_CERT, FEED_CLIENT_KEY
+  existingSecret: ""
+  # When existingSecret is empty, these values are rendered into a Secret.
+  # They MUST be provided (required) or install fails closed.
+  betterAuthSecret: ""
+  feedToken: ""
+  apiToken: ""
+  postgresUser: "paperclip"
+  postgresPassword: ""
+  postgresDatabase: "paperclip"
+  # DATABASE_URL is built from the postgres values above unless overridden.
+  databaseUrl: ""
+
+# Declarative initial company configuration (no manual per-company steps).
+# The chart writes this to a ConfigMap and the paperclip host's entrypoint
+# applies it on first boot (see templates/configmap.yaml).
+initialCompany:
+  # When empty, the bridge plugin is installed/activated but no company is
+  # seeded. Set to a YAML snippet to seed the first company declaratively.
+  #
+  # Relay-feed wiring (SAA-961 Finding 2): the worker->feed push is
+  # company-scoped plugin config. `pixelAgentsUrl` / `pixelAgentsAllowedHttpHosts`
+  # here are consumed by the baked-in init-company.sh on first boot; the feed
+  # token secret is registered from PAPERCLIP_PIXEL_FEED_TOKEN and referenced
+  # as `pixelAgentsTokenRef`. `pixelAgentsUrl` and
+  # `pixelAgentsAllowedHttpHosts` are OVERRIDDEN by the PAPERCLIP_PIXEL_FEED_URL
+  # / PAPERCLIP_PIXEL_ALLOWED_HTTP_HOSTS env (rendered from transport.feed.*),
+  # so you only need to set them here if the host name/scheme differs.
+  config: |
+    # name: Example Co
+    # slug: example-co
+    # logo: ""
+    # channel: direct
+    # pixelAgentsUrl: https://paperclip-pixels-pixel-agents:8081
+    # pixelAgentsAllowedHttpHosts: []
+
+# Transport for the Paperclip -> Pixel Agents feed.
+transport:
+  feed:
+    # https is the production default (mTLS). `http` keeps cleartext available
+    # only for explicitly declared trusted internal hosts.
+    scheme: https
+    # Port on the pixel-agents pod where the authenticated feed endpoint listens.
+    port: 8081
+    # Trusted internal cleartext hosts (only consulted when scheme=http).
+    allowedHttpHosts: []
+
+# ---------------------------------------------------------------------------
+# Sizing / HA.
+# ---------------------------------------------------------------------------
+replicaCount:
+  paperclip: 2
+  pixelAgents: 2
+  postgres: 1
+
+resources:
+  paperclip:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits: { cpu: "2", memory: 4Gi }
+  pixelAgents:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: "1", memory: 1Gi }
+  postgres:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
+
+# PodDisruptionBudgets. Set minAvailable so upgrades never take the whole
+# bridge down. Requires replicaCount >= 2.
+pdb:
+  enabled: true
+  paperclip:
+    minAvailable: 1
+  pixelAgents:
+    minAvailable: 1
+  postgres:
+    minAvailable: 1
+
+# Postgres storage.
+postgres:
+  storage: 10Gi
+  storageClass: ""
+
+# Paperclip host PVC.
+paperclipData:
+  storage: 10Gi
+  storageClass: ""
+
+# Ingress. Enabled for the public Paperclip UI/API. Pixel Agents stays
+# cluster-internal (no external UI) by default. TLS is the default when the
+# ingress is enabled: cert-manager issues the certificate (recommended) unless
+# you supply a leaf cert via global.tls.ingressCert/Key or an existing secret
+# via ingress.tlsSecretName.
+ingress:
+  enabled: false
+  className: nginx
+  host: paperclip-pixels.example.com
+  # Existing TLS secret name (overrides cert-manager and global.tls.*). When
+  # set, the chart references it directly and does not manage a certificate.
+  tlsSecretName: ""
+  # cert-manager issues the Ingress certificate by default (TLS-on-by-default).
+  certManager:
+    enabled: true
+    clusterIssuer: letsencrypt
+  annotations: {}
+
+# Observability.
+metrics:
+  enabled: true
+  # Prometheus ServiceMonitor for the paperclip host and pixel-agents. The
+  # plugin exposes a Prometheus `/metrics` endpoint; annotate the Service to
+  # scrape it.
+  serviceMonitors: true
+  # PrometheusRule with feed-stall/loss and reconciliation-failure alerts.
+  alerting:
+    enabled: true
+
+# Structured log shipping. When a `logship` Secret (keys: `url`, `token`) is
+# provided, the workloads emit structured JSON logs with a vector sidecar that
+# ships them. Without it, structured JSON logs are emitted to stdout only.
+logship:
+  enabled: false
+  url: ""
+  token: ""
+
+# Backup / restore.
+backup:
+  enabled: true
+  # Cron schedule in the cluster's local timezone.
+  schedule: "0 2 * * *"
+  # Retention of backup archives (count).
+  retention: 7
+  # Storage class for the backup volume (defaults to the app StorageClass).
+  storage: 10Gi
+  storageClass: ""
+
+# Additional pod annotations/labels.
+podAnnotations: {}

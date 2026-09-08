@@ -94,6 +94,29 @@ echo "bridge-stack: registered plugins:"
 curl -sS "${BOOTSTRAP_URL}/api/plugins" || true
 echo
 
+# Best-effort declarative first-company + relay-feed configuration (SAA-961
+# Finding 2). The plugin's company-scoped config (pixelAgentsUrl /
+# pixelAgentsTokenRef / pixelAgentsAllowedHttpHosts) is what turns the
+# worker->feed relay push ON; a fresh deployment has zero plugin_config rows,
+# so without this the push never fires. When a company-init file AND the feed
+# token are present we call init-company.sh against the bootstrap server
+# (local_trusted => instance-admin, no secret on the wire). It fails-closed
+# (exits non-zero) when NO company exists yet, which is expected on a fresh
+# deployment -- company creation (board claim / sign-up) precedes any
+# company-scoped config. In that case we log it and leave the one-time
+# `init-company.sh` to be run after the first company exists (see
+# deploy/OPERATIONS.md / deploy/README.md).
+if [ -n "${PAPERCLIP_PIXEL_FEED_TOKEN:-}" ] && [ -n "${PAPERCLIP_COMPANY_INIT_FILE:-}" ] && [ -x /usr/local/bin/init-company.sh ]; then
+  echo "bridge-stack: applying declarative first-company + relay config (best-effort)."
+  if PAPERCLIP_PIXEL_FEED_URL="${PAPERCLIP_PIXEL_FEED_URL:-}" \
+     PIXELS_BASE_URL="${BOOTSTRAP_URL}" \
+     /usr/local/bin/init-company.sh "${BOOTSTRAP_URL}" >/dev/null 2>&1; then
+    echo "bridge-stack: declarative company + relay config applied."
+  else
+    echo "bridge-stack: no company yet (or init failed) -- relay config left for the one-time init-company.sh step after the first company exists."
+  fi
+fi
+
 mkdir -p "${MARKER_DIR}"
 touch "${MARKER_FILE}"
 stop_bootstrap_server

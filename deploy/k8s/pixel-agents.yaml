@@ -58,7 +58,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: paperclip-pixel-feed
-                  key: token
+                  key: PAPERCLIP_PIXEL_FEED_TOKEN
             # Click-menu reply forwarder target (the Paperclip API Service)
             # and its board API key. Optional: without the key the feed still
             # applies, replies fail closed with forwarderNotConfigured.
@@ -68,7 +68,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: paperclip-pixel-feed
-                  key: apiToken
+                  key: PAPERCLIP_PIXEL_API_TOKEN
                   optional: true
           readinessProbe:
             httpGet: { path: /api/health, port: 8080 }

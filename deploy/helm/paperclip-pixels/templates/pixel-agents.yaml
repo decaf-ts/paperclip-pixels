@@ -1,0 +1,142 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "paperclip-pixels.fullname" . }}-pixel-agents
+  namespace: {{ include "paperclip-pixels.namespace" . }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+{{- if .Values.metrics.enabled }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+{{- end }}
+spec:
+  selector:
+    {{- include "paperclip-pixels.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: pixel-agents
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    - name: plugin-feed
+      port: {{ include "paperclip-pixels.feedPort" . }}
+      targetPort: plugin-feed
+{{- if .Values.metrics.enabled }}
+    - name: metrics
+      port: 9299
+      targetPort: metrics
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "paperclip-pixels.fullname" . }}-pixel-agents
+  namespace: {{ include "paperclip-pixels.namespace" . }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount.pixelAgents }}
+  selector:
+    matchLabels:
+      {{- include "paperclip-pixels.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: pixel-agents
+  template:
+    metadata:
+      labels:
+        {{- include "paperclip-pixels.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: pixel-agents
+      annotations:
+        {{- if .Values.metrics.enabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9299"
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: pixel-agents
+          image: {{ include "paperclip-pixels.image" (dict "image" .Values.image.pixelAgents "registry" .Values.image.registry) }}
+          imagePullPolicy: {{ include "paperclip-pixels.imagePullPolicy" . }}
+          args:
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8080"
+            - "--plugin"
+            - "/opt/paperclip-pixel-embedding/pixel-agents-embedding.cjs"
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: plugin-feed
+              containerPort: {{ include "paperclip-pixels.feedPort" . }}
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: 9299
+            {{- end }}
+          env:
+            - name: HOME
+              value: /home/node
+            - name: PAPERCLIP_PIXEL_FEED_HOST
+              value: "0.0.0.0"
+            - name: PAPERCLIP_PIXEL_FEED_PORT
+              value: {{ include "paperclip-pixels.feedPort" . | quote }}
+            - name: PAPERCLIP_PIXEL_API_BASE_URL
+              value: "https://{{ include "paperclip-pixels.fullname" . }}.{{ include "paperclip-pixels.namespace" . }}.svc.cluster.local:3100"
+            {{- if .Values.metrics.enabled }}
+            - name: PAPERCLIP_PIXEL_METRICS_ENABLED
+              value: "true"
+            - name: PAPERCLIP_PIXEL_METRICS_PORT
+              value: "9299"
+            {{- end }}
+            {{- if .Values.logship.enabled }}
+            - name: LOG_FORMAT
+              value: "json"
+            {{- end }}
+            {{- if .Values.global.tls.feedCA }}
+            - name: PAPERCLIP_PIXEL_FEED_TLS
+              value: "true"
+            - name: PAPERCLIP_PIXEL_FEED_CA_PATH
+              value: "/feed-certs/ca.pem"
+            - name: PAPERCLIP_PIXEL_FEED_SERVER_CERT_PATH
+              value: "/feed-certs/server.pem"
+            - name: PAPERCLIP_PIXEL_FEED_SERVER_KEY_PATH
+              value: "/feed-certs/server-key.pem"
+            {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ include "paperclip-pixels.secretName" . }}
+          volumeMounts:
+            {{- if .Values.global.tls.feedCA }}
+            - name: feed-certs
+              mountPath: /feed-certs
+              readOnly: true
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 18
+          livenessProbe:
+            httpGet: { path: /api/health, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.resources.pixelAgents | nindent 12 }}
+      volumes:
+        {{- if .Values.global.tls.feedCA }}
+        - name: feed-certs
+          secret:
+            secretName: {{ include "paperclip-pixels.secretName" . }}
+            items:
+              - key: FEED_CA
+                path: ca.pem
+              - key: FEED_SERVER_CERT
+                path: server.pem
+              - key: FEED_SERVER_KEY
+                path: server-key.pem
+        {{- end }}

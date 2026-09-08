@@ -4,9 +4,10 @@ This repository automates releases in the following manner:
 
 - run `npm run release -- <major|minor|patch|version> <message>`:
   - if arguments are missing you will be prompted for them;
-- it will run `npm run prepare-release` npm script;
-- it will commit all changes;
-- it will push the new tag;
+- it will run `npm run prepare-release` (lint + typecheck + build + all tests) first;
+- it will commit all changes and push the new tag (via `./bin/tag-release.sh`).
+
+Per the board Revision 3 remediation, the release CI itself is being replaced with a single provenance-aware gate (submodules, typecheck, lint, build, all tests, fork checks, package smoke, image build, integration contract tests, SBOM/audit, publishing via decaf-ts reusable actions) — treat `.github/workflows/` as the source of truth for what currently runs, and note that some legacy workflow files still reference scripts that no longer exist until that replacement lands.
 
 If publishing to a private repo's npm registry, make sure you add to your `package.json`:
 
@@ -22,19 +23,4 @@ Where:
 
 - `<SCOPE>` - Is the scope of your package;
 - `<REGISTRY>` - your registry host;
-- `<PROJECT_ID>` - you project ID number (easy to grab via UI in gitlab or by
-  running `$("meta[name=octolytics-dimension-repository_id]").getAttribute('content')` in the repository page in github)
-  ;
-
-### Publishing
-
-Unless the `-no-ci` flag is passed in the commit message to the `npm run release` command, publishing will be handled
-automatically by github/gitlab (triggered by the tag).
-
-When the `-no-ci` flag is passed then you can:
-
-- run `npm run publish`. This command assumes :
-  - you have previously run the `npm run release`;
-  - you have you publishing properly configured in `npmrc` and `package.json`;
-  - The token for any special access required is stored in the `.token` file;
- 
+- `<PROJECT_ID>` - you project's id number.

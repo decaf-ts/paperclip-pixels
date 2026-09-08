@@ -17,25 +17,26 @@ to abide by its terms.
 ### Bootstrapping the project
 
 ```
-git clone https://github.com/decaf-ts/ts-workspace.git
-cd ts-workspace
+git clone --recurse-submodules https://github.com/decaf-ts/paperclip-pixels.git
+cd paperclip-pixels
 npm install
-npm run build:prod
+npm run build --workspaces
 ```
 
 ### Running the tests
 
 ```
-npm run test:all
+npm run test:all --workspace plugins/paperclip
+npm test --workspace common --workspace plugins/pixel-agents
 ```
 
-_Note_: We don't have any useful tests yet, contributions are welcome!
+`plugins/paperclip/` alone carries 750+ tests across its three suites (domain, worker, UI); `common/`, `plugins/pixel-agents/`, the `pixel-agents/` fork, and the `e2e/` Playwright suites add more. See the [Developer Guide](DeveloperGuide.md#building-and-testing).
 
 ## Submitting a pull request
 
 0. [Fork][fork] and clone the repository
 1. Configure and install the dependencies: `npm install`
-2. Make sure the tests pass on your machine: `npm run test:all`
+2. Make sure the tests pass on your machine: `npm run test:all --workspace plugins/paperclip` plus `npm test --workspace common --workspace plugins/pixel-agents`
 3. Create a new branch: `git checkout -b my-branch-name`. Relate the branch to an issue if possible
 4. Make your change, add tests, add documentation, and make sure the tests still pass
 5. Make sure to build and package before pushing: `npm run prepare-release`

@@ -1,0 +1,230 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "paperclip-pixels.fullname" . }}
+  namespace: {{ include "paperclip-pixels.namespace" . }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+{{- if .Values.metrics.enabled }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "3100"
+{{- end }}
+spec:
+  selector:
+    {{- include "paperclip-pixels.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: paperclip
+  ports:
+    - name: http
+      port: 3100
+      targetPort: http
+{{- if .Values.metrics.enabled }}
+    - name: metrics
+      port: 9299
+      targetPort: metrics
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "paperclip-pixels.fullname" . }}
+  namespace: {{ include "paperclip-pixels.namespace" . }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount.paperclip }}
+  selector:
+    matchLabels:
+      {{- include "paperclip-pixels.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: paperclip
+  template:
+    metadata:
+      labels:
+        {{- include "paperclip-pixels.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: paperclip
+      annotations:
+        {{- if .Values.metrics.enabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9299"
+        {{- end }}
+        checksum/config: {{ .Values.initialCompany.config | sha256sum | quote }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      initContainers:
+        - name: wait-for-db
+          image: postgres:17-alpine
+          command:
+            - sh
+            - -c
+            - "until pg_isready -h {{ include "paperclip-pixels.fullname" . }}-postgres -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\"; do echo waiting for postgres; sleep 2; done"
+          envFrom:
+            - secretRef:
+                name: {{ include "paperclip-pixels.secretName" . }}
+      containers:
+        - name: paperclip
+          image: {{ include "paperclip-pixels.image" (dict "image" .Values.image.paperclipHost "registry" .Values.image.registry) }}
+          imagePullPolicy: {{ include "paperclip-pixels.imagePullPolicy" . }}
+          ports:
+            - name: http
+              containerPort: 3100
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: 9299
+            {{- end }}
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "3100"
+            - name: SERVE_UI
+              value: "true"
+            - name: PAPERCLIP_BIND
+              value: "lan"
+            - name: PAPERCLIP_DEPLOYMENT_MODE
+              value: "authenticated"
+            - name: PAPERCLIP_DEPLOYMENT_EXPOSURE
+              value: "private"
+            - name: PAPERCLIP_PUBLIC_URL
+              value: "https://{{ .Values.ingress.host }}"
+            - name: PAPERCLIP_ALLOWED_HOSTNAMES
+              value: "{{ include "paperclip-pixels.fullname" . }},{{ .Values.ingress.host }}"
+            - name: PAPERCLIP_HOME
+              value: "/paperclip"
+            - name: PAPERCLIP_INSTANCE_ID
+              value: "default"
+            - name: PAPERCLIP_CONFIG
+              value: "/paperclip/instances/default/config.json"
+            - name: PAPERCLIP_MIGRATION_AUTO_APPLY
+              value: "true"
+            - name: NODE_ENV
+              value: "production"
+            - name: PAPERCLIP_BOOTSTRAP_PORT
+              value: "3101"
+            - name: PAPERCLIP_PIXEL_PLUGIN_PATH
+              value: "/opt/paperclip-pixel-plugin"
+            {{- if .Values.initialCompany.config | default "" }}
+            - name: PAPERCLIP_COMPANY_INIT_FILE
+              value: "/paperclip/instances/default/company-init.yaml"
+            {{- end }}
+            # SAA-961 Finding 2: relay-feed config. The worker->feed push is
+            # company-scoped plugin config (pixelAgentsUrl / pixelAgentsTokenRef
+            # / pixelAgentsAllowedHttpHosts). These env vars are consumed by the
+            # baked-in bootstrap init (deploy/scripts/init-company.sh) which
+            # registers the feed token (from the Secret) as a company secret and
+            # applies the plugin config on first boot (best-effort) or via the
+            # documented one-time `kubectl exec ... init-company.sh` after the
+            # first company exists.
+            {{- $feedHost := printf "%s-pixel-agents" (include "paperclip-pixels.fullname" .) }}
+            - name: PAPERCLIP_PIXEL_FEED_URL
+              value: "{{ .Values.transport.feed.scheme }}://{{ $feedHost }}:{{ include "paperclip-pixels.feedPort" . }}"
+            {{- if eq .Values.transport.feed.scheme "http" }}
+            - name: PAPERCLIP_PIXEL_ALLOWED_HTTP_HOSTS
+              value: "{{ $feedHost }}{{ range .Values.transport.feed.allowedHttpHosts }},{{ . }}{{ end }}"
+            {{- end }}
+            {{- if .Values.metrics.enabled }}
+            - name: PAPERCLIP_METRICS_ENABLED
+              value: "true"
+            - name: PAPERCLIP_METRICS_PORT
+              value: "9299"
+            {{- end }}
+            {{- if .Values.logship.enabled }}
+            - name: LOG_FORMAT
+              value: "json"
+            {{- end }}
+            - name: PAPERCLIP_FEED_SCHEME
+              value: {{ .Values.transport.feed.scheme | quote }}
+            {{- if .Values.global.tls.feedCA }}
+            - name: PAPERCLIP_FEED_CA_PATH
+              value: "/feed-certs/ca.pem"
+            {{- end }}
+            {{- if .Values.global.tls.feedClientCert }}
+            - name: PAPERCLIP_FEED_CLIENT_CERT_PATH
+              value: "/feed-certs/client.pem"
+            - name: PAPERCLIP_FEED_CLIENT_KEY_PATH
+              value: "/feed-certs/client-key.pem"
+            {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ include "paperclip-pixels.secretName" . }}
+          volumeMounts:
+            - name: data
+              mountPath: /paperclip
+            - name: company-init
+              mountPath: /paperclip/instances/default/company-init.yaml
+              subPath: company.yaml
+            {{- if .Values.global.tls.feedCA }}
+            - name: feed-certs
+              mountPath: /feed-certs
+              readOnly: true
+            {{- end }}
+          # In authenticated/private exposure /api/health returns 403 for
+          # non-loopback callers (kubelet probes hit the pod IP). Use a TCP
+          # socket probe — if the port accepts a connection the server is up.
+          readinessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            tcpSocket: { port: http }
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.resources.paperclip | nindent 12 }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "paperclip-pixels.fullname" . }}-data
+        - name: company-init
+          configMap:
+            name: {{ include "paperclip-pixels.fullname" . }}-company-init
+        {{- if .Values.global.tls.feedCA }}
+        - name: feed-certs
+          secret:
+            secretName: {{ include "paperclip-pixels.secretName" . }}
+            items:
+              - key: FEED_CA
+                path: ca.pem
+              {{- if .Values.global.tls.feedClientCert }}
+              - key: FEED_CLIENT_CERT
+                path: client.pem
+              - key: FEED_CLIENT_KEY
+                path: client-key.pem
+              {{- end }}
+        {{- end }}
+{{- if .Values.paperclipData.storageClass }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "paperclip-pixels.fullname" . }}-data
+  namespace: {{ include "paperclip-pixels.namespace" . }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: {{ .Values.paperclipData.storageClass | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.paperclipData.storage }}
+{{- else }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "paperclip-pixels.fullname" . }}-data
+  namespace: {{ include "paperclip-pixels.namespace" . }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.paperclipData.storage }}
+{{- end }}

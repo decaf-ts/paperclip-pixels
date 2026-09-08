@@ -7,14 +7,20 @@ submodule file (which governs the Paperclip submodule, not this project) and
 takes precedence for all work under this repository root.
 
 - **Specification:** `PAPERCLIP_PIXELS-1` — Paperclip ↔ Pixel Agents translation
-  layer.
+  layer. Its packaging statements are superseded by `PAPERCLIP_PIXELS-2`
+  Revision 3 (spec record
+  `workdocs/ai/project/specifications/PAPERCLIP_PIXELS_2.md`, domain root
+  [SAA-447](/SAA/issues/SAA-447)).
 - **Specification domain root:** [SAA-150](/SAA/issues/SAA-150).
 - **Specification record:** `workdocs/ai/project/specifications/PAPERCLIP_PIXELS_1.md`.
 - **Delivery plan:** `workdocs/ai/project/plan.md`.
 - **Status:** locked for V1 (implementation-grade design specification,
   sections 1–42 in the [SAA-150](/SAA/issues/SAA-150) description). The 16
   locked decisions (§2) stand unless an upstream API makes one technically
-  impossible.
+  impossible. The packaging statements are superseded by `PAPERCLIP_PIXELS-2`
+  Revision 3; the P1 locked sections — Architecture Invariants, New-Work
+  Intake, No Fictional Psychology, Versioning, Input Validation — stand
+  unchanged.
 
 ## Project
 
@@ -28,61 +34,77 @@ Final architectural principle (§42): _A faithful observer and policy-aware
 translator of Paperclip organizational reality, not an alternative orchestration
 engine and not a renderer._
 
-### One package, at the repo root
+### Private npm workspace root, three packages
 
-This project ships as a single npm package, `@decaf-ts/paperclip-pixels`,
-living directly at the repository root (not nested under `packages/*` — an
-earlier revision split it into three sub-packages with their own
-`package.json`s; that added real friction, `workspace:*` references plain npm
-can't resolve, for no benefit, since only one of the three was ever published.
-`paperclip/` and `pixel-agents/` remain **git submodules only**, kept purely
-for reference/future upstream contributions — never modified, never a build
-dependency beyond that).
+The repository root is a **private npm workspace root** (root `package.json`
+name `paperclip-pixels`, `private: true`; nothing is published from the
+root). The temporary combined `@decaf-ts/paperclip-pixels` root package was
+removed in Revision 3 (R3-M4, [SAA-886](/SAA/issues/SAA-886)); there is no
+combined entry package. `paperclip/` and `pixel-agents/` remain **git
+submodules only**, reference-only (unchanged).
 
-- **`src/core/`** — domain logic + behavioral proxies: snapshot loader, event
-  normalizer + idempotent reducer, entity/run/concurrency projection, temporal
-  windows, behavioral proxy calculator, feedback classifier, action policy /
-  new-work gate, reconciliation. **Must not import React, the Pixel Agents
-  renderer, or Paperclip UI code.** No rendering decisions.
-- **`src/{worker,manifest,actions,relay,snapshot,subscriptions,persistence}.ts`,
-  `src/ui/`** — Paperclip host integration: manifest / capabilities, event
-  subscriptions, authoritative snapshot bootstrap, SDK client calls,
-  `ctx.state` persistence, `ctx.data` / `ctx.actions` / `ctx.streams` handlers,
-  embedded Pixel UI surface (renders inside Paperclip's own UI).
-- **`src/pixel-agents-provider/`** — Pixel Agents adapter: consumes the bridge
-  contract, maps only semantically valid current events to current
-  `AgentEvent` semantics, retains richer behavior in a sidecar, integrates at
-  the smallest possible source-level adapter, never fakes tool-hook semantics
-  where no correspondence exists.
-- **`bin/paperclip-pixel-relay.js`** — the companion CLI a user runs alongside
-  Pixel Agents (published as this package's `bin`; Pixel Agents has no
-  plugin-loading mechanism of its own, so there's nothing to "install into"
-  it).
+- **`common/`** — `paperclip-pixels-common`: shared domain logic — the
+  neutral wire contract and serializable domain shapes (formerly the
+  repo-root `src/core/`, split by R3-M4): DTOs, Zod validation, operation
+  ids, error codes, `schemaVersion` compatibility rules, fixture builders,
+  and plugin-host type mirrors. **Schemas only** — imports no other package;
+  **must not import React, the Pixel Agents renderer, or Paperclip UI code.**
+  No rendering decisions. The stateful reducer/metric core stays with the
+  Paperclip plugin.
+- **`plugins/paperclip/`** — `@decaf-ts/paperclip-pixels-plugin`: the
+  Paperclip host plugin (`main: dist/worker.js`) — worker, manifest /
+  capabilities, event subscriptions, authoritative snapshot bootstrap, the
+  stateful core (reducer, temporal windows, behavioral proxies, feedback
+  policy), `ctx.state` persistence, `ctx.data` / `ctx.actions` /
+  `ctx.streams` handlers, the outbound feed push (`src/relay.ts`), and the
+  embedded Pixel Office UI surface (`src/ui/`, renders inside Paperclip's
+  own UI).
+- **`plugins/pixel-agents/`** — `@decaf-ts/pixel-agents-paperclip-plugin`:
+  the Pixel Agents side — provider/adapter + embedding surface. It consumes
+  the bridge contract, maps only semantically valid current events, retains
+  richer behavior in a sidecar, and never fakes tool-hook semantics where no
+  correspondence exists. Its build emits `dist/pixel-agents-embedding.cjs`,
+  which the deployed Pixel Agents server loads through its generic
+  `--plugin` loader, registering the plugin in-process and serving the feed
+  endpoint.
 
-Data flow (§7, §8): Paperclip (authoritative) → public Plugin SDK only →
-`src/core` (raw + metrics + semantics) → canonical bridge contract →
-`src/pixel-agents-provider` maps it to Pixel Agents' real wire format → the
-`paperclip-pixel-relay` CLI (reads Pixel Agents' locally-generated bearer
-token, forwards with correct auth) → Pixel Agents' real, unmodified
-`/api/hooks/claude` endpoint; UI-facing state also flows to the embedded
-Paperclip UI plugin page.
+Data flow (P1 §7/§8 principles; normative current wording:
+`workdocs/ai/architecture-handbook.md` §5.4, corrected by
+[SAA-953](/SAA/issues/SAA-953)): Paperclip (authoritative) → public Plugin
+SDK only → `common` (raw + metrics + semantics) → canonical bridge contract
+→ the `plugins/pixel-agents` provider → the embedding bundle
+(`dist/pixel-agents-embedding.cjs`) inside the deployed Pixel Agents server,
+which serves the feed endpoint the Paperclip plugin's relay pushes to;
+UI-facing state also flows to the embedded Paperclip UI plugin page. There
+is no `paperclip-pixel-relay` companion CLI — the relay bin was retired
+([SAA-549](/SAA/issues/SAA-549)); the Pixel Agents embedding goes through
+the deployed server's embedding surface, not a companion CLI.
 
 ## Stack And Conventions
 
 - **Language:** TypeScript.
-- **Template:** bootstrapped from decaf-ts's `ts-workspace` template, but its
-  `gulpfile.js`-based dual CJS/ESM build was replaced with an esbuild bundle
-  (`scripts/build.mjs`/`scripts/build-ui.mjs`) suited to a Paperclip plugin
-  (self-contained worker bundle + a separate UI bundle), and its single-Jest
-  test setup was split into three runners for the same reason — see
-  `workdocs/tutorials/DeveloperGuide.md`'s "Building and testing" section.
-  Reuse `tsconfig.json`, ESLint, and Prettier as-is.
+- **Template:** bootstrapped from decaf-ts's `ts-workspace` template; its
+  `gulpfile.js`-based dual CJS/ESM build was replaced with esbuild bundles
+  suited to a Paperclip plugin (self-contained worker bundle + a separate UI
+  bundle) — see `workdocs/tutorials/DeveloperGuide.md`'s "Building and
+  testing" section. Reuse the per-package `tsconfig.json`, ESLint, and
+  Prettier setups as-is.
+- **Workspace builds/tests:** builds are per-package
+  (`npm run build --workspaces`); root scripts are orchestration-only
+  (`lint`, `prepare-release`, `release` fan out to the three workspaces).
+  The Paperclip plugin's esbuild bundles are built by
+  `plugins/paperclip/scripts/build.mjs` / `build-ui.mjs`; `common` and the
+  Pixel Agents plugin build with `tsc` (the latter then emits the embedding
+  bundle via `scripts/build-embedding.mjs`). Test suites are per-package —
+  **no combined root build or test**.
 - **Dependency resolution:** real npm `dependencies`/`devDependencies` for
   everything publishable. `@paperclipai/plugin-sdk`/`@paperclipai/shared`
   (inside the `paperclip/` submodule) are the one exception — plain npm can't
   resolve them (`plugin-sdk`'s own `package.json` depends on `shared` via the
-  pnpm/yarn-only `workspace:*` protocol) — `npm install`'s `postinstall` hook
-  (`scripts/link-paperclip-sdk.mjs`) symlinks them in instead.
+  pnpm/yarn-only `workspace:*` protocol) — `npm install`'s root `postinstall`
+  hook (`scripts/link-paperclip-sdk.mjs`) symlinks them in instead. This SDK
+  link survives the R3 workspace split unchanged and remains the mechanism
+  that symlinks `@paperclipai/plugin-sdk`/`@paperclipai/shared`.
 - **Normative integration surface:** compile against the installed
   `@paperclipai/plugin-sdk` types — **not** future-looking prose. Do not depend
   on unreleased Paperclip roadmap features or unreleased Pixel Agents provider
@@ -169,14 +191,16 @@ survive restart even when Paperclip lacks retrospective event history (§39.3).
 
 ## Git Policy
 
-The domain root [SAA-150](/SAA/issues/SAA-150) owns **exactly one
-user-approved commit** through the `git-ops` skill.
+Each specification's domain root owns **exactly one user-approved commit**
+through the `git-ops` skill (P1: [SAA-150](/SAA/issues/SAA-150) /
+`PAPERCLIP_PIXELS-1`; P2: [SAA-447](/SAA/issues/SAA-447) /
+`PAPERCLIP_PIXELS-2`).
 
 - Milestone and implementation children **never commit independently**. They
   leave repository edits uncommitted in the workspace for the parent domain
   root executor to include in the single final commit.
-- The commit message uses specification ID `PAPERCLIP_PIXELS-1`.
-- Branch identity: `PAPERCLIP_PIXELS-1`.
+- The commit message uses the active specification ID.
+- Branch identity: the active specification ID.
 - Delivery Documentation Specialist writes documentation artifacts
   (`AGENTS.md`, `plan.md`, specification records) but **never stages, commits,
   amends, branches, pushes, or creates pull requests**.

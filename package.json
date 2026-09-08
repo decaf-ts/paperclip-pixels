@@ -1,52 +1,20 @@
 {
-  "name": "@decaf-ts/paperclip-pixels",
+  "name": "paperclip-pixels",
   "version": "0.6.0",
-  "description": "Paperclip <-> Pixel Agents bridge: a Paperclip plugin (manifest, event subscriptions, snapshot bootstrap, worker->UI bridge, action policy) plus the in-process Pixel Agents embedding module (plugin feed endpoint + click-menu reply forwarder) for the Pixel Agents fork's --plugin loader.",
+  "description": "Workspace root for the Paperclip <-> Pixel Agents bridge: the neutral `paperclip-pixels-common` contract package (`common`), the independent Paperclip plugin (`plugins/paperclip`), and the independent Pixel Agents plugin surface with the embedding bundle (`plugins/pixel-agents`).",
+  "private": true,
   "type": "module",
-  "main": "dist/worker.js",
-  "types": "dist/worker.d.ts",
-  "exports": {
-    ".": {
-      "import": "./dist/worker.js",
-      "types": "./dist/worker.d.ts"
-    },
-    "./manifest": {
-      "import": "./dist/manifest.js",
-      "types": "./dist/manifest.d.ts"
-    }
-  },
-  "paperclipPlugin": {
-    "manifest": "./dist/manifest.js",
-    "worker": "./dist/worker.js"
-  },
-  "files": [
-    "dist",
-    "assets/characters",
-    "scripts/link-paperclip-sdk.mjs",
-    "README.md",
-    "LICENSE"
+  "workspaces": [
+    "common",
+    "plugins/paperclip",
+    "plugins/pixel-agents"
   ],
   "scripts": {
     "postinstall": "node scripts/link-paperclip-sdk.mjs",
-    "prebuild": "rimraf ./dist",
-    "build": "node scripts/build.mjs && node scripts/build-ui.mjs && npm run build:types",
-    "build:worker": "node scripts/build.mjs",
-    "build:ui": "node scripts/build-ui.mjs",
-    "build:types": "tsc -p tsconfig.json --emitDeclarationOnly",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "typecheck:ui": "tsc -p tsconfig.test.json --noEmit",
+    "lint": "npm run lint --workspaces",
     "release": "./bin/tag-release.sh",
     "pixel-agents:sync-legacy": "node scripts/sync-pixel-agents-legacy.mjs",
-    "lint": "eslint .",
-    "lint-fix": "eslint --fix .",
-    "test": "jest --config jest.config.ts",
-    "test:watch": "jest --config jest.config.ts --watch",
-    "test:domain": "jest --config jest.config.domain.ts",
-    "test:worker": "vitest run",
-    "test:all": "npm run test:domain && npm run test:worker && npm run test",
-    "version": "node scripts/sync-plugin-version.mjs",
-    "prepare-release": "npm run lint && npm run typecheck && npm run build && npm run test:all",
-    "prepublishOnly": "npm run build"
+    "prepare-release": "npm run lint && npm run typecheck --workspaces && npm run build --workspaces && npm run test --workspaces"
   },
   "keywords": [
     "paperclip",
@@ -57,57 +25,7 @@
     "relay"
   ],
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/decaf-ts/paperclip-pixels.git"
-  },
-  "homepage": "https://github.com/decaf-ts/paperclip-pixels#readme",
-  "bugs": {
-    "url": "https://github.com/decaf-ts/paperclip-pixels/issues"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
   "engines": {
     "node": ">=20"
-  },
-  "peerDependencies": {
-    "react": ">=18",
-    "react-dom": ">=18"
-  },
-  "dependencies": {
-    "ws": "^8.18.3"
-  },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    },
-    "react-dom": {
-      "optional": true
-    }
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.39.5",
-    "@testing-library/jest-dom": "^6.6.3",
-    "@testing-library/react": "^16.3.0",
-    "@types/jest": "^29.5.13",
-    "@types/node": "^24.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "esbuild": "^0.28.1",
-    "eslint": "^9.12.0",
-    "eslint-config-prettier": "^10.1.8",
-    "globals": "^17.11.0",
-    "typescript-eslint": "^8.68.0",
-    "jest": "^29.7.0",
-    "jest-environment-jsdom": "^29.7.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "rimraf": "^6.0.1",
-    "ts-jest": "^29.2.5",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.9.3",
-    "vitest": "^4.1.11",
-    "zod": "^4.4.3"
   }
 }

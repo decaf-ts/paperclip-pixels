@@ -6,6 +6,25 @@ resources:
   - postgres.yaml
   - paperclip.yaml
   - pixel-agents.yaml
+# Secret values are generated from the git-ignored `secrets.env` file — no
+# secret material is committed. Copy secrets.env.example to secrets.env and
+# fill it in before applying.
+secretGenerator:
+  - name: paperclip-secrets
+    envs:
+      - secrets.env
+    options:
+      disableNameSuffixHash: true
+  - name: postgres-credentials
+    envs:
+      - secrets.env
+    options:
+      disableNameSuffixHash: true
+  - name: paperclip-pixel-feed
+    envs:
+      - secrets.env
+    options:
+      disableNameSuffixHash: true
 images:
   - name: paperclip-pixel-host
     newName: paperclip-pixel-host

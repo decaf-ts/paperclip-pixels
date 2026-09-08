@@ -9,7 +9,7 @@ COPY ./*.json $WORKDIR/
 
 ARG TOKEN
 
-RUN cd $WORKDIR && TOKEN=$TOKEN npm ci && npm run build:prod
+RUN cd $WORKDIR && TOKEN=$TOKEN npm ci && npm run build
 
 FROM node:20-alpine as production
 

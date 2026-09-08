@@ -1,0 +1,61 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "paperclip-pixels.fullname" . }}
+  namespace: {{ include "paperclip-pixels.namespace" . }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+  {{- $annotations := .Values.ingress.annotations }}
+  {{- if and .Values.ingress.certManager.enabled (not .Values.ingress.tlsSecretName) (not (and .Values.global.tls.ingressCert .Values.global.tls.ingressKey)) }}
+  {{- $annotations = merge (dict "cert-manager.io/cluster-issuer" .Values.ingress.certManager.clusterIssuer) $annotations }}
+  {{- end }}
+  {{- with $annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- end }}
+  {{- if or .Values.global.tls.ingressCert .Values.global.tls.ingressKey .Values.ingress.tlsSecretName .Values.ingress.certManager.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host }}
+      {{- if .Values.ingress.tlsSecretName }}
+      secretName: {{ .Values.ingress.tlsSecretName }}
+      {{- else }}
+      secretName: {{ include "paperclip-pixels.fullname" . }}-tls
+      {{- end }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "paperclip-pixels.fullname" . }}
+                port:
+                  number: 3100
+{{- if not .Values.ingress.tlsSecretName }}
+---
+# The TLS secret is rendered from operator-supplied `global.tls.ingressCert` /
+# `global.tls.ingressKey` (PEM). If both are empty the Ingress is created without
+# TLS (use cert-manager or an existing secret instead).
+{{- if and .Values.global.tls.ingressCert .Values.global.tls.ingressKey }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "paperclip-pixels.fullname" . }}-tls
+  namespace: {{ include "paperclip-pixels.namespace" . }}
+  labels:
+    {{- include "paperclip-pixels.labels" . | nindent 4 }}
+type: kubernetes.io/tls
+data:
+  tls.crt: {{ .Values.global.tls.ingressCert | b64enc }}
+  tls.key: {{ .Values.global.tls.ingressKey | b64enc }}
+{{- end }}
+{{- end }}
+{{- end }}

@@ -58,28 +58,32 @@ COPY paperclip/scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # ── Bridge plugin (vendored, installed at first boot by the entrypoint) ───────
-# The plugin worker + manifest are bundled by esbuild into self-contained
-# single files (scripts/build.mjs) that inline the core/pixel-agents-plugin
-# source (plain src/ subdirectories of this one package, not separate
-# packages), @paperclipai/plugin-sdk, @paperclipai/shared, and zod,
-# externalizing only node built-ins. The install location needs package.json +
-# dist/ plus assets/characters — the WS3 per-agent character catalog the
-# worker reads off disk at runtime (src/characters.ts resolves
+# Vendored from the independent Paperclip plugin package
+# `plugins/paperclip`, never the combined root build (removed in R3-M4). The
+# plugin worker + manifest are bundled by esbuild into self-contained single
+# files (plugins/paperclip/scripts/build.mjs) that inline the plugin's own
+# src/ source, paperclip-pixels-common, @paperclipai/plugin-sdk,
+# @paperclipai/shared, and zod, externalizing only node built-ins. The
+# install location needs the plugin package.json + its dist/ plus its
+# assets/characters (and assets/composition) — the WS3 per-agent character
+# catalog the worker reads off disk at runtime
+# (plugins/paperclip/src/characters.ts resolves
 # `<package root>/assets/characters`; a missing catalog fails closed and
 # breaks the visual-settings/appearance flow, observed live on the 2026-09-02
-# WS2-D redeploy). The bundle is built in the CI/release step before this
-# image is assembled (`npm run build` at the repo root); here we only copy
-# the already-built dist.
+# WS2-D redeploy). The plugin bundle is built in the CI/release step before
+# this image is assembled (`npm --prefix plugins/paperclip run build`); here
+# we only copy the already-built dist.
 COPY deploy/docker/build-plugin-bundle.sh /tmp/build-plugin-bundle.sh
-COPY package.json /tmp/src/paperclip-pixels/package.json
-COPY dist /tmp/src/paperclip-pixels/dist
-COPY assets /tmp/src/paperclip-pixels/assets
+COPY plugins/paperclip/package.json /tmp/src/paperclip-pixels-plugin/package.json
+COPY plugins/paperclip/dist /tmp/src/paperclip-pixels-plugin/dist
+COPY plugins/paperclip/assets /tmp/src/paperclip-pixels-plugin/assets
 
 RUN /tmp/build-plugin-bundle.sh /opt/paperclip-pixel-plugin \
     && rm -rf /tmp/src /tmp/build-plugin-bundle.sh
 
 COPY deploy/docker/bridge-stack-entrypoint.sh /usr/local/bin/bridge-stack-entrypoint.sh
-RUN chmod +x /usr/local/bin/bridge-stack-entrypoint.sh
+COPY deploy/scripts/init-company.sh /usr/local/bin/init-company.sh
+RUN chmod +x /usr/local/bin/bridge-stack-entrypoint.sh /usr/local/bin/init-company.sh
 
 # Resolve volume ownership for the non-root UID the upstream entrypoint drops
 # to. /paperclip arrives root-owned from a fresh PVC.

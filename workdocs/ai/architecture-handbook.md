@@ -1,14 +1,14 @@
-# Architecture Handbook — Paperclip ↔ Pixel Agents Bridge (`@decaf-ts/paperclip-pixels`)
+# Architecture Handbook — Paperclip ↔ Pixel Agents Bridge
 
 ## 00. Index
 
 | Field           | Value                                                                                                                                                                                        |
 |-----------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Project         | `@decaf-ts/paperclip-pixels` — Paperclip plugin + first-class Pixel Agents plugin module (embedding surface)                                                                                 |
-| Current version | 0.6.0 (`package.json`)                                                                                                                                                                       |
+| Project         | Two independent plugins joined by a neutral contract: `@decaf-ts/paperclip-pixels-plugin` (`plugins/paperclip`, Paperclip side) + `@decaf-ts/pixel-agents-paperclip-plugin` (`plugins/pixel-agents`, Pixel Agents side) over `paperclip-pixels-common` (`common`, schemas only); the repo root is the private npm workspace root wiring the three packages together |
+| Current version | 0.6.0 (both plugin packages; `paperclip-pixels-common` 0.1.0)                                                                                                                                |
 | Owning team     | with-ai engineering (CTO technical governance; delivery via Paperclip issues)                                                                                                                |
-| Last updated    | 2026-09-05                                                                                                                                                                                   |
-| Repository      | `paperclip-pixels` (this repo); Pixel Agents lives in the `pixel-agents/` submodule (fork of upstream `v1.4.1`, local tag `fork-baseline-v1.4.1`, governed by its `FORK.md`/`DIVERGENCE.md`) |
+| Last updated    | 2026-09-07                                                                                                                                                                                   |
+| Repository      | `paperclip-pixels` (this repo); Pixel Agents lives in the `pixel-agents/` submodule (fork of upstream `v1.4.1`, local tag `fork-baseline-v1.4.1`, remote `decaf-ts/as-pixels` branch `legacy`, governed by its `FORK.md`/`DIVERGENCE.md`) |
 
 This handbook describes the real architecture of the bridge as it exists right
 now. It is a living document: when the system changes, the affected section is
@@ -58,6 +58,19 @@ through the fork's first-class appearance API and assigns each agent a sheet,
 and a conversation-extract dialog pane (privacy-guarded, opt-in for fuller
 extracts) feeds the office from real Paperclip conversation activity.
 
+**Packaging (board Revision 3 target shape).** The bridge ships as two
+independent plugin packages joined by the neutral contract package
+`paperclip-pixels-common` (`./common` — DTOs, Zod validation, operation ids,
+error codes, `schemaVersion` compatibility rules, fixture builders; schemas
+only, imports no other package): `@decaf-ts/paperclip-pixels-plugin`
+(`./plugins/paperclip` — worker, UI, persistence, metrics, policy, and the
+outbound feed mapper/retry client) and
+`@decaf-ts/pixel-agents-paperclip-plugin` (`./plugins/pixel-agents` — plugin
+manifest/lifecycle, the authenticated feed endpoint, idempotent operation
+application, sources, reverse-action forwarding). The plugins depend only on
+`common`, never on each other. The repo root is a private npm workspace root
+wiring the three packages together — there is no combined package.
+
 Paperclip is authoritative for all business state (companies, agents,
 projects, issues, runs, approvals, budgets). Pixel Agents is authoritative for
 graphical representation (sprites, animation, layout). The bridge owns only
@@ -87,14 +100,15 @@ assignment map — never business truth, never rendering decisions.
 | Paperclip | The agent-orchestration host. Authoritative for companies, agents, issues, runs, approvals, budgets. Exposes the plugin SDK. |
 | Pixel Agents | The pixel-office visualization app (server + React/Canvas webview). Maintained as a **fork** in `pixel-agents/` (baseline upstream `v1.4.1`, local tag `fork-baseline-v1.4.1`; `FORK.md` no-upstream-PR policy, `DIVERGENCE.md` per-change divergence log). |
 | Plugin SDK | `@paperclipai/plugin-sdk` — the only supported surface into Paperclip: `ctx.state`, `ctx.data`, `ctx.actions`, `ctx.streams`, `ctx.events`, `ctx.config`, `ctx.http`, capabilities-gated. |
-| Worker | The plugin's server-side process (`src/worker.ts`), forked by the Paperclip host. Owns snapshot bootstrap, reduction, actions, data endpoints, appearance persistence and feed sync. |
-| Core | Pure domain package (`src/core/`): raw projections, temporal windows, behavioral proxies, feedback policy, character catalog/assignment domain. No React, no SDK, no filesystem. |
-| Relay | The worker-side push subsystem (`src/relay.ts`): one `PluginFeedMapper` + `PluginFeedHttpSink` per company, translating canonical bridge events into plugin feed operations and POSTing them to the embedding surface's `POST /api/plugin-feed`. |
-| Embedding surface | The module that owns the Pixel Agents server process (`src/pixel-agents-plugin/embedding.ts`, bundled to `dist/pixel-agents-embedding.cjs`), loaded through the fork's generic `--plugin` loader: registers the Paperclip plugin in-process through the WS2-A1 host API and serves the feed endpoint on its own sidecar listener (default `127.0.0.1:8081`, fail-closed bearer auth). |
+| `paperclip-pixels-common` | The neutral wire-contract package (`./common`, published as `paperclip-pixels-common`): feed DTOs, Zod validation, operation ids, error codes, `schemaVersion` compatibility rules, fixture builders, contract tests. Schemas only — no SDK, React, server, or filesystem imports; knows no other package. Both plugins depend on it and never on each other. |
+| Worker | The plugin's server-side process (`plugins/paperclip/src/worker.ts`), forked by the Paperclip host. Owns snapshot bootstrap, reduction, actions, data endpoints, appearance persistence and feed sync. |
+| Core | Pure domain package (`plugins/paperclip/src/core/`): raw projections, temporal windows, behavioral proxies, feedback policy, character catalog/assignment domain. No React, no SDK, no filesystem. |
+| Relay | The worker-side push subsystem (`plugins/paperclip/src/relay.ts`): one `PluginFeedMapper` + `PluginFeedHttpSink` per company, translating canonical bridge events into plugin feed operations and POSTing them to the embedding surface's `POST /api/plugin-feed`. |
+| Embedding surface | The module that owns the Pixel Agents server process (`plugins/pixel-agents/src/embedding.ts`, bundled by the package's `npm run build` to `plugins/pixel-agents/dist/pixel-agents-embedding.cjs`), loaded through the fork's generic `--plugin` loader: registers the Paperclip plugin in-process through the WS2-A1 host API and serves the feed endpoint on its own sidecar listener (default `127.0.0.1:8081`, fail-closed bearer auth). |
 | Plugin host | The fork's in-process plugin registry (`pixel-agents/server/src/plugins/pluginHost.ts`): schema-validated manifest, register/start/stop/unregister lifecycle, the sanctioned agent/team data source, owner-routed action invocation, the four contribution points, and — since WS5 — the capability registry with priority-based override arbitration (§5.6). |
 | Base plugin (`pixel-agents-base`) | The fork's built-in default plugin (`pixel-agents/server/src/plugins/basePlugin.ts`): the original Claude/hook runtime wrapped as delegation wrappers around the existing server modules (wrap, never relocate). Registered deterministically first inside `initPluginHost`, before any external `--plugin` module; its id is reserved, so no external module can register, re-register, or displace it. Baseline equivalence proves base-only output is unchanged. |
 | Capability arbitration | The plugin host's capability-resolution layer (§5.6): each capability id resolves to the highest-priority explicit override, else the base plugin; a same-priority clash is a hard `CapabilityResolutionError` — the host never guesses. An override with `fallback: 'base'` dispatches wrap-and-delegate: the host exposes the base implementation, and the override can return `CAPABILITY_DELEGATE_TO_BASE` to fall back mid-call. |
-| Plugin feed | The versioned wire contract (`src/pixel-agents-plugin/feed.ts`, `schemaVersion: 1`) between the worker's relay and the embedding surface: batches of `declareAgents` / `removeAgents` / `updateAgentStatus` / `updateAgentActivity` operations applied through the plugin's sanctioned agent/team source, plus since WS4 `assignAgentAppearance` (appearance source) and `dialogLines` (pre-redacted conversation extracts). No Claude-hook vocabulary exists on this wire. |
+| Plugin feed | The versioned wire contract (`common/src/feed.ts` in `paperclip-pixels-common`, `schemaVersion: 1`) between the worker's relay and the embedding surface: batches of `declareAgents` / `removeAgents` / `updateAgentStatus` / `updateAgentActivity` operations applied through the plugin's sanctioned agent/team source, plus since WS4 `assignAgentAppearance` (appearance source) and `dialogLines` (pre-redacted conversation extracts). No Claude-hook vocabulary exists on this wire. |
 | Character sheet | One `char_<N>.png` sprite sheet (112×96: 3 direction rows × 7 frames of 16×32) loadable by Pixel Agents' unchanged `decodeCharacterPng`. |
 | Catalog | `assets/characters/catalog.json` — the ordered character list (`id`, `name`, `palette`, `file`, `source`, `license` per entry). |
 | Palette index | Integer seat position in the frozen WS3 catalog contract (bundled 0..5, generated sheets 6..23). Historically the merged sprite-array position (palette = filename suffix = merged-array position); since WS4 it is the **seat/fallback** index — the rendered sprite comes from the first-class appearance assignment (§5.7), and the palette colors the seat path and the built-in fallback. |
@@ -106,7 +120,7 @@ assignment map — never business truth, never rendering decisions.
 | Privilege token | The Pixel Agents server startup token echoed in the `addExternalAssetDirectory` message; validated constant-time, fail-closed, before asset injection is accepted. |
 | Declared-agent cache | The embedding surface's in-memory `DeclaredAgentCache` (`feed-server.ts`) — the last roster the feed declared, so a plugin restart re-declares every agent. Never a source of truth; the worker's next reconcile re-declares regardless (declare is an idempotent upsert). |
 | New-work invariant | Only company/leadership intake may originate new work; individual-agent replies fail closed and route to intake. Structural (action path), never classifier-based. |
-| Bridge contract | The versioned payload shapes (`schemaVersion`) exchanged worker↔UI (`src/ui/bridge-contract.ts`) and worker↔embedding surface (`src/pixel-agents-plugin/feed.ts`). |
+| Bridge contract | The versioned payload shapes (`schemaVersion`) exchanged worker↔UI (`plugins/paperclip/src/ui/bridge-contract.ts`) and worker↔embedding surface (`common/src/feed.ts`). |
 | Appearance source | The fork's first-class per-agent appearance API (WS4-A): `ctx.appearance.declareCharacterCatalog` (ordered sheet catalog) + `assignAgentAppearance` (integer index or null revert), manifest-gated by `sources.appearance`, privilege-gated by the appearance asset gate. The Agent-Pixels *pattern* (ordered catalog + integer index + per-agent assignment map), never its code or sprites. |
 | `pluginCharactersLoaded` | Server broadcast carrying one plugin's resolved sheet catalog in declaration order. Per-plugin **snapshot** semantics: each message replaces the plugin's whole registry entry; `sheets: []` retracts it (plugin stop); sent once per `webviewReady` handshake **before** `existingAgents`. |
 | `agentAppearance` | Server broadcast assigning (integer `sheetIndex` + `pluginId`) or reverting (`null`) one agent's plugin appearance; reconnects replay the current value via `existingAgents.agentMeta.pluginAppearance`. |
@@ -141,7 +155,7 @@ graph TD
 
 - **Paperclip host** (authoritative): the worker consumes an authoritative
   startup snapshot and subscribes to 18 agent/issue/approval/budget/cost
-  event types (`src/constants.ts`); all domain access goes through the public
+  event types (`plugins/paperclip/src/constants.ts`); all domain access goes through the public
   SDK behind the manifest's least-privilege capabilities. Direction:
   read-heavy inbound; the only writes are comments via the two intake/feedback
   actions (plus the reply forwarder's invocations of those same actions).
@@ -210,12 +224,12 @@ Guiding principles:
    paths and capability gates, not by classifiers or convention.
 
 Recurring structural patterns: SDK-shaped scope helpers
-(company/instance/agent) in `src/persistence.ts`; Zod-validated action
+(company/instance/agent) in `plugins/paperclip/src/persistence.ts`; Zod-validated action
 payloads with host-authenticated actor and server-side company-scope
 resolution (`resolveCompanyScope`); register-handle-deps wiring in the worker
 (`registerActions`, `ctx.data.register`, `ctx.streams.open`); pure
-domain + thin IO adapter split (`src/core/domain/characters.ts` vs
-`src/characters.ts`).
+domain + thin IO adapter split (`plugins/paperclip/src/core/domain/characters.ts` vs
+`plugins/paperclip/src/characters.ts`).
 
 ## 05. Logical Architecture
 
@@ -256,18 +270,18 @@ graph TD
     POLL --> RELAY
 ```
 
-### 5.1 Core domain (`src/core/`)
+### 5.1 Core domain (`plugins/paperclip/src/core/`)
 
 Pure TypeScript, no SDK/React/filesystem imports. Owns the raw projection
 (exact Paperclip IDs), `WindowedMetrics` over 5m/30m/2h/8h/24h windows,
 `AgentBehaviorVector` proxies with `value/confidence/basis`, the feedback
 classifier and new-work action policy, the catalog/assignment domain
-(`src/core/domain/characters.ts`), and — since WS4 — the conversation-extract
-shaping domain (`src/core/domain/dialog.ts`: always-on secret redaction,
+(`plugins/paperclip/src/core/domain/characters.ts`), and — since WS4 — the conversation-extract
+shaping domain (`plugins/paperclip/src/core/domain/dialog.ts`: always-on secret redaction,
 mode-dependent extract truncation, the shared dialog-line wire clamp).
 Deterministic by construction so everything is unit-testable.
 
-### 5.2 Worker (`src/worker.ts`, `src/actions.ts`, `src/persistence.ts`, `src/characters.ts`)
+### 5.2 Worker (`plugins/paperclip/src/worker.ts`, `actions.ts`, `persistence.ts`, `characters.ts`)
 
 Forked child process of the host, one per plugin instance, multi-company.
 Bootstraps each company from an authoritative snapshot, reduces the event
@@ -276,7 +290,7 @@ stream, serves `ctx.data` endpoints, registers `ctx.actions`, emits
 the relay. Operator config arrives per company through `ctx.config`
 (`onConfigChanged` reconfigures the relay and re-pushes appearances).
 
-### 5.3 Plugin UI (`src/ui/`)
+### 5.3 Plugin UI (`plugins/paperclip/src/ui/`)
 
 React 19 components registered into Paperclip's UI slots. All data flows
 through `use-bridge` (snapshot + stream deltas) and `usePluginAction`; the UI
@@ -294,7 +308,7 @@ inventory:
 `Pixel Office` row, pixel-identical to the host's own `SidebarNavItem` rows.
 The plugin SDK does not export that host component, so its class strings are
 replicated verbatim (`ROW_BASE`/`ROW_ACTIVE`/`ROW_INACTIVE` in
-`src/ui/PixelOfficeSidebar.tsx` — same pill geometry, typography, hover and
+`plugins/paperclip/src/ui/PixelOfficeSidebar.tsx` — same pill geometry, typography, hover and
 active highlight), headed by a plugin-owned 16px inline-SVG pixel-grid icon
 (licensing-safe, no third-party sprites). Active state derives from
 `useHostLocation()` with the host NavLink's own prefix-match semantics
@@ -321,12 +335,12 @@ Pixel Office page — never in settings. The former read-only custom "Pixel
 Office settings" block (`PixelOfficeSettingsPage`, which suppressed the auto
 form) is deleted along with its UI-bundle export.
 
-### 5.4 Embedding surface + feed push (`src/pixel-agents-plugin/`, `src/relay.ts`)
+### 5.4 Embedding surface + feed push (`plugins/pixel-agents/src/`, `plugins/paperclip/src/relay.ts`)
 
 The Pixel-Agents side of the bridge is a first-class plugin in two halves
 (WS2-C):
 
-- **Push side (in the Paperclip worker):** `src/relay.ts` owns one
+- **Push side (in the Paperclip worker):** `plugins/paperclip/src/relay.ts` owns one
   `PluginFeedMapper` + `PluginFeedHttpSink` per company. The mapper is a
   stateful translator from canonical `BridgeInputEvent`s, authoritative
   snapshots, and the WS3 appearance map into plugin feed operations — since
@@ -362,8 +376,9 @@ The Pixel-Agents side of the bridge is a first-class plugin in two halves
   so a bearer token is never re-sent to a cross-origin redirect
   destination. Loopback hosts keep plain `http:` for local dev.
 - **Embedding side (in the Pixel Agents server process):**
-  `src/pixel-agents-plugin/embedding.ts` (bundled to
-  `dist/pixel-agents-embedding.cjs`, loaded by the fork's `--plugin` loader)
+  `plugins/pixel-agents/src/embedding.ts` (bundled by the package's
+  `npm run build` to `plugins/pixel-agents/dist/pixel-agents-embedding.cjs`,
+  loaded by the fork's `--plugin` loader)
   registers the plugin through the real WS2-A1 host API, mounts the
   framework-agnostic feed handler on its own sidecar HTTP listener (default
   `127.0.0.1:8081`), and wires click-menu replies into the plugin's existing
@@ -411,17 +426,17 @@ output for identical input; same 112×96 geometry). Every entry records its
 `source` (bundled vs generated-from-which-base) and `license: CC0-1.0`, so
 provenance is auditable per sheet. The catalog is validated fail-closed by
 `parseCharacterCatalog` (unique ids, unique integer palette indexes,
-non-empty) and loaded once per worker lifetime (`src/characters.ts`), with
+non-empty) and loaded once per worker lifetime (`plugins/paperclip/src/characters.ts`; the catalog ships both at the repo root `assets/characters/` and inside the plugin package `plugins/paperclip/assets/characters/`), with
 `PIXEL_CHARACTER_CATALOG` as an operator override for odd installs. The
 Agent-Pixels *pattern* (ordered catalog + integer index + per-agent map) is
 adopted; its unlicensed code and sprites are not.
 
 **b) Frozen per-agent assignment contract.** 
 `agentId -> { characterId: string, palette: number, hueShift: number (0–360), updatedAt: string }`
-— pure domain in `src/core/domain/characters.ts`, exported via
-`src/core/index.ts`, mirrored in `src/ui/bridge-contract.ts`, consumed
+— pure domain in `plugins/paperclip/src/core/domain/characters.ts`, exported via
+`plugins/paperclip/src/core/index.ts`, mirrored in `plugins/paperclip/src/ui/bridge-contract.ts`, consumed
 unedited by the picker. Assignments persist through the plugin SDK's first
-`scopeKind: "agent"` usage: `src/persistence.ts` stores each agent's record
+`scopeKind: "agent"` usage: `plugins/paperclip/src/persistence.ts` stores each agent's record
 under the `characters` namespace / `agent-character` state key (scopeId =
 agent id), alongside the pre-existing company- and instance-scope bridge
 state. The map round-trips through `ctx.state` and survives plugin restarts;
@@ -472,7 +487,7 @@ palette rendering. The catalog's `palette` field stays as the frozen WS3
 seat/fallback index (it still colors the seat path and the fallback).
 
 **e) Per-agent picker UI.** `AgentCharacterPicker`
-(`src/ui/components/character-picker.tsx`) on the plugin's Pixel Office page:
+(`plugins/paperclip/src/ui/components/character-picker.tsx`) on the plugin's Pixel Office page:
 per-agent option rows (assigned character + hue summary vs "not yet
 assigned"), visual tiles over all 24 sheets with a live `hue-rotate` preview,
 per-agent hueShift exposure via a range slider plus an exact-number input —
@@ -519,11 +534,11 @@ bridge — formerly an impersonator of Claude hooks, synthetic team-metadata
 transcripts, and `saveAgentSeats` seat-driving — registers through the real
 host API (WS2-C) and is loaded in-process by the generic `--plugin` loader
 (WS2-D). The WS1 foundation (provider registry, metrics channel, asset-dir
-privilege gate) and the WS2 slice (plugin host, contribution points, loader)
-are committed in the fork at `ade5601`; the WS4 appearance work (appearance
-source + asset gate, webview consumption) sits uncommitted atop it pending
-the workstream's single commit; everything below is verified against that
-source.
+privilege gate), the WS2 slice (plugin host, contribution points, loader),
+the WS4 appearance work, the Revision 2 capability layer, and the Revision 3
+fork-boundary repair (fork-local guard fixtures) are all committed in the
+fork (tag chain `fork-baseline-v1.4.1-4-g8ca80d3`, remote `decaf-ts/as-pixels`
+branch `legacy`); everything below is verified against that source.
 Specification detail and per-change delivery facts live in the domain record
 `workdocs/ai/project/specifications/PAPERCLIP_PIXELS_2.md` and the fork's
 `DIVERGENCE.md` — referenced here, never restated.
@@ -712,8 +727,10 @@ to fall back mid-call (returning the symbol in any other mode is refused).
 The Paperclip bridge (below) is the first override plugin; base-only vs
 plugin-loaded behavior is pinned by the fork's guard suites
 (`server/__tests__/guards/`: default-equivalence, override-isolation,
-fallback-resolution, security fail-closed, transport-compatibility — all
-importing the real bridge manifest cross-repo) and the arbitration suite
+fallback-resolution, security fail-closed, transport-compatibility — since the
+Revision 3 fork-boundary repair, self-contained through fork-local
+`paperclipPluginFixtures.ts` mirrors rather than cross-repo imports) and the
+arbitration suite
 (`pluginCapabilityArbitration.test.ts`, all four dispatch modes).
 
 ```mermaid
@@ -805,7 +822,7 @@ the host, all fail-closed, zero per-feature fork code for a new contributor:
 
 **Bridge as the first first-class plugin (WS2-C, extended WS4-C).** The
 Paperclip bridge is
-plugin id `paperclip` in the host registry (`src/pixel-agents-plugin/`): a
+plugin id `paperclip` in the host registry (`plugins/pixel-agents/src/`): a
 manifest declaring the agent/team source **and the appearance source**
 (`sources: { agents: true, appearance: true }`), the two reply actions
 (`reply-to-feedback`, `send-message`), two contributed messages (the
@@ -819,7 +836,7 @@ the declarations), and — since WS4-C — the `dialog-pane` shell-panel widget
   contribution-surface capabilities (agents-source, appearance-source,
   label-policy, menu, widgets, action-routing) as overrides of
   `pixel-agents-base` with `fallback: 'base'` and priorities 0–5
-  (`PAPERCLIP_OVERRIDE_CAPABILITIES` in `src/pixel-agents-plugin/manifest.ts`)
+  (`PAPERCLIP_OVERRIDE_CAPABILITIES` in `plugins/pixel-agents/src/manifest.ts`)
   — so the bridge layers on the base plugin rather than replacing it, and
   every runtime capability (the legacy Claude/hook behaviors) deliberately
   resolves to the base.
@@ -903,7 +920,7 @@ driving a fixture plugin through the real host appearance source).
 
 The bridge adopts the fork's WS4-A appearance API so a Paperclip agent's
 rendered sprite is the plugin's own sheet, not a bundled palette entry. The
-plugin-side pieces (`src/pixel-agents-plugin/appearance.ts`):
+plugin-side pieces (`plugins/pixel-agents/src/appearance.ts`):
 
 - **Catalog declaration.** `loadPluginCharacterSheets()` loads the committed
   WS3 catalog (`assets/characters/`, CC0) as WS4-A sheet declarations —
@@ -1011,7 +1028,7 @@ it only re-emits what arrived, it composes nothing.
 **Guardrails (CEO decision 2; PAPERCLIP_PIXELS-1 NFR-7).** Whatever the
 pane shows, the raw sensitive prompt never leaves this plugin unredacted —
 both layers below run plugin-side, in the Paperclip worker, before anything
-rides the wire (pure domain `src/core/domain/dialog.ts`):
+rides the wire (pure domain `plugins/paperclip/src/core/domain/dialog.ts`):
 
 1. **Secret redaction — always on, both modes.** Bearer/Basic credential
    forms, credential assignments (`api_key=…`, `"db_password": …`), and long
@@ -1026,7 +1043,7 @@ rides the wire (pure domain `src/core/domain/dialog.ts`):
    shared 600-char wire cap.
 
 **Where the toggle is parsed and enforced.** Parsed strict-true in
-`parseRelayConfig` (`src/relay.ts`): only an explicit `=== true` opts in —
+`parseRelayConfig` (`plugins/paperclip/src/relay.ts`): only an explicit `=== true` opts in —
 missing, absent, false, or wrong-typed values all mean OFF, and the worker's
 config validation rejects non-boolean values outright. The parsed value is
 carried into the company's `PluginFeedMapper` as `dialogPrivacyOptIn` at
@@ -1055,8 +1072,9 @@ relay/worker config plumbing).
 
 Key topology fact: the bridge's Pixel-Agents side runs **in-process** in the
 Pixel Agents container/pod — `Dockerfile.pixel-agents` vendors
-`dist/pixel-agents-embedding.cjs` (built from `src/pixel-agents-plugin/embedding.ts`
-by `npm run build` at the repo root, before any image is built) and starts
+`dist/pixel-agents-embedding.cjs` (built from `plugins/pixel-agents/src/embedding.ts`
+by `npm run build` in `plugins/pixel-agents`, before any image
+is built) and starts
 the CLI with `--plugin /opt/paperclip-pixel-embedding/pixel-agents-embedding.cjs`;
 the feed listener (`:8081`) is container-to-container and not published to
 the host. Deployments that want the plugin's 24-sheet catalog rendered (not
@@ -1164,8 +1182,8 @@ Storage strategy — one authoritative home per datum:
 | Business state (companies, agents, issues, runs, approvals, costs) | Paperclip DB | Untouched by the bridge; no schema changes |
 | Derived bridge state (compact buckets, last-reconciled-at, leadership agent id, schema version) | plugin `ctx.state`, `bridge` namespace, company/instance scopes | Survives restarts; repaired by periodic reconciliation |
 | Per-agent character assignments | plugin `ctx.state`, `characters` namespace, `agent-character` key, **agent scope** (scopeId = agent id) | Single source of truth; first SDK `scopeKind: "agent"` usage; frozen contract shape |
-| Character catalog + sheets | Static package data (`assets/characters/`, shipped in the npm package `files` and vendored by `deploy/docker/build-plugin-bundle.sh` into the host image) | Validated fail-closed at load; per-entry source + license provenance |
-| Declared-agent roster cache | Embedding surface, in-memory `DeclaredAgentCache` (`src/pixel-agents-plugin/feed-server.ts`) | Backs the plugin's on-start re-declaration; never authoritative — the worker's next reconcile re-declares everyone (declare is an idempotent upsert) |
+| Character catalog + sheets | Static package data (`assets/characters/` at the repo root and mirrored in `plugins/paperclip/assets/characters/`, shipped in the plugin package's `files` and vendored by `deploy/docker/build-plugin-bundle.sh` into the host image) | Validated fail-closed at load; per-entry source + license provenance |
+| Declared-agent roster cache | Embedding surface, in-memory `DeclaredAgentCache` (`plugins/pixel-agents/src/feed-server.ts`) | Backs the plugin's on-start re-declaration; never authoritative — the worker's next reconcile re-declares everyone (declare is an idempotent upsert) |
 | Plugin-declared sheet catalogs | Fork plugin host (server memory, resolved + decoded) + webview per-plugin sheet store (snapshot mirror) | Decoded through the appearance asset gate (grants = operator external asset directories); snapshot semantics; retracted when the plugin stops, re-declared on start (§5.7) |
 | Per-agent plugin appearance assignment | Fork server, `AgentState.pluginAppearance` (in-memory, not persisted — plugin agents re-declare on start) | Server-evaluated index into the owning plugin's current catalog; replayed on reconnect via `existingAgents.agentMeta.pluginAppearance`; unset = built-in palette rendering |
 | Dialog-pane lines | Ephemeral: composed in the worker's feed mapper, re-emitted by the embedding surface, rendered by the shell-panel widget | Pre-redacted/truncated plugin-side per the privacy toggle (§5.8); never persisted in any store |
@@ -1454,7 +1472,7 @@ Agents wire by default.
 | **Always-redacted extracts, truncation tiered by a per-company opt-in (default OFF) — CEO decision 2** | Chosen |
 
 #### Decision
-Two plugin-side layers in pure domain code (`src/core/domain/dialog.ts`),
+Two plugin-side layers in pure domain code (`plugins/paperclip/src/core/domain/dialog.ts`),
 both applied before anything rides the wire: (1) always-on secret redaction
 (bearer/basic/assignment/credential-shaped-run patterns) in **both** modes —
 opt-in never disables it; (2) mode-dependent truncation — toggle OFF ships a
@@ -1610,8 +1628,8 @@ appearance pipeline (5.7), the dialog-pane feed (5.8), the feed push (5.4),
 and the snapshot → reduce → stream → UI pipeline (IF001–IF004) are the
 sequences worth reading before touching the bridge; all are diagrammed
 above.
-Wire-level payload shapes are frozen in `src/ui/bridge-contract.ts` (UI),
-`src/pixel-agents-plugin/feed.ts` (feed), and the fork's
+Wire-level payload shapes are frozen in `plugins/paperclip/src/ui/bridge-contract.ts` (UI),
+`common/src/feed.ts` (feed), and the fork's
 `core/asyncapi.yaml` (plugin host), each versioned via `schemaVersion` —
 breaking changes increment the schema version rather than mutating shapes in
 place.

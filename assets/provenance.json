@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-07T00:00:00.000Z",
+  "assets": {
+    "characters/catalog.json": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "f00b0cb9db832ce0c63beed280ddcc58d1c0b2a1c596a4a7ce815a770981c3cf"
+    },
+    "characters/char_0.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "9ece93c20765abb876e3dacfe01e0cd1801323eff41c1779be0c47369886c09a"
+    },
+    "characters/char_1.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "f935f033726b06f73dbbe590db5a23cfb20d2d02c1329fd5d67d57a262e9b05e"
+    },
+    "characters/char_10.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "f7f3c4657de1d04c408ca7b1e1153b47cf4f9141d354e44aaaf1b7e743f6d440"
+    },
+    "characters/char_11.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "b094834e17fc23707fca7667efe42809827aed5ca4d4262716092e971798aa1f"
+    },
+    "characters/char_12.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "9328c7b9d39ac7b4a59728d721c9d1495c03fbac0e026bf95ae91b1fb71c3b03"
+    },
+    "characters/char_13.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "a1dff4fb7e265abefde3d86efaaf27224b3dff1927f055a6a584988fde74e619"
+    },
+    "characters/char_14.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "46f0309a82988cd4a9fc3628b30b0a393fccc3dff95d29910512d1a1e980fb23"
+    },
+    "characters/char_15.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "a88d82f9721846ede8ce58a258bf4e900232efb0643e1f073a5c3a54bfeccd4c"
+    },
+    "characters/char_16.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "02db19c2542538298486cf5f7524bc2f65caa6c0442cc418b1d9ccf70e25f0ec"
+    },
+    "characters/char_17.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "6b10af519898c6440979b93aa4289233a64ca4dda769db0702d55b7c4ed106df"
+    },
+    "characters/char_18.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "2b9d10f3fda45259f05e702ccbebb6a248ddd54ebf3a23da4fa6af0aea4898b9"
+    },
+    "characters/char_19.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "0cb5d3caa9949b36c77a0401d936cac664e516e8321b20b94291dd4aa0be507b"
+    },
+    "characters/char_2.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "9f63ee7be4577e1d60de3b64d198d387d1c09794bed3a608958e77c7b955575d"
+    },
+    "characters/char_20.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "80e7adbcf595ef117d88ba10d283d7b82166a02eee627103187c70eaf92201b4"
+    },
+    "characters/char_21.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "1de0933a21873a0532d41a1b6b2b744b5cb5aa36c5e2ee7bfbc04e8282d6662f"
+    },
+    "characters/char_22.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "c09172d11894582ef1143a0c62563be3d476f1b3b0a942afc1092a40659af664"
+    },
+    "characters/char_23.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "1b1ef3ec70204531dc5065c1e451ab19e0cc745d9b990be1314c262aaf592cbe"
+    },
+    "characters/char_3.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "ee5ebe0847471e4834e367f8a4108e6caf2f402ed506bbfebd90c64a43a79348"
+    },
+    "characters/char_4.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "fcf72626bbee3045d0f3e10bb87a41dab19a331d1affdfc53b483567f9c083aa"
+    },
+    "characters/char_5.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "4b2c639a50e089a4e3b87be440ffb52b5c5c8cfd6473a386f325b25f99db7381"
+    },
+    "characters/char_6.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "1ee6f00eae59ebf3d084e7fa5d12cba1f091619d5e16ca0743840b04502be01e"
+    },
+    "characters/char_7.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "cba19729a07bbe3989f840d013db141200184201c3e4f306cc402fd74e77cf65"
+    },
+    "characters/char_8.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "64814d1ab8000de76a68a6fd283c13ad6303dfc6274b70bd238015b1429473ad"
+    },
+    "characters/char_9.png": {
+      "source": "Pixel Agents built-in / MetroCity-derived (JIK-A-4, Metro City topdown character pack)",
+      "license": "CC0-1.0",
+      "sha256": "6f8c23b6a4666e6a00ec1507ec41907ccbc449b7cd5e95aff5d01e19ad67f3cf"
+    },
+    "office/default-layout-1.json": {
+      "source": "decaf-ts/as-pixels fork @ 8ca80d3 (Agent-Pixels-derived); office-layout config data",
+      "license": "MIT (pixel-agents fork LICENSE, Copyright 2026 Pablo De Lucca)",
+      "sha256": "ac4a7ea4bb9ddaedead465dd2a9cd0761dc46361f19b1a609cfbf5cd3e7ff616"
+    }
+  },
+  "excluded": [
+    {
+      "patterns": [
+        "floors/*",
+        "walls/*",
+        "furniture/*",
+        "carpets/*"
+      ],
+      "source": "Agent-Pixels office tileset (16x16 style) / Office Interior Tileset (16x16) by Donarg",
+      "reason": "Office Interior Tileset (16x16) by Donarg license forbids redistribution (\"You CAN NOT resell and distribute this tileset to others (even if the tileset is edited)\") and forbids AI/ML training; no clear permissive license recorded in the fork. Excluded per the licensing gate; do not port. The ported office/default-layout-1.json references these tile indices and is recorded separately.",
+      "license": "custom-restrictive"
+    }
+  ]
+}

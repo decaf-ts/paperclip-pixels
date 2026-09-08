@@ -1,0 +1,22 @@
+name: "Snyk"
+
+# Thin caller of the decaf-ts reusable Snyk analysis action
+# (decaf-ts/reusable-actions). Vulnerability reporting only — never gates a
+# release. The board's SNYK_TOKEN drops in later via secrets (no rewrite).
+
+on:
+  push:
+    branches: [master, main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+jobs:
+  security:
+    uses: decaf-ts/reusable-actions/.github/workflows/snyk-analysis.yml@master
+    secrets: inherit

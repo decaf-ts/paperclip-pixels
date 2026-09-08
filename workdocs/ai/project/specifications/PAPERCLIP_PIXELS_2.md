@@ -16,7 +16,7 @@ jiraIssueId: "none"
 jiraUpdatedAt: "none"
 jiraSyncState: "disabled"
 createdAt: "2026-09-01T03:22:52Z"
-updatedAt: "2026-09-05T17:35:00Z"
+updatedAt: "2026-09-06T22:30:00Z"
 ---
 
 # PAPERCLIP_PIXELS-2: Pixel Agents Plugin Architecture (Fork) + Paperclip Plugin Character/Settings/Assets
@@ -26,12 +26,12 @@ updatedAt: "2026-09-05T17:35:00Z"
 | Field | Value |
 | --- | --- |
 | Task type | `specification` |
-| Status | blocked — closing (Revision 2 recorded 2026-09-05 via the amendment milestone [SAA-715](/SAA/issues/SAA-715); the implementation re-plan [SAA-716](/SAA/issues/SAA-716) closed `done` and its Phase 1–4 implementation tickets [SAA-717](/SAA/issues/SAA-717)–[SAA-720](/SAA/issues/SAA-720) are all closed `done`; the Phase 5 record content is recorded through [SAA-721](/SAA/issues/SAA-721); the WS5 final gate [SAA-457](/SAA/issues/SAA-457) closed `done` 2026-09-05 with its commit gate executed (see Snapshot "Blocked by"); every direct child of [SAA-447](/SAA/issues/SAA-447) is `done`; the completion documentation milestone [SAA-770](/SAA/issues/SAA-770) recorded this revision, after which the parent owner (CEO) verifies and closes the domain root) |
+| Status | `blocked` — remediation (observed 2026-09-06T22:25:00Z): the board's Production Readiness Audit (2026-09-06, comment `7b88ba5a-876d-4136-a232-f2ef98b8eefa`) ruled the project **not production ready**, put the close on hold, and — on releasing the hold ("Start remediation now", 2026-09-06) — directed remediation recorded as **Revision 3** below via this milestone [SAA-872](/SAA/issues/SAA-872); the CTO remediation re-plan [SAA-873](/SAA/issues/SAA-873) (fork boundary, release CI, docs, UX completion, character composition, production deployment) is blocked on this milestone. The 2026-09-05 closing state (all direct children `done` incl. WS5 [SAA-457](/SAA/issues/SAA-457) and the Revision 2 arc [SAA-715](/SAA/issues/SAA-715)–[SAA-721](/SAA/issues/SAA-721)) remains delivery history |
 | Priority | medium |
 | Assignee | CEO |
 | Parent | none (domain root) |
-| Blocked by | [SAA-770](/SAA/issues/SAA-770) (the completion documentation milestone, `in_progress` — publishes this revision) — observed 2026-09-05T17:30:00Z; every other blocker closed `done`: the WS0–WS5 workstream parents SAA-454/455/456/458/459 including WS5 [SAA-457](/SAA/issues/SAA-457) (final gate, closed with the [SAA-694](/SAA/issues/SAA-694)-authored Playwright visual-validation specs green against the deployed stack, the stale `tests/e2e/` copy retired, and gate reviews code docs [SAA-758](/SAA/issues/SAA-758)/security [SAA-759](/SAA/issues/SAA-759) PASS/QA sign-off [SAA-760](/SAA/issues/SAA-760) PASS/tech docs [SAA-761](/SAA/issues/SAA-761)), the initialize milestone [SAA-449](/SAA/issues/SAA-449), the CTO gate [SAA-448](/SAA/issues/SAA-448), the amendment [SAA-715](/SAA/issues/SAA-715), the re-plan [SAA-716](/SAA/issues/SAA-716), and the Phase 1–4 tickets [SAA-717](/SAA/issues/SAA-717)–[SAA-720](/SAA/issues/SAA-720). Delivery commits on record: fork (`pixel-agents/`, `main`) `c634c15` → `ade5601` → `a063063` → `8ca80d3` (the WS5 gate commit — capability arbitration, base plugin, guard suites, standalone visual-validation e2e; 22 files, +3818/−15; against the approved fingerprint package, gate reviews [SAA-758](/SAA/issues/SAA-758)–[SAA-761](/SAA/issues/SAA-761), approval card accepted 2026-09-05); plugin repo (`master`) `6ac209a` (WS3 per-agent character system) → `bea90da` (WS0 plugin quick wins) → `f92c058` → `4489e28` → `c47aefa` → `f6929c1` (the WS5 gate commit — visual-validation + hardening e2e coverage with updated core and fork submodules; 29 files, +3544/−153; exact ref from the gate's correction comment: `f6929c161b5125442f6f64f6fe02309e188e715f`). Both commits were verified byte-exact against the approved fingerprints before execution and both trees are clean afterward (only pre-declared excluded untracked paths remain: `allure-results/`, `.claude/settings.local.json`, future-spec draft `PAPERCLIP_PIXELS_3.md`); the `pixel-agents` submodule pointer update is included in `f6929c1`; **neither commit is pushed** (push requires a separate explicit request) — documentation work product edits to this record and `plan.md` remain uncommitted and await the domain root's single user-approved commit per `git-ops` |
-| Observed at | 2026-09-05T17:30:00Z |
+| Blocked by | [SAA-873](/SAA/issues/SAA-873) (CTO remediation re-plan, `blocked` on this record milestone [SAA-872](/SAA/issues/SAA-872)) and [SAA-872](/SAA/issues/SAA-872) (the Production Readiness record milestone, `in_progress`) — observed 2026-09-06T22:25:00Z. All prior blockers are closed `done`: the WS0–WS5 workstream parents SAA-454/455/456/458/459 incl. WS5 [SAA-457](/SAA/issues/SAA-457) (final gate, gate commits executed), the initialize milestone [SAA-449](/SAA/issues/SAA-449), the CTO gate [SAA-448](/SAA/issues/SAA-448), the amendment [SAA-715](/SAA/issues/SAA-715), the re-plan [SAA-716](/SAA/issues/SAA-716), Phases 1–4 [SAA-717](/SAA/issues/SAA-717)–[SAA-720](/SAA/issues/SAA-720), the Phase 5 record [SAA-721](/SAA/issues/SAA-721), and the completion milestone [SAA-770](/SAA/issues/SAA-770). Delivery commit chains on record (unpushed): fork (`pixel-agents/`, `main`) `c634c15` → `ade5601` → `a063063` → `8ca80d3`; plugin repo (`master`) `6ac209a` → `bea90da` → `f92c058` → `4489e28` → `c47aefa` → `f6929c1`; both trees clean afterward |
+| Observed at | 2026-09-06T22:25:00Z |
 
 Paperclip is authoritative for all lifecycle fields in this snapshot. The product
 scope is board-authored and locked, living verbatim in the parent issue
@@ -81,7 +81,10 @@ bridge-port `completion` milestone [SAA-544](/SAA/issues/SAA-544) (delivery
   **Revision 2 Phase 5** below — and, most recently, the `completion`
   documentation milestone [SAA-770](/SAA/issues/SAA-770), which recorded the
   final snapshot, the four CEO-resolved callout fold-in checks, and the
-  closing Result entry below.
+  closing Result entry below. — and, most recently, the Production Readiness record
+  milestone [SAA-872](/SAA/issues/SAA-872), which recorded the board's
+  2026-09-06 Production Readiness Audit (verdict: **not production ready**)
+  and its remediation directive as **Revision 3** below.
 
 ## Revision 2 — Board Directive: Base-Plugin / Host / Paperclip-Override Architecture (2026-09-05)
 
@@ -750,6 +753,379 @@ its visual-validation specs green on the deployed stack, and both CTO/CEO-gate
 commits were executed (fork `8ca80d3`, plugin repo `f6929c1` — unpushed, clean
 trees); the checklist above is left unchecked because the §R2.7 formal check
 is the parent owner's act at domain-root close, not an executor claim.
+
+## Revision 3 — Board Production Readiness Audit: Remediation Directive (2026-09-06)
+
+Amendment recorded through the milestone [SAA-872](/SAA/issues/SAA-872).
+Provenance: board Production Readiness Audit comment on the parent
+[SAA-447](/SAA/issues/SAA-447) (comment
+`7b88ba5a-876d-4136-a232-f2ef98b8eefa`, posted 2026-09-06, board-authored)
+instructing: "needs improvements. follow the guide bellow. put the task on hold
+until i tell you to start it;". The hold was released on 2026-09-06 when the
+board accepted the go-signal confirmation ("Start remediation now"), and this
+milestone records the audit as Revision 3. The board's audit is recorded
+faithfully below: readiness verdict, findings, target architecture, migration
+plan, and remediation sequence are reproduced in the board's wording — nothing
+reinterpreted, softened, or omitted, including the board's inline amendments
+(marked `=>` or appended in the source) and original spellings. (The source
+comment's fenced block carried flattened line breaks; the rendering below
+restores line and list breaks only — no word is changed, reordered, or omitted,
+and the audit's own title line is subsumed by this section's heading. Verified
+against the source comment by read-back; see Verification Evidence. A
+repository-local rendering of the same audit text exists uncommitted at
+`workdocs/ai/project/production-readiness-audit-2026-09-06.md` and is
+whitespace-normalized identical to the source.)
+
+Naming note (the board's own words, both preserved in place below): the
+recommended target shape provisionally labels the shared contract
+`@decaf-ts/paperclip-pixels-contract`, while the board's migration plan step 1
+states the restructured `./common` "will be your `paperclip-pixels-common`
+(not contracts)" — the migration-plan wording is the board's packaging
+amendment for the same neutral contract package (common knows no other
+package; the plugins know only common, never each other).
+
+### Scope and guardrails
+
+This audit covers the outer Paperclip Pixels repository, its `pixel-agents/`
+submodule fork, and the checked-in Docker/Kubernetes reference deployment.
+`paperclip/` was inspected only as a plugin-SDK reference and was not
+modified. No tracked files were modified during the audit.
+
+### Verification performed
+
+The outer package needs its documented post-install linker when working from
+this checkout because it links the Paperclip SDK reference packages into local
+`node_modules`. After that linker ran:
+
+| Check | Result |
+| --- | --- |
+| `npm run typecheck` | Passed |
+| `npm run lint` | Passed with three obsolete ESLint-disable warnings |
+| `npm run test:all` | Passed: 16 domain suites / 150 tests, 22 worker suites / 495 tests, 11 UI suites / 116 tests |
+| `npm run build` | Passed, with an esbuild warning about `import.meta` in CJS output |
+| `npm pack --dry-run` | Passed; package contains 80 files, 989.7 kB compressed / 5.4 MB unpacked |
+| `pixel-agents npm run check-types` | **Failed** |
+| `pixel-agents` webview tests | Passed: 28 suites / 321 tests |
+
+Outer UI tests emit React `act(...)` warnings. The intentional raw-snapshot
+error-boundary regression test also logs a stack trace. Neither currently
+fails the suite, but both make CI noisier than a release-quality gate should
+be.
+
+### Readiness verdict
+
+The project is **not production ready**. The bridge has a solid tested core,
+but the Pixel Agents fork cannot pass its normal typecheck in isolation, the
+release automation is stale, public documentation contradicts the runtime
+architecture, and the requested Paperclip UX is only partially implemented.
+
+| Area | Assessment | Evidence |
+| --- | --- | --- |
+| Bridge core | Good foundation | Idempotent reducer, reconciliation, bounded temporal metrics, operational-proxy provenance, fail-closed new-work/reply policy, shared-secret feed auth, 761 passing automated tests. |
+| Paperclip plugin UX | Partial | One `Pixel Office` page and sidebar exist. The page embeds Pixel Agents and includes an agent picker, overview, and intake/feedback controls. |
+| Pixel Agents fork | Blocking | `npm run check-types` imports outer `src/pixel-agents-plugin/*` from fork tests. This crosses `rootDir`, makes the fork non-self-contained, and exposes additional strict guard-test type errors. |
+| CI/release | Blocking | Root workflows still invoke removed/nonexistent `build:prod`, `coverage`, and documentation scripts, and do not validate the fork, images, or live integration. |
+| Documentation | Blocking | Root README and User/Developer guides still describe the retired Claude-hook relay and state Pixel Agents lacks plugin loading, while the current deployment uses the fork's `--plugin` module and `POST /api/plugin-feed`. |
+| Deployment | Development reference only | Compose/minikube manifests use local images, `imagePullPolicy: Never`, a checked-in development auth secret, manual per-company configuration, no immutable registry images, TLS/mTLS, NetworkPolicies, HA, backup/restore runbook, or production observability. |
+| Assets/customization | Partial and materially below requested scope | Local package has only 24 whole character sheets plus palette/hue selection. It has no face, hair, skin, clothing, or accessory composition model; it also lacks the reference office layouts, floors, walls, furniture, and brand assets. |
+
+### Product-requirement gap analysis
+
+#### Paperclip UI
+
+Implemented today:
+
+- A native plugin `page` and `sidebar` slot named `Pixel Office`.
+- An iframe displaying the Pixel Agents browser UI.
+- Per-agent selection of a full character sheet and hue shift.
+- Company overview, company intake, feedback replies, stale-state gating, and
+  operational proxy display.
+
+Missing from the requested experience:
+
+- Native `Office` menu with `Design/View` and `Configuration` children,
+  matching host typography/icons and a red/green connection indicator.
+- Fullscreen office viewing.
+- A dedicated configuration page with bounded, configurable rolling relay
+  communications (default requested: last 100) and agent communication/
+  operational metrics.
+- A `Character` tab on each native Paperclip agent detail page, with metrics
+  beside customization.
+- Native chart integration for the bridge's metrics.
+- Paperclip-hosted office-layout configuration.
+
+The installed Paperclip SDK does support `detailTab` slots scoped to `agent`,
+so an agent Character/metrics tab is achievable through the public plugin API
+without modifying Paperclip. The current manifest simply does not declare or
+render it.
+
+#### Character assets and appearance
+
+The current appearance API is a reliable whole-sheet assignment model: it
+validates a catalog, preserves assignments, deterministically spreads defaults
+over agents, synchronizes palette/hue state, and has extensive unit coverage.
+It is not a granular character composer.
+
+The Agent-Pixels reference contains character sprites plus floors, walls,
+furniture, branding, and layout JSON. This repository contains only
+`assets/characters/catalog.json` and `char_0.png` through `char_23.png`.
+Before porting third-party assets, establish the applicable licence or obtain
+permission, record provenance, and include an asset inventory/checksum test.
+
+#### Bridge and transport
+
+Strengths:
+
+- One package unifies the Paperclip worker, UI, relay mapper, feed endpoint,
+  and Pixel Agents embedding module; this is simpler than three published
+  components.
+- At-least-once/unordered event assumptions, dedupe, periodic reconciliation,
+  secret references, and policy separation are correct production-oriented
+  choices.
+- The feed rejects unauthenticated requests and new-work entry is structurally
+  confined to company intake.
+
+Gaps:
+
+- No production measurement/SLO suite for latency, queue pressure, retries,
+  delivery loss, relay history, or sustained resource use. use @decaf-ts/utils performance test utils for the effect.
+- The external end-to-end suite depends on an already deployed shared stack;
+  it is not a self-contained CI gate.
+- Cleartext HTTP is permitted for configured internal host names. Production
+  deployments should use TLS/mTLS or a mesh-authenticated private channel. => via config. dont make it mandatory, just make it the default for production deployments
+- The build warns that `import.meta` is used in CJS output while the package
+  advertises Node `>=20`; add a Node 20 artifact/runtime test before release. => move t node 24
+
+### Architecture decision: converge on two plugins, not a third bridge service
+
+#### Recommendation
+
+**Yes: converge on two installable/runtime plugins.** This should mean one
+Paperclip plugin and one Pixel Agents plugin, connected by a small versioned
+wire contract. It must **not** mean moving every line of integration code into
+the Paperclip plugin or making the Pixel Agents fork import Paperclip-plugin
+source.
+
+The current runtime has already retired the old third process (the
+`paperclip-pixel-relay` Claude-hook sidecar). In effect, it now has two runtime
+surfaces:
+
+1. the Paperclip plugin worker/UI, which observes Paperclip and pushes feed
+   operations; and
+2. the Pixel Agents embedding module, loaded by Pixel Agents' generic
+   `--plugin` host, which authenticates and applies those operations and sends
+   approved actions back.
+
+However, they are packaged together in the outer npm package and their tests
+currently cross-import source files. That packaging does not create a clean
+two-plugin ownership boundary, and it is the direct cause of the fork's failed
+standalone typecheck.
+
+#### Recommended target shape
+
+```text
+Paperclip host
+  └── @decaf-ts/paperclip-pixels             [Paperclip plugin]
+        - Paperclip SDK worker, UI, persistence, metrics, policy
+        - snapshot/event normalization and reconciliation
+        - outbound feed mapper and retry/observability client
+        - Agent detail Character/metrics tab and Office pages
+                         │ HTTPS/mTLS or explicitly configured internal HTTP
+                         │ @decaf-ts/paperclip-pixels-contract (schemas only)
+                         ▼
+Pixel Agents host
+  └── @decaf-ts/pixel-agents-paperclip-plugin [Pixel Agents plugin]
+        - plugin manifest and lifecycle
+        - authenticated feed endpoint and idempotent operation application
+        - agent/appearance/layout source implementation
+        - Pixel Agents UI contributions and reverse-action forwarding
+```
+
+`@decaf-ts/paperclip-pixels-contract` may be a small independently versioned
+library or generated AsyncAPI/Zod artifacts. It is **not** a third deployed
+service or plugin. It contains only stable DTOs, validation, operation ids,
+error codes, protocol compatibility rules, and test fixtures; it must not
+import Paperclip or Pixel Agents runtime code.
+
+#### What belongs where
+
+| Concern | Paperclip plugin | Pixel Agents plugin | Shared contract only |
+| --- | --- | --- | --- |
+| Paperclip events, snapshots, metrics, reconciliation | Owns | Never imports | DTOs only |
+| New-work / feedback authorization | Owns and enforces | May request an action, never creates work | Request/result schema |
+| Feed authentication and operation application | Sends/retries | Owns endpoint, dedupe, acknowledgement | Envelope and error schema |
+| Agent declaration, sprites, layout and animations | Provides intent/metrics | Owns visual/spatial implementation | Declarative operation schema |
+| Character selection UI | Owns Paperclip detail/page UI and persisted preference | Owns rendering and asset validation | Appearance DTO |
+| Pixel Agents menus/widgets/VS Code compatibility | Never imports | Owns | Stable capability declarations |
+| Reverse actions (CEO intake/replies) | Validates and performs via Plugin SDK | Presents/forwards only | Action request/result schema |
+
+#### Why this is the highest-value simplification
+
+- It removes the invalid fork-to-outer-source import path and restores a clean
+  `npm ci` / typecheck / package workflow for the fork.
+- Each artifact has one host, one lifecycle, one permission model, one release
+  unit, and one test harness.
+- It preserves upstreamability: the generic Pixel Agents plugin host remains
+  Paperclip-agnostic; Paperclip-specific code remains outside the upstream
+  core and can be distributed as its own plugin.
+- It lets installations upgrade either side deliberately, with explicit
+  protocol compatibility rather than accidental source-tree coupling.
+- It eliminates the temptation to recreate the retired relay as a third
+  daemon. Retries, batching, back-pressure, and observability belong in the
+  Paperclip worker's outbound transport; HTTP receipt/application belongs in
+  the Pixel Agents plugin.
+
+#### What should *not* be moved wholesale into the Paperclip plugin
+
+Moving all bridge code into the Paperclip package would be counterproductive
+if it absorbs the Pixel Agents plugin implementation. The Pixel Agents side
+must remain independently installable and testable because it owns the
+server/plugin-host lifecycle, UI renderer, asset privilege gate, action
+surface, and VS Code/standalone compatibility. Bundling that code into the
+Paperclip plugin would either reintroduce source coupling or require Paperclip
+to ship code that it cannot run.
+
+Likewise, the pure domain metric reducer can physically live with the
+Paperclip plugin rather than being published as a general bridge package. Only
+the serializable input/output contract should be shared. This avoids a false
+three-component architecture while retaining testability.
+
+#### Risks and required controls
+
+| Risk | Control |
+| --- | --- |
+| Paperclip and Pixel Agents versions drift | Protocol `schemaVersion`, compatibility matrix, consumer-driven contract tests, and reject/diagnose unsupported versions. - ignored we control versioning | 
+| Two artifacts release non-atomically | Semver ranges plus a tested upgrade order; Pixel Agents plugin accepts the previous compatible schema during rolling upgrades. |
+| Protocol package becomes a backdoor dependency | Keep it runtime-host-neutral; forbid imports of SDK, React, Pixel Agents server, and filesystem APIs. |
+| Duplicate security enforcement | Preserve the hard boundary: Paperclip authorizes work creation; Pixel Agents forwards authenticated requests but cannot create work directly. |
+| Larger operational burden | Ship a single Helm chart/Compose profile that deploys the two plugins together, with independent health and protocol-compatibility checks. |
+
+#### Migration plan
+1. restructure repo to:
+   - ./pixel-agents: remaisn as is;
+   - ./paperclip: remais as is;
+   - ./common: independent contracts package - this will be your `paperclip-pixels-common` (not contracts)
+   - ./plugins/paperclip: idependent paperclip plugin package;
+   - ./plugins/pixel-agents: independent pixel agents plugin
+   - common doesnt know any other package; plguins only know common, have no connection to each other
+2. Extract only DTOs, Zod validation, fixture builders, and compatibility tests
+   to the neutral contract package.
+3. Make both clean-clone CI pipelines pass independently, then add an
+   integration matrix covering Paperclip-plugin N/N-1 against Pixel
+   Agents-plugin N/N-1.
+4. Remove the temporary combined-package entry only after a documented,
+   tested migration path exists for Compose, Kubernetes, and current users.
+
+### Highest-value remediation sequence
+
+1. **Repair the fork boundary.** Move bridge/fork contract fixtures and types
+   into a neutral, published contract package (or duplicate test fixtures);
+   remove all fork imports of `../../../../src`; fix strict test typings; make
+   `npm ci && npm run check-types && npm test && npm run package` succeed from
+   a clean fork clone.
+2. **Replace release CI.** Add one actual gate for the outer repository:
+   submodules, typecheck, lint, build, all tests, fork checks, package smoke,
+   image build, integration contract tests, SBOM/audit, and provenance-aware
+   npm/container publishing. => Default to decaf-ts reusable actions when possible. i'll provide auth keys after implementation;
+3. **Correct public docs.** Delete retired relay instructions, reconcile
+   README/tutorials/architecture/runbooks, and add supported Docker,
+   Kubernetes, configuration, chart, control, security, and troubleshooting
+   documentation.
+4. **Complete the Paperclip UX through public slots.** Add agent `detailTab`
+   support; separate Design/View and Configuration screens; add a connection
+   badge, fullscreen iframe control, bounded communications log, and native
+   host-styled operational charts.
+5. **Implement true character composition.** Define face/hair/skin/clothes/
+   accessories schemas, asset layering and directional variants, a migration
+   path from whole sheets, previews, validation, and sync contracts. Port
+   external assets. license/provenance review accepted internally;
+6. **Make deployment production-grade.** Publish immutable images, externalize
+   secrets, add TLS/mTLS and NetworkPolicies, configure ingress and backups,
+   add health/metrics/logging/alerts, remove committed dev secrets, and make
+   initial company configuration declarative.
+
+### Useful repository locations
+
+- Current manifest: `src/manifest.ts`
+- Current combined office page: `src/ui/PixelOfficePage.tsx`
+- Character picker: `src/ui/components/character-picker.tsx`
+- Relay: `src/relay.ts`
+- Pixel Agents embedding: `src/pixel-agents-plugin/embedding.ts`
+- Docker/Kubernetes reference deployment: `deploy/`
+- Fork plugin host: `pixel-agents/server/src/plugins/`
+- Legacy synchronization script: `scripts/sync-pixel-agents-legacy.mjs`
+
+### R3.8 Board Inline Amendments (indexed verbatim)
+
+The board amended its own audit inline (marked `=>` or appended in the
+source). Each amendment is preserved in place in the verbatim body above and
+indexed here for the remediation re-plan:
+
+- Bridge and transport, gap 3 (cleartext HTTP): "=> via config. dont make it
+  mandatory, just make it the default for production deployments"
+- Bridge and transport, gap 4 (artifact/runtime test): "=> move t node 24" —
+  the artifact/runtime test targets Node 24, not the Node 20 named in the
+  original sentence
+- Risks and required controls, "Paperclip and Pixel Agents versions drift"
+  row: "- ignored we control versioning"
+- Highest-value remediation sequence, item 2 (Replace release CI): "=> Default
+  to decaf-ts reusable actions when possible. i'll provide auth keys after
+  implementation;"
+- Highest-value remediation sequence, item 5 (Implement true character
+  composition): "license/provenance review accepted internally;" (appended to
+  "Port external assets.")
+- Migration plan, step 1 (contract package naming): "./common: independent
+  contracts package - this will be your `paperclip-pixels-common` (not
+  contracts)" — amending the target shape's provisional
+  `@decaf-ts/paperclip-pixels-contract` label (see the naming note above)
+
+### R3.9 Superseded Content In This Record
+
+The audit redefines the target packaging and records the retirement of the
+Claude-hook relay in the current runtime. The following prior statements in
+this record are **superseded** by Revision 3. Per amendment policy the
+superseded content is kept in place below as history and is not deleted:
+
+- **Claude-hook path as the default transport** — Revision 2's
+  desired-end-state bullet "Existing Claude-hook installation and
+  communication behavior remains the default unless explicitly overridden"
+  (R2.1) and the Transport Contract premise "The default transport must
+  remain the original Claude/hook-based path" (R2.4 §5.4). The audit records
+  that "The current runtime has already retired the old third process (the
+  `paperclip-pixel-relay` Claude-hook sidecar)" and that documentation still
+  describing the retired relay is a blocking-level defect (workstream 3 of the
+  remediation sequence corrects the public docs accordingly).
+- **The combined single outer npm package as the end-state packaging** — the
+  as-built strength quoted by the audit itself ("One package unifies the
+  Paperclip worker, UI, relay mapper, feed endpoint, and Pixel Agents
+  embedding module; this is simpler than three published components").
+  Revision 3's target shape converges on two installable plugins joined by
+  the neutral contract package; the combined-package entry becomes a
+  temporary transition artifact removed only after a documented, tested
+  migration path exists for Compose, Kubernetes, and current users
+  (migration plan step 4). The Revision 2 Phase 5.3 operator guidance remains
+  valid for the as-built runtime until that migration lands.
+- **The 2026-09-05 closing expectation** — the Result paragraph's "On this
+  milestone's completion the parent closes `done`" (Completion,
+  [SAA-770](/SAA/issues/SAA-770)). The board's audit verdict **not production
+  ready** supersedes that close; the domain root remains open pending the
+  remediation re-plan [SAA-873](/SAA/issues/SAA-873). See the
+  post-completion amendment appended to Result below.
+
+### R3.10 Relationship To Delivered Work — Next Step
+
+The audit arrives after the Revision 2 five-phase migration closed at the
+evidence level (2026-09-05, [SAA-770](/SAA/issues/SAA-770); gate commits fork
+`8ca80d3` / plugin repo `f6929c1`, unpushed). How the delivered fork plugin
+host, base plugin, override plugin, and bridge surfaces map onto the two-plugin
+target shape — and how the six remediation workstreams decompose into
+implementation tickets — is not adjudicated by this record; it is owned by the
+CTO remediation re-plan [SAA-873](/SAA/issues/SAA-873), which is blocked on
+this record milestone [SAA-872](/SAA/issues/SAA-872) and starts from this
+Revision 3. Per the milestone directive, the board's audit is recorded
+faithfully: findings, architecture, and acceptance language are the board's
+wording, unsoftened and unomitted.
+
 
 ## Overview
 
@@ -2645,16 +3021,80 @@ state `blocked` → CEO resumes to decompose under CTO execution, carrying
   technical parent ticket executor / domain root's single user-approved
   commit per `git-ops`; no branches or PRs created by this milestone.
 
+### 2026-09-06T22:30:00Z - Delivery Documentation Specialist
+
+- Woke on the Production Readiness record milestone [SAA-872](/SAA/issues/SAA-872)
+  under the specification domain root [SAA-447](/SAA/issues/SAA-447): record the
+  board's 2026-09-06 Production Readiness Audit (comment
+  `7b88ba5a-876d-4136-a232-f2ef98b8eefa`, hold released via the board's
+  go-signal acceptance "Start remediation now") as Revision 3.
+- **Verbatim-fidelity check.** Diffed the milestone's embedded audit text
+  against the source board comment via the Paperclip API: byte-identical
+  inside the quoted block (the comment's preamble/fence wrapper is carried
+  separately in the milestone description). The source fenced block carries
+  flattened line breaks; Revision 3 restores line/list breaks only — no word
+  changed, reordered, or omitted; board inline `=>` amendments and original
+  spellings preserved. The uncommitted repository-local rendering
+  `workdocs/ai/project/production-readiness-audit-2026-09-06.md` is
+  whitespace-normalized identical to the source and was used as the restored
+  body.
+- **Revision 3 recorded** (verbatim audit body + §R3.8 amendment index + §R3.9
+  superseded content + §R3.10 next step): readiness verdict **not production
+  ready** (fork `check-types` failure from fork tests importing outer `src/`,
+  stale release CI, docs contradicting the runtime, development-reference-only
+  deployment, partial plugin UX and character assets); target architecture
+  converging on two installable plugins (`@decaf-ts/paperclip-pixels`,
+  `@decaf-ts/pixel-agents-paperclip-plugin`) joined by the neutral `./common`
+  `paperclip-pixels-common` contract package; the repo-restructure migration
+  plan (four steps; the temporary combined-package entry is removed only after
+  a documented, tested migration path for Compose, Kubernetes, and current
+  users); the board's inline amendments (release CI defaults to decaf-ts
+  reusable actions, auth keys provided after implementation; version-drift
+  compatibility-matrix control ignored — "we control versioning"; cleartext
+  HTTP stays configurable but TLS/mTLS is the default for production
+  deployments; Node 24 artifact/runtime test; license/provenance review
+  accepted internally for ported assets); the six-workstream remediation
+  sequence (fork boundary, release CI, public docs, Paperclip UX through
+  public slots, true character composition, production-grade deployment); the
+  concern-ownership table; the bridge/transport gaps (SLO suite via
+  @decaf-ts/utils performance test utils, self-contained CI gate,
+  TLS-by-default, Node 24); and the what-should-not-be-moved-wholesale
+  guidance.
+- **Supersession marking.** Revision 3 supersedes: the R2.1/R2.4 §5.4 premise
+  that the original Claude/hook path is the default transport (the audit
+  records the relay as retired in the current runtime); the combined
+  single-package packaging as the end-state; and the 2026-09-05 Result
+  expectation that the parent closes `done` on the [SAA-770](/SAA/issues/SAA-770)
+  completion. All superseded content kept in place as history (§R3.9); a
+  post-completion amendment paragraph appended to Result.
+- **Snapshot refresh.** [SAA-447](/SAA/issues/SAA-447) observed `blocked`,
+  blocked on [SAA-873](/SAA/issues/SAA-873) (CTO remediation re-plan,
+  `blocked`) and this milestone [SAA-872](/SAA/issues/SAA-872)
+  (`in_progress`); [SAA-873](/SAA/issues/SAA-873) is blocked on
+  [SAA-872](/SAA/issues/SAA-872) (verified by read-back). Frontmatter
+  `updatedAt` bumped to `2026-09-06T22:30:00Z`.
+- **`plan.md` reconciliation.** The `PAPERCLIP_PIXELS-2` Domain Roots Index row
+  refreshed to the observed remediation state; a plan Change Log row added for
+  this pass (see `workdocs/ai/project/plan.md`).
+- Jira gate disabled (`JIRA_ENABLED` not `true`); no Jira workflow invoked.
+- Repository edits (this record and `plan.md`) left uncommitted for the domain
+  root's single user-approved commit per `git-ops`; no branches or PRs created
+  by this milestone. On this milestone's completion the CTO remediation re-plan
+  [SAA-873](/SAA/issues/SAA-873) proceeds from this record via blocker
+  resolution.
+
+
 ## Changed Artifacts
 
 | Path | Purpose |
 | --- | --- |
-| `workdocs/ai/project/specifications/PAPERCLIP_PIXELS_2.md` | Specification domain record (this file) — Revision 2 Phase 5 record content (capability matrix, override rules, operator guidance, migration notes) recorded 2026-09-05 via [SAA-721](/SAA/issues/SAA-721); FR-19 run-edge realization ruling recorded 2026-09-05 via [SAA-741](/SAA/issues/SAA-741) |
+| `workdocs/ai/project/specifications/PAPERCLIP_PIXELS_2.md` | Specification domain record (this file) — Revision 2 Phase 5 record content (capability matrix, override rules, operator guidance, migration notes) recorded 2026-09-05 via [SAA-721](/SAA/issues/SAA-721); FR-19 run-edge realization ruling recorded 2026-09-05 via [SAA-741](/SAA/issues/SAA-741); Revision 3 (board Production Readiness Audit remediation directive, verdict **not production ready**) recorded 2026-09-06 via [SAA-872](/SAA/issues/SAA-872) |
 | `workdocs/ai/project/plan.md` | Domain-root index reconciliation (PAPERCLIP_PIXELS-2 / SAA-447 added) |
 | _(milestone child issue document `delivery-docs`)_ | Child-owned mapping handoff authored on [SAA-449](/SAA/issues/SAA-449); parent owner publishes it to [SAA-447](/SAA/issues/SAA-447) |
 | _(milestone child issue document `delivery-docs` on [SAA-715](/SAA/issues/SAA-715))_ | Amendment (Revision 2) mapping handoff for the board-directive milestone; parent owner publishes it to [SAA-447](/SAA/issues/SAA-447) after this milestone completes |
 | _(milestone child issue document `delivery-docs` on [SAA-721](/SAA/issues/SAA-721))_ | Revision 2 Phase 5 record-milestone mapping handoff; parent owner publishes it to [SAA-447](/SAA/issues/SAA-447) after this milestone completes |
 | _(milestone child issue document `delivery-docs` on [SAA-741](/SAA/issues/SAA-741))_ | FR-19 run-edge realization decision-milestone mapping handoff; parent owner publishes it to [SAA-447](/SAA/issues/SAA-447) after this milestone completes |
+| _(milestone child issue document `delivery-docs` on [SAA-872](/SAA/issues/SAA-872))_ | Revision 3 (Production Readiness Audit) record-milestone mapping handoff; parent owner publishes it to [SAA-447](/SAA/issues/SAA-447) after this milestone completes |
 
 Revision 2 Phase 1–4 implementation and guard change sets (re-plan
 [SAA-716](/SAA/issues/SAA-716) decomposition; uncommitted in the shared
@@ -2944,6 +3384,9 @@ untouched, nothing pushed); rides the single user-approved commit on
 | 2026-09-05T17:28:00Z | Delivery Documentation Specialist ([SAA-770](/SAA/issues/SAA-770)) | Repo read-back + gate-evidence read-back: WS5 gate comments on [SAA-457](/SAA/issues/SAA-457) (approval-card closure 17:23:40Z + correction 17:24:28Z via the Paperclip API); both trees' `git log --oneline` + `git status --porcelain`; fork `main`) and outer `git status` | Pass | Fork: `8ca80d3` atop `a063063`/`ade5601`/`c634c15` (WS1→WS2→WS4→WS5 gate chain as recorded); plugin repo: `f6929c1` atop `c47aefa`/`4489e28`/`f92c058`/`bea90da`/`6ac209a` — exact histories match the Snapshot's commit chains; both trees clean (only pre-declared excluded untracked paths: `allure-results/`, `.claude/settings.local.json`, `PAPERCLIP_PIXELS_3.md`); no submodule diff pending in the outer repo; nothing pushed; gate commit fact (`8ca80d3`/`f6929c1`) and the correction-comment exact ref confirmed |
 | 2026-09-05T17:29:00Z | Delivery Documentation Specialist ([SAA-770](/SAA/issues/SAA-770)) | Callout fold-in read-back over the record body (CEO decisions 1–4): Out Of Scope/FR-5/FR-14/Decisions/Dependencies rows and the decision-4 hardened formula text | Pass | All four callouts already folded in the body with their final resolved content (placement/no-core-change; `dialogPanePrivacyOptIn` default OFF with plugin-side redaction/truncation; gauge omitted for the Paperclip provider with the provider-agnostic metrics channel retained; least-used-with-`hueShift` default `45 + ((round-1) * 47) % 315`) — no fold-in gaps found |
 
+| 2026-09-06T22:26:00Z | Delivery Documentation Specialist ([SAA-872](/SAA/issues/SAA-872)) | Read-back of the audit source: board comment `7b88ba5a-876d-4136-a232-f2ef98b8eefa` on [SAA-447](/SAA/issues/SAA-447) via the Paperclip API, diffed against the milestone's embedded verbatim text; whitespace-normalized comparison of the repository-local rendering `workdocs/ai/project/production-readiness-audit-2026-09-06.md` against the same source | Pass | Comment present, board-authored; the embedded block is byte-identical to the source body (only the comment's preamble/fence wrapper differs, carried separately in the milestone description); the local rendering is whitespace-normalized identical — Revision 3 restores line/list breaks only, no word changed, reordered, or omitted |
+| 2026-09-06T22:28:00Z | Delivery Documentation Specialist ([SAA-872](/SAA/issues/SAA-872)) | Lifecycle + classification read-back via the Paperclip API: parent [SAA-447](/SAA/issues/SAA-447) `task-metadata` document; [SAA-447](/SAA/issues/SAA-447) blocked-by set; [SAA-873](/SAA/issues/SAA-873) blocked-by edge; `JIRA_ENABLED` gate | Pass | `taskType: specification`; `jiraIssue: none` — agrees with this record's frontmatter; [SAA-447](/SAA/issues/SAA-447) `blocked`, blocked on [SAA-873](/SAA/issues/SAA-873) (`blocked`) + [SAA-872](/SAA/issues/SAA-872) (`in_progress`); [SAA-873](/SAA/issues/SAA-873) blocked on [SAA-872](/SAA/issues/SAA-872) — first-class blocker edge confirmed; `JIRA_ENABLED=false`, no Jira workflow invoked |
+| 2026-09-06T22:32:00Z | Delivery Documentation Specialist ([SAA-872](/SAA/issues/SAA-872)) | `node <skill-root>/scripts/validate-domain-record.mjs workdocs/ai/project/specifications/PAPERCLIP_PIXELS_2.md` (re-run after all Revision 3 edits) | Pass | `Valid domain record` (exit 0) — recorded in the closing milestone comment |
 ## Result
 
 Initialization complete: the specification domain record `PAPERCLIP_PIXELS-2`
@@ -3235,3 +3678,26 @@ refresh; `AGENTS.md` governance wording — CTO) and the specification-key
 formalization item; (4) no push of the unpushed gate commits without a
 separate explicit approval. On this milestone's completion the parent
 closes `done`.
+
+**Post-completion amendment (2026-09-06, [SAA-872](/SAA/issues/SAA-872)).** The
+board's Production Readiness Audit (2026-09-06, comment
+`7b88ba5a-876d-4136-a232-f2ef98b8eefa`) found the project **not production
+ready** — fork `check-types` failure (fork tests importing outer `src/`), stale
+release CI, public docs contradicting the runtime, development-reference-only
+deployment, and partial plugin UX and character assets — and directed
+remediation ("needs improvements. follow the guide bellow. put the task on hold
+until i tell you to start it;"). The hold was released 2026-09-06 ("Start
+remediation now"). The audit is recorded verbatim as **Revision 3** (readiness
+verdict; the two-plugin target architecture — `@decaf-ts/paperclip-pixels` and
+`@decaf-ts/pixel-agents-paperclip-plugin` joined by the neutral `./common`
+`paperclip-pixels-common` contract package; the repo-restructure migration plan
+with the combined-package entry removed only after a documented, tested
+migration path; the board's inline amendments; the six remediation workstreams;
+the concern-ownership table; the bridge/transport gaps; and the
+what-should-not-move-wholesale guidance); superseded framings are marked in
+place (§R3.9). The preceding paragraph's "On this milestone's completion the
+parent closes `done`" expectation is superseded: the domain root remains open
+for remediation, and the CTO remediation re-plan [SAA-873](/SAA/issues/SAA-873)
+— blocked on this record milestone — re-plans from Revision 3. Repository edits
+remain uncommitted for the domain root's single user-approved commit per
+`git-ops`.

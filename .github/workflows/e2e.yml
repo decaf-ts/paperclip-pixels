@@ -1,0 +1,110 @@
+name: "E2E (self-contained bridge stack)"
+
+# The external end-to-end Playwright suite drives a full deployed bridge stack.
+# Per the R3-WS2 scope it is made self-contained for CI: this workflow brings
+# up its OWN disposable compose stack (base + e2e-override) and tears it down
+# afterwards, instead of silently depending on an already-deployed shared
+# stack.
+#
+# It is intentionally NOT a required job of the release gate. The e2e suite
+# exercises the full Paperclip host UI + Pixel-Agents webview + Postgres over a
+# live compose stack and needs Playwright browsers plus a multi-minute boot;
+# the release gate covers the deterministic build/unit/integration gates.
+# Wiring this as a required merge check and verifying the compose
+# networking/origin tuning on an Actions runner is a documented follow-up (see
+# the R3-WS2 evidence comment). Before it is wired as a gate, the release
+# never silently depends on a shared stack — this runs its own.
+#
+# Requires the compose images to be built (docker compose up --build).
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "e2e/**"
+      - "deploy/docker/docker-compose*.yml"
+      - "plugins/**"
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: "E2E bridge stack"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["24"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: Build the three package artifacts
+        run: |
+          set -euo pipefail
+          node scripts/ci/build-paperclip-sdk.mjs
+          node scripts/ci/prepare-package.mjs common
+          node scripts/ci/prepare-package.mjs plugins/paperclip
+          npm --prefix plugins/paperclip install --no-audit --no-fund
+          npm --prefix plugins/paperclip run build
+          node scripts/ci/prepare-package.mjs plugins/pixel-agents
+          npm --prefix plugins/pixel-agents install --no-audit --no-fund
+          npm --prefix plugins/pixel-agents run build
+      - name: Install Playwright browsers
+        run: |
+          cd e2e
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Bring up disposable compose stack
+        env:
+          PAPERCLIP_AUTH_SECRET: ${{ secrets.PAPERCLIP_AUTH_SECRET }}
+          PAPERCLIP_PIXEL_FEED_TOKEN: ${{ secrets.PAPERCLIP_PIXEL_FEED_TOKEN }}
+          PAPERCLIP_PIXEL_API_TOKEN: ${{ secrets.PAPERCLIP_PIXEL_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          SECRETS=""
+          [ -n "${PAPERCLIP_AUTH_SECRET:-}" ] || PAPERCLIP_AUTH_SECRET="$(openssl rand -hex 32)"
+          [ -n "${PAPERCLIP_PIXEL_FEED_TOKEN:-}" ] || PAPERCLIP_PIXEL_FEED_TOKEN="$(openssl rand -hex 32)"
+          export PAPERCLIP_AUTH_SECRET PAPERCLIP_PIXEL_FEED_TOKEN PAPERCLIP_PIXEL_API_TOKEN
+          docker compose -p paperclip-pixels-e2e \
+            -f deploy/docker/docker-compose.bridge-stack.yml \
+            -f deploy/docker/docker-compose.e2e-override.yml \
+            up -d --build
+          docker compose -p paperclip-pixels-e2e ps
+      - name: Wait for stack readiness
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:3100/api/health >/dev/null 2>&1; then
+              echo "bridge host ready after ${i}s"
+              break
+            fi
+            sleep 2
+          done
+          curl -sf http://localhost:3100/api/health
+      - name: Run e2e suite
+        env:
+          PAPERCLIP_PIXEL_E2E_HOST_URL: "http://localhost:3100"
+          PAPERCLIP_PIXEL_E2E_DB_HOST: "localhost"
+          PAPERCLIP_PIXEL_E2E_DB_PORT: "15432"
+          PAPERCLIP_PIXEL_E2E_LOGIN_ORIGIN: "http://localhost:3100"
+          PAPERCLIP_PIXEL_E2E_FEED_URL: "http://127.0.0.1:8081"
+          PAPERCLIP_PIXEL_E2E_FEED_TOKEN: ${{ secrets.PAPERCLIP_PIXEL_FEED_TOKEN }}
+        run: |
+          cd e2e
+          npm test
+      - name: Tear down compose stack
+        if: always()
+        run: docker compose -p paperclip-pixels-e2e -f deploy/docker/docker-compose.bridge-stack.yml -f deploy/docker/docker-compose.e2e-override.yml down -v --remove-orphans
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: e2e/playwright-report
+          if-no-files-found: warn

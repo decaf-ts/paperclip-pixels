@@ -1,0 +1,32 @@
+The Paperclip Pixel Agents bridge stack has been deployed to namespace {{ include "paperclip-pixels.namespace" . }}.
+
+Components:
+  - Postgres:        StatefulSet {{ include "paperclip-pixels.fullname" . }}-postgres (port 5432)
+  - Paperclip host:  Deployment  {{ include "paperclip-pixels.fullname" . }}  (port 3100)
+  - Pixel Agents:    Deployment  {{ include "paperclip-pixels.fullname" . }}-pixel-agents (ports 8080/{{ include "paperclip-pixels.feedPort" . }})
+
+Images (immutable, digest-pinned when image.digest is set):
+  - Paperclip host:  {{ include "paperclip-pixels.image" (dict "image" .Values.image.paperclipHost "registry" .Values.image.registry) }}
+  - Pixel Agents:    {{ include "paperclip-pixels.image" (dict "image" .Values.image.pixelAgents "registry" .Values.image.registry) }}
+
+Secrets:
+  - Secret: {{ include "paperclip-pixels.secretName" . }}
+  - Required keys: BETTER_AUTH_SECRET, PAPERCLIP_PIXEL_FEED_TOKEN, POSTGRES_USER,
+    POSTGRES_PASSWORD, POSTGRES_DB, DATABASE_URL. Optional: PAPERCLIP_PIXEL_API_TOKEN,
+    FEED_CA, FEED_SERVER_CERT, FEED_SERVER_KEY, FEED_CLIENT_CERT, FEED_CLIENT_KEY.
+  - The chart fails closed if the required values are missing and no
+    secrets.existingSecret is referenced.
+
+Security:
+  - NetworkPolicies default-deny ingress; the plugin feed (port {{ include "paperclip-pixels.feedPort" . }})
+    is reachable only from the Paperclip host pod.
+  - TLS/mTLS is the default for the public ingress and for the in-cluster feed
+    channel (https). Cleartext HTTP for internal hosts remains available via
+    transport.feed.scheme=http + transport.feed.allowedHttpHosts.
+
+To reach the UIs (dev / port-forward):
+  kubectl -n {{ include "paperclip-pixels.namespace" . }} port-forward svc/{{ include "paperclip-pixels.fullname" . }} 3100:3100
+  kubectl -n {{ include "paperclip-pixels.namespace" . }} port-forward svc/{{ include "paperclip-pixels.fullname" . }}-pixel-agents 8080:8080
+
+Documentation: deploy/OPERATIONS.md, deploy/SECURITY.md, deploy/OBSERVABILITY.md,
+deploy/BACKUP_RESTORE.md, deploy/TROUBLESHOOTING.md.
