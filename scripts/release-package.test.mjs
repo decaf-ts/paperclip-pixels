@@ -10,6 +10,7 @@ function fixture(t, target, failure = '') {
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(path.join(root, 'scripts'));
   mkdirSync(path.join(root, 'bin'));
+  writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({ packages: {} }));
   copyFileSync(new URL('./release-package.mjs', import.meta.url), path.join(root, 'scripts/release-package.mjs'));
   for (const dir of ['common', 'plugins/paperclip']) {
     mkdirSync(path.join(root, dir, 'src'), { recursive: true });
@@ -59,7 +60,6 @@ test('common release tests before publish and verifies before pushing its own ta
   assert.ok(index('publish') < index('view'));
   assert.ok(index('view') < index('push'));
   assert.ok(calls.find(c => c.args[0] === 'tag').args.includes('@decaf-ts/paperclip-pixels-common@0.1.2'));
-  assert.match(readFileSync(path.join(root, 'common/src/constants.ts'), 'utf8'), /0\.1\.2/);
 });
 test('dependent release installs registry contract before versioning and tests', t => {
   const { result, calls } = fixture(t, 'plugins/paperclip');

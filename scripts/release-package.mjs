@@ -26,6 +26,7 @@ function run(command, args, location = cwd, capture = false) {
 function json(file) { return JSON.parse(readFileSync(file, 'utf8')); }
 function syncRootLock(packageName, version) {
   const lockPath = path.join(root, 'package-lock.json');
+  if (!existsSync(lockPath)) return;
   const lock = json(lockPath);
   const workspace = relative;
   if (lock.packages?.[workspace]) lock.packages[workspace].version = version;
