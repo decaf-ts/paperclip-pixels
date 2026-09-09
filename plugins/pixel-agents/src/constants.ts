@@ -12,6 +12,6 @@
 /** Unique identifier for the Paperclip Pixel plugin (Paperclip host registration). */
 export const PLUGIN_ID = "paperclip-pixel.paperclip-plugin";
 /** Semantic version of the plugin package. */
-export const PLUGIN_VERSION = "0.6.0";
+export const PLUGIN_VERSION = "0.6.1";
 /** Version of the Paperclip Pixel feed wire this plugin speaks. */
 export const PLUGIN_FEED_SCHEMA_VERSION = 1 as const;
