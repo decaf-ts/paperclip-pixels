@@ -1,5 +1,5 @@
 {
-  "name": "@decaf-ts/paperclip-pixels-common",
+  "name": "paperclip-pixels-common",
   "version": "0.1.1",
   "description": "Neutral paperclip-pixels wire contract package: DTOs, Zod validation, operation ids, error codes, schemaVersion compatibility rules, and fixture builders shared by the Paperclip plugin and the Pixel Agents plugin. Schemas only — imports no other package.",
   "type": "module",
@@ -39,7 +39,7 @@
     "directory": "common"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
+    "registry": "https://registry.npmjs.org",
     "access": "public"
   },
   "engines": {

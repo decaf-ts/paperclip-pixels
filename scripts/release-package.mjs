@@ -35,18 +35,19 @@ function syncRootLock(packageName, version) {
   writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
 }
 try {
-  const githubToken = path.join(cwd, '.token');
-  if (existsSync(githubToken)) {
-    env.BRIDGE_GITHUB_TOKEN = readFileSync(githubToken, 'utf8').trim();
+  const npmToken = path.join(cwd, '.npmtoken');
+  if (existsSync(npmToken)) {
+    env.BRIDGE_NPM_TOKEN = readFileSync(npmToken, 'utf8').trim();
     env.NPM_CONFIG_USERCONFIG = path.join(temp, 'npmrc');
     writeFileSync(
       env.NPM_CONFIG_USERCONFIG,
-      `@decaf-ts:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=${env.BRIDGE_GITHUB_TOKEN}\n`,
+      `//registry.npmjs.org/:_authToken=${env.BRIDGE_NPM_TOKEN}\n`,
       { mode: 0o600 },
     );
   }
-  if (existsSync(githubToken)) {
-    env.BRIDGE_GIT_TOKEN = readFileSync(githubToken, 'utf8').trim();
+  const gitToken = path.join(cwd, '.token');
+  if (existsSync(gitToken)) {
+    env.BRIDGE_GIT_TOKEN = readFileSync(gitToken, 'utf8').trim();
     env.GIT_ASKPASS = path.join(temp, 'askpass');
     env.GIT_TERMINAL_PROMPT = '0';
     writeFileSync(env.GIT_ASKPASS, '#!/bin/sh\ncase "$1" in *Username*) printf "%s\\n" x-access-token;; *) printf "%s\\n" "$BRIDGE_GIT_TOKEN";; esac\n', { mode: 0o700 });
@@ -54,22 +55,21 @@ try {
   const branch = run('git', ['branch', '--show-current'], root, true);
   if (!['main', 'master'].includes(branch)) throw new Error('Release from main or master');
   if (run('git', ['diff', '--cached', '--name-only'], root, true)) throw new Error('Commit or unstage existing staged changes before release');
-  // GitHub Packages does not implement npm's `whoami` endpoint reliably;
-  // `npm ping` is the supported authenticated registry probe.
-  run('npm', ['ping', '--registry', 'https://npm.pkg.github.com'], cwd, true);
+  // Probe npm before changing the package version or creating a release commit.
+  run('npm', ['ping', '--registry', 'https://registry.npmjs.org'], cwd, true);
 
   // Install the published contract, not npm's local workspace symlink, before
   // starting any dependent package's build/test/version process.
   if (relative !== 'common') {
     const version = json(path.join(root, 'common/package.json')).version;
-    run('npm', ['view', `@decaf-ts/paperclip-pixels-common@${version}`, 'version', '--registry', 'https://npm.pkg.github.com']);
-    const installed = path.join(cwd, 'node_modules/@decaf-ts/paperclip-pixels-common');
+    run('npm', ['view', `paperclip-pixels-common@${version}`, 'version', '--registry', 'https://registry.npmjs.org']);
+    const installed = path.join(cwd, 'node_modules/paperclip-pixels-common');
     if (lstatSync(installed, { throwIfNoEntry: false })?.isSymbolicLink()) rmSync(installed);
-    run('npm', ['install', '--workspaces=false', '--save-exact', `@decaf-ts/paperclip-pixels-common@${version}`, '--registry', 'https://npm.pkg.github.com']);
+    run('npm', ['install', '--workspaces=false', '--save-exact', `paperclip-pixels-common@${version}`, '--registry', 'https://registry.npmjs.org']);
     if (realpathSync(installed) === realpathSync(path.join(root, 'common')) || json(path.join(installed, 'package.json')).version !== version) {
       throw new Error('Release requires the freshly published registry dependency, not a workspace link');
     }
-    console.log(`Verified registry dependency @decaf-ts/paperclip-pixels-common@${version}`);
+    console.log(`Verified registry dependency paperclip-pixels-common@${version}`);
   }
   // Version before building so bundles contain the released manifest version.
   const currentPackage = json(path.join(cwd, 'package.json'));
@@ -97,8 +97,8 @@ try {
   run('git', ['diff', '--cached', '--check'], root);
   run('git', ['commit', '-m', message], root);
   const distTag = pkg.version.includes('-') ? 'prerelease' : 'latest';
-  run('npm', ['publish', tarball, '--access', access, '--tag', distTag, '--workspaces=false', '--registry', 'https://npm.pkg.github.com']);
-  const integrity = run('npm', ['view', tag, 'dist.integrity', '--registry', 'https://npm.pkg.github.com'], cwd, true);
+  run('npm', ['publish', tarball, '--access', access, '--tag', distTag, '--workspaces=false', '--registry', 'https://registry.npmjs.org']);
+  const integrity = run('npm', ['view', tag, 'dist.integrity', '--registry', 'https://registry.npmjs.org'], cwd, true);
   if (integrity !== packed.integrity) throw new Error('Published tarball integrity mismatch');
   run('git', ['tag', '-a', tag, '-m', message], root);
   run('git', ['push', 'origin', `HEAD:refs/heads/${branch}`, `refs/tags/${tag}`], root);

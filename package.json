@@ -1,7 +1,7 @@
 {
   "name": "paperclip-pixels",
   "version": "0.6.0",
-  "description": "Workspace root for the Paperclip <-> Pixel Agents bridge: the neutral `@decaf-ts/paperclip-pixels-common` contract package (`common`), the independent Paperclip plugin (`plugins/paperclip`), and the independent Pixel Agents plugin surface with the embedding bundle (`plugins/pixel-agents`).",
+  "description": "Workspace root for the Paperclip <-> Pixel Agents bridge: the neutral `paperclip-pixels-common` contract package (`common`), the independent Paperclip plugin (`plugins/paperclip`), and the independent Pixel Agents plugin surface with the embedding bundle (`plugins/pixel-agents`).",
   "private": true,
   "type": "module",
   "workspaces": [
