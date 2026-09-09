@@ -97,8 +97,26 @@ try {
   run('git', ['diff', '--cached', '--check'], root);
   run('git', ['commit', '-m', message], root);
   const distTag = pkg.version.includes('-') ? 'prerelease' : 'latest';
-  run('npm', ['publish', tarball, '--access', access, '--tag', distTag, '--workspaces=false', '--registry', 'https://registry.npmjs.org']);
-  const integrity = run('npm', ['view', tag, 'dist.integrity', '--registry', 'https://registry.npmjs.org'], cwd, true);
+  let integrity;
+  try {
+    integrity = run('npm', ['view', tag, 'dist.integrity', '--registry', 'https://registry.npmjs.org'], root, true);
+  } catch {
+    integrity = undefined;
+  }
+  if (integrity === packed.integrity) {
+    console.log(`${tag} already exists with matching integrity; skipping publish`);
+  } else {
+    run('npm', ['publish', tarball, '--access', access, '--tag', distTag, '--workspaces=false', '--registry', 'https://registry.npmjs.org']);
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      try {
+        integrity = run('npm', ['view', tag, 'dist.integrity', '--registry', 'https://registry.npmjs.org'], root, true);
+        if (integrity === packed.integrity) break;
+      } catch {
+        // npm metadata can lag the successful PUT by a few seconds.
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
   if (integrity !== packed.integrity) throw new Error('Published tarball integrity mismatch');
   run('git', ['tag', '-a', tag, '-m', message], root);
   run('git', ['push', 'origin', `HEAD:refs/heads/${branch}`, `refs/tags/${tag}`], root);
