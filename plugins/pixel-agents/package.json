@@ -41,7 +41,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "paperclip-pixels-common": "0.1.0"
+    "paperclip-pixels-common": "0.1.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
