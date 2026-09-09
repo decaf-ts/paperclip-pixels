@@ -1,7 +1,7 @@
 {
   "name": "@decaf-ts/paperclip-pixels-plugin",
   "version": "0.6.1",
-  "description": "Independent Paperclip plugin for the Paperclip <-> Pixel Agents bridge: Paperclip SDK worker, Pixel Office UI (page + sidebar), persistence, metrics, policy, snapshot/event normalization, reconciliation, and the outbound feed mapper + retry/observability client. Depends only on `paperclip-pixels-common`.",
+  "description": "Independent Paperclip plugin for the Paperclip <-> Pixel Agents bridge: Paperclip SDK worker, Pixel Office UI (page + sidebar), persistence, metrics, policy, snapshot/event normalization, reconciliation, and the outbound feed mapper + retry/observability client. Depends only on `@decaf-ts/paperclip-pixels-common`.",
   "type": "module",
   "main": "dist/worker.js",
   "types": "dist/worker.d.ts",
@@ -64,7 +64,7 @@
     "react-dom": ">=18"
   },
   "dependencies": {
-    "paperclip-pixels-common": "0.1.1",
+    "@decaf-ts/paperclip-pixels-common": "0.1.2",
     "ws": "^8.10.5",
     "zod": "^4.4.3"
   },

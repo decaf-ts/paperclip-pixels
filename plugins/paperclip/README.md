@@ -9,7 +9,7 @@ snapshot/event normalization, reconciliation, and the outbound feed mapper +
 HTTP sink / retry client that pushes feed operations to the Pixel Agents
 plugin's `POST /api/plugin-feed` endpoint.
 
-It depends only on `paperclip-pixels-common` (the neutral wire-contract
+It depends only on `@decaf-ts/paperclip-pixels-common` (the neutral wire-contract
 package at `./common`) plus its own runtime deps (the host plugin SDK,
 `@paperclipai/shared`, `zod`, `ws`). It never imports the
 `pixel-agents-paperclip-plugin` package or the `pixel-agents/` fork internals.

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ACTION_KEYS } from "paperclip-pixels-common";
+import { ACTION_KEYS } from "@decaf-ts/paperclip-pixels-common";
 import { HttpReplyForwarder, parseReplyPayload } from "../index.js";
 import type { ReplyFetchLike, ReplyForwardRequest } from "../index.js";
 

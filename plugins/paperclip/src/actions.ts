@@ -8,8 +8,8 @@ import {
   type AgentCharacterAssignment,
   type AgentFeedback,
 } from "./core/index.js";
-import { validateOfficeLayout, validateAppearanceAssignmentV2 } from "paperclip-pixels-common";
-import type { AppearanceAssignment } from "paperclip-pixels-common";
+import { validateOfficeLayout, validateAppearanceAssignmentV2 } from "@decaf-ts/paperclip-pixels-common";
+import type { AppearanceAssignment } from "@decaf-ts/paperclip-pixels-common";
 import { loadCharacterCatalog, loadCompositionPartCatalog } from "./characters.js";
 import {
   ACTION_KEYS,

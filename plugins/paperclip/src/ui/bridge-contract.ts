@@ -32,7 +32,7 @@ import type {
   CharacterComposition,
   OfficeLayout,
   CompositionPartKind,
-} from "paperclip-pixels-common";
+} from "@decaf-ts/paperclip-pixels-common";
 
 /**
  * Per-agent view: the raw projection (canonical Paperclip IDs, run-level

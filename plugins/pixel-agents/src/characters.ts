@@ -5,13 +5,13 @@
  * fail-closed catalog validator) and `resolveCharacterCatalogDir` (the
  * filesystem lookup used by the WS4-A appearance adoption). The shared
  * serializable shapes (`CharacterCatalog`, `CharacterCatalogEntry`) come
- * from `paperclip-pixels-common`.
+ * from `@decaf-ts/paperclip-pixels-common`.
  */
 
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { CharacterCatalog, CharacterCatalogEntry } from "paperclip-pixels-common";
+import type { CharacterCatalog, CharacterCatalogEntry } from "@decaf-ts/paperclip-pixels-common";
 
 /** Parse and validate a raw catalog JSON document. Fail-closed on shape. */
 export function parseCharacterCatalog(raw: unknown): CharacterCatalog {

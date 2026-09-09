@@ -34,7 +34,7 @@ import type {
   PluginAgentDeclaration,
   PluginFeedDialogLine,
   PluginFeedOperation,
-} from "paperclip-pixels-common";
+} from "@decaf-ts/paperclip-pixels-common";
 
 /** Pixel Agents' built-in character-sheet count (the seat/fallback palette
  * range the embedding host's declaration validator accepts without an

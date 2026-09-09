@@ -24,7 +24,7 @@ PAPERCLIP_PIXELS-2 (WS2-C bridge port + WS2-D embedding surface).
 | Pixel Agents | `pixel-agents:local`         | 8080 (UI/WS), 8081 (plugin feed) | Pixel Agents standalone server (SPA + WS) **with the Paperclip bridge embedding module loaded in-process** via the fork CLI's generic `--plugin` loader |
 
 The bridge is two plugins joined by a neutral contract package (board
-Revision 3 target shape): `paperclip-pixels-common` (schemas only,
+Revision 3 target shape): `@decaf-ts/paperclip-pixels-common` (schemas only,
 `./common`), the Paperclip-side plugin `@decaf-ts/paperclip-pixels-plugin`
 (source `plugins/paperclip/`), and the Pixel Agents-side plugin
 `@decaf-ts/pixel-agents-paperclip-plugin` (source
