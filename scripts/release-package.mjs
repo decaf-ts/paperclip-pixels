@@ -99,7 +99,11 @@ try {
   const files = [relative, 'package-lock.json', 'package.json', '.gitignore', '.dockerignore', 'scripts/release-package.mjs', 'scripts/release-package.test.mjs', 'bin/tag-release.sh'];
   run('git', ['add', '--', ...files], root);
   run('git', ['diff', '--cached', '--check'], root);
-  run('git', ['commit', '-m', message], root);
+  if (run('git', ['diff', '--cached', '--name-only'], root, true)) {
+    run('git', ['commit', '-m', message], root);
+  } else {
+    console.log(`No new release files to commit for ${tag}`);
+  }
   const distTag = pkg.version.includes('-') ? 'prerelease' : 'latest';
   let integrity;
   try {
@@ -122,7 +126,11 @@ try {
     }
   }
   if (integrity !== packed.integrity) throw new Error('Published tarball integrity mismatch');
-  run('git', ['tag', '-a', tag, '-m', message], root);
+  try {
+    run('git', ['rev-parse', tag], root, true);
+  } catch {
+    run('git', ['tag', '-a', tag, '-m', message], root);
+  }
   run('git', ['push', 'origin', `HEAD:refs/heads/${branch}`, `refs/tags/${tag}`], root);
   console.log(`Released and verified ${tag}`);
 } finally {
