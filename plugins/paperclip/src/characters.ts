@@ -24,7 +24,7 @@ import {
   validateCompositionCatalog,
   type CompositionPartCatalog,
   type CompositionPartSpec,
-} from "@decaf-ts/paperclip-pixels-common";
+} from "paperclip-pixels-common";
 
 /** Catalog entry enriched with a preview image for the UI picker. */
 export interface CharacterCatalogViewEntry extends CharacterCatalogEntry {

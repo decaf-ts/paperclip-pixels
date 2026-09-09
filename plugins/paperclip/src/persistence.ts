@@ -2,8 +2,8 @@ import type { PluginContext } from "@paperclipai/plugin-sdk";
 import type { AgentCharacterAssignment, CompactAgentBuckets } from "./core/index.js";
 import { isAgentCharacterAssignment } from "./core/index.js";
 import type { CompactRelayComms } from "./comms-store.js";
-import type { OfficeLayout, AgentAppearanceAssignmentV2 } from "@decaf-ts/paperclip-pixels-common";
-import { isOfficeLayout, AgentAppearanceAssignmentV2Schema } from "@decaf-ts/paperclip-pixels-common";
+import type { OfficeLayout, AgentAppearanceAssignmentV2 } from "paperclip-pixels-common";
+import { isOfficeLayout, AgentAppearanceAssignmentV2Schema } from "paperclip-pixels-common";
 import { STATE_KEYS, STATE_NAMESPACES } from "./constants.js";
 
 function companyScope(companyId: string, stateKey: string) {

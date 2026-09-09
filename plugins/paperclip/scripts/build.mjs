@@ -8,7 +8,7 @@
  * self-contained bundles for the worker and manifest. The resulting files are
  * placed in `dist/` and include all runtime dependencies except Node built-ins
  * and React, which are externalized according to the plugin loader contract.
- * The wire contract (`@decaf-ts/paperclip-pixels-common`) and the local core/domain are
+ * The wire contract (`paperclip-pixels-common`) and the local core/domain are
  * bundled in; the host plugin SDK is consumed as TS source.
  *
  * Run: node scripts/build.mjs   (or: npm run build)
@@ -64,5 +64,5 @@ console.log("[build] worker + manifest bundled to dist/");
 if (workerBytes) {
   console.log(`[build] worker bundle size: ${(workerBytes / 1024).toFixed(1)} KiB`);
 }
-console.log("[build] runtime deps inlined: @decaf-ts/paperclip-pixels-common, @paperclipai/plugin-sdk, @paperclipai/shared, zod");
+console.log("[build] runtime deps inlined: paperclip-pixels-common, @paperclipai/plugin-sdk, @paperclipai/shared, zod");
 console.log("[build] externalized: node built-ins, react, react-dom");

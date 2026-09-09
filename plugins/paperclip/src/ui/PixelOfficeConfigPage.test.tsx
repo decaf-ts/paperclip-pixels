@@ -18,7 +18,7 @@ import {
 } from "./test-utils/sdk-ui";
 import { makeSnapshot } from "./test-utils/fixtures";
 import type { MetricsSeriesResult } from "../core/index.js";
-import type { OfficeLayout } from "@decaf-ts/paperclip-pixels-common";
+import type { OfficeLayout } from "paperclip-pixels-common";
 import type { RelayCommsPage } from "./bridge-contract";
 
 function bucket(start: string, runStarts: number) {

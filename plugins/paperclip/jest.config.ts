@@ -13,7 +13,7 @@ export default {
   testRegex: "/src/ui/.*\\.(test|spec)\\.tsx?$",
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
   moduleNameMapper: {
-    "^@decaf-ts/paperclip-pixels-common$": path.join(ROOT, "../../common/src/index.ts"),
+    "^paperclip-pixels-common$": path.join(ROOT, "../../common/src/index.ts"),
     "^@paperclipai/plugin-sdk/ui$": `${ROOT}/src/ui/test-utils/sdk-ui.ts`,
     "^(\\.{1,2}/.*)\\.js$": "$1",
   },

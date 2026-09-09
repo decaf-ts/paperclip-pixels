@@ -10,13 +10,13 @@
  * runtime dependency on the host plugin SDK (spec §7.1, NFR-8).
  *
  * The wire-contract DTOs, operation ids, schema-version constants, and event/
- * analytics/feed/appearance shapes are owned by `@decaf-ts/paperclip-pixels-common` (the
+ * analytics/feed/appearance shapes are owned by `paperclip-pixels-common` (the
  * board's neutral `./common` contract package). This module re-exports those
  * shared contract symbols from the package and keeps the purely local runtime
  * machinery (temporal, reducer, behavior, policy) here.
  */
-import { BRIDGE_SCHEMA_VERSION } from "@decaf-ts/paperclip-pixels-common";
-import { SCHEMA_VERSION as COMMON_SCHEMA_VERSION } from "@decaf-ts/paperclip-pixels-common";
+import { BRIDGE_SCHEMA_VERSION } from "paperclip-pixels-common";
+import { SCHEMA_VERSION as COMMON_SCHEMA_VERSION } from "paperclip-pixels-common";
 
 // Canonical bridge contract (spec §9) — owned by the neutral contract package.
 export type {
@@ -26,21 +26,21 @@ export type {
   RawApprovalRef,
   RawObservedEvent,
   AgentExecutionState,
-} from "@decaf-ts/paperclip-pixels-common";
+} from "paperclip-pixels-common";
 
-export type { TimeWindow, WindowedMetrics } from "@decaf-ts/paperclip-pixels-common";
+export type { TimeWindow, WindowedMetrics } from "paperclip-pixels-common";
 export {
   TIME_WINDOWS,
-} from "@decaf-ts/paperclip-pixels-common";
+} from "paperclip-pixels-common";
 // Local runtime constants (not part of the neutral wire contract). The
 // analytics/time-window *shapes* are common; these bag-and-bucket timings
 // drive the plugin's own temporal machinery and stay package-local.
 export { WINDOW_DURATION_MS, BUCKET_INTERVAL_MS, BUCKETS_PER_24H } from "./domain/metrics.js";
 
-export type { BehavioralSignal, AgentBehaviorVector, Hysteresis } from "@decaf-ts/paperclip-pixels-common";
-export type { VersionedAgentBehaviorVector } from "@decaf-ts/paperclip-pixels-common";
+export type { BehavioralSignal, AgentBehaviorVector, Hysteresis } from "paperclip-pixels-common";
+export type { VersionedAgentBehaviorVector } from "paperclip-pixels-common";
 
-export type { AgentFeedbackKind, AgentFeedback } from "@decaf-ts/paperclip-pixels-common";
+export type { AgentFeedbackKind, AgentFeedback } from "paperclip-pixels-common";
 
 // Per-agent character catalog + assignment selection (spec
 // PAPERCLIP_PIXELS-2, FR-13 / WS3). The catalog/assignment SHAPES are the
@@ -50,8 +50,8 @@ export type {
   CharacterCatalog,
   AgentCharacterAssignment,
   AgentCharacterAssignmentMap,
-} from "@decaf-ts/paperclip-pixels-common";
-export { HUE_SHIFT_MAX_DEG } from "@decaf-ts/paperclip-pixels-common";
+} from "paperclip-pixels-common";
+export { HUE_SHIFT_MAX_DEG } from "paperclip-pixels-common";
 export {
   parseCharacterCatalog,
   findCatalogEntry,
@@ -107,11 +107,11 @@ export type {
   IssueDocumentPayload,
   BridgeInputEvent,
   BridgeEventKind,
-} from "@decaf-ts/paperclip-pixels-common";
+} from "paperclip-pixels-common";
 export {
   BRIDGE_EVENT_KINDS,
   eventAgentId,
-} from "@decaf-ts/paperclip-pixels-common";
+} from "paperclip-pixels-common";
 export {
   runProjectionFromEvent,
 } from "./domain/events.js";
@@ -202,7 +202,7 @@ export type { AgentReplyInput, ReplyResult } from "./policy/agent-reply.js";
  * (spec §16). Every serialized bridge payload carries `schemaVersion: 1`
  * (§33.1, NFR-6). Owned by the neutral contract package.
  */
-export type { BridgeUiEvent } from "@decaf-ts/paperclip-pixels-common";
+export type { BridgeUiEvent } from "paperclip-pixels-common";
 
 /** Current bridge schema version (spec §33.1, NFR-6). */
 export const SCHEMA_VERSION = COMMON_SCHEMA_VERSION;

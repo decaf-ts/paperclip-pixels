@@ -12,7 +12,7 @@ export default {
   testRegex: "/test/core/.*\\.(test|spec)\\.ts$",
   moduleFileExtensions: ["ts", "js", "json", "node"],
   moduleNameMapper: {
-    "^@decaf-ts/paperclip-pixels-common$": path.join(ROOT, "../../common/src/index.ts"),
+    "^paperclip-pixels-common$": path.join(ROOT, "../../common/src/index.ts"),
     "^(\\.{1,2}/.*)\\.js$": "$1",
   },
   collectCoverage: false,

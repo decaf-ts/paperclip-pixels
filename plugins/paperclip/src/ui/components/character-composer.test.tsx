@@ -27,7 +27,7 @@ import {
   type AppearanceAssignment,
   type CharacterComposition,
   type CompositionPartKind,
-} from "@decaf-ts/paperclip-pixels-common";
+} from "paperclip-pixels-common";
 import { PixelOfficePage } from "../PixelOfficePage";
 import { makeAgentView, makeProjection, makeSnapshot } from "../test-utils/fixtures";
 import {

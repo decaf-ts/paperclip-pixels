@@ -59,7 +59,7 @@ import {
 import { PluginFeedMapper, type FeedAppearanceEntry } from "./feed-mapper.js";
 import type {
   PluginFeedOperation,
-} from "@decaf-ts/paperclip-pixels-common";
+} from "paperclip-pixels-common";
 import { bootstrapSnapshot } from "./snapshot.js";
 import { ToolActivityPoller, type LogFetchLike } from "./tool-activity-poller.js";
 import { DEFAULT_RELAY_COMMS_LIMIT } from "./comms-store.js";

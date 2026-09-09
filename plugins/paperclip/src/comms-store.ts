@@ -18,7 +18,7 @@
  * temporal compact-bucket store.
  */
 
-import type { PluginFeedOperation, PluginFeedDialogLine } from "@decaf-ts/paperclip-pixels-common";
+import type { PluginFeedOperation, PluginFeedDialogLine } from "paperclip-pixels-common";
 
 /** Default number of communications retained per company (spec R3-WS4a). */
 export const DEFAULT_RELAY_COMMS_LIMIT = 100;

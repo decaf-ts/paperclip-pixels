@@ -4,7 +4,7 @@
  * (`OfficeLayoutConfigResponse`) to read the current declarative layout and
  * the `office.set-layout` action to persist a validated one.
  *
- * The layout DTO (`OfficeLayout`) lives in `@decaf-ts/paperclip-pixels-common` and is
+ * The layout DTO (`OfficeLayout`) lives in `paperclip-pixels-common` and is
  * validated client-agnostically by the action handler (fail-closed: an
  * invalid layout is rejected with `INVALID_LAYOUT`). This editor edits the
  * host-neutral vocabulary — floors, seat positions in normalized 0..1 space —
@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { usePluginAction, usePluginData } from "@paperclipai/plugin-sdk/ui";
-import type { OfficeLayout, OfficeSeat } from "@decaf-ts/paperclip-pixels-common";
+import type { OfficeLayout, OfficeSeat } from "paperclip-pixels-common";
 import {
   BRIDGE_ACTION_KEYS,
   BRIDGE_DATA_KEYS,

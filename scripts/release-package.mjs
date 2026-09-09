@@ -66,6 +66,10 @@ try {
     const installed = path.join(cwd, 'node_modules/paperclip-pixels-common');
     if (lstatSync(installed, { throwIfNoEntry: false })?.isSymbolicLink()) rmSync(installed);
     run('npm', ['install', '--workspaces=false', '--save-exact', `paperclip-pixels-common@${version}`, '--registry', 'https://registry.npmjs.org']);
+    if (relative === 'plugins/paperclip') {
+      run('node', ['scripts/ci/build-paperclip-sdk.mjs'], root);
+    }
+    run('node', ['scripts/ci/prepare-package.mjs', relative], root);
     if (realpathSync(installed) === realpathSync(path.join(root, 'common')) || json(path.join(installed, 'package.json')).version !== version) {
       throw new Error('Release requires the freshly published registry dependency, not a workspace link');
     }

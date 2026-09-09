@@ -1,7 +1,7 @@
 {
   "name": "@decaf-ts/paperclip-pixels-plugin",
-  "version": "0.6.0",
-  "description": "Independent Paperclip plugin for the Paperclip <-> Pixel Agents bridge: Paperclip SDK worker, Pixel Office UI (page + sidebar), persistence, metrics, policy, snapshot/event normalization, reconciliation, and the outbound feed mapper + retry/observability client. Depends only on `@decaf-ts/paperclip-pixels-common`.",
+  "version": "0.6.1",
+  "description": "Independent Paperclip plugin for the Paperclip <-> Pixel Agents bridge: Paperclip SDK worker, Pixel Office UI (page + sidebar), persistence, metrics, policy, snapshot/event normalization, reconciliation, and the outbound feed mapper + retry/observability client. Depends only on `paperclip-pixels-common`.",
   "type": "module",
   "main": "dist/worker.js",
   "types": "dist/worker.d.ts",
@@ -64,7 +64,7 @@
     "react-dom": ">=18"
   },
   "dependencies": {
-    "@decaf-ts/paperclip-pixels-common": "0.1.0",
+    "paperclip-pixels-common": "0.1.1",
     "ws": "^8.10.5",
     "zod": "^4.4.3"
   },
@@ -89,7 +89,6 @@
     "eslint": "^9.12.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.11.0",
-    "typescript-eslint": "^8.68.0",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "react": "^19.2.8",
@@ -97,10 +96,11 @@
     "rimraf": "^6.0.1",
     "ts-jest": "^29.4.12",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.68.0",
     "vitest": "^4.1.11"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
+    "registry": "https://registry.npmjs.org",
     "access": "public"
   }
 }

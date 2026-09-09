@@ -15,7 +15,7 @@ import {
   usePluginActionImpl,
   usePluginDataImpl,
 } from "../test-utils/sdk-ui";
-import type { OfficeLayout } from "@decaf-ts/paperclip-pixels-common";
+import type { OfficeLayout } from "paperclip-pixels-common";
 
 function makeLayout(overrides: Partial<OfficeLayout> = {}): OfficeLayout {
   return {
