@@ -43,7 +43,7 @@ removed in Revision 3 (R3-M4, [SAA-886](/SAA/issues/SAA-886)); there is no
 combined entry package. `paperclip/` and `pixel-agents/` remain **git
 submodules only**, reference-only (unchanged).
 
-- **`common/`** — `paperclip-pixels-common`: shared domain logic — the
+- **`common/`** — `@decaf-ts/paperclip-pixels-common`: shared domain logic — the
   neutral wire contract and serializable domain shapes (formerly the
   repo-root `src/core/`, split by R3-M4): DTOs, Zod validation, operation
   ids, error codes, `schemaVersion` compatibility rules, fixture builders,

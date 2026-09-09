@@ -26,13 +26,13 @@ import {
 } from "./constants.js";
 import { bootstrapAllCompanies, bootstrapSnapshot } from "./snapshot.js";
 import { mapPluginEvent } from "./subscriptions.js";
-import type { PluginFeedOperation } from "paperclip-pixels-common";
+import type { PluginFeedOperation } from "@decaf-ts/paperclip-pixels-common";
 import {
   validateOfficeLayout,
   type AgentAppearanceAssignmentV2,
   type AppearanceAssignment,
   type OfficeLayout,
-} from "paperclip-pixels-common";
+} from "@decaf-ts/paperclip-pixels-common";
 import {
   loadAgentAppearanceV2Map,
   loadAgentCharacterAssignments,

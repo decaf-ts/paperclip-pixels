@@ -7,7 +7,7 @@ For contributors working on the bridge itself. If you just want to install and u
 Five trees, per the board Revision 3 target shape — two independent plugin packages joined by a neutral contract package, plus the two upstream references:
 
 ```
-common/                      paperclip-pixels-common — the neutral wire contract (schemas only):
+common/                      @decaf-ts/paperclip-pixels-common — the neutral wire contract (schemas only):
                                DTOs, Zod validation, operation ids, error codes,
                                schemaVersion compatibility rules, fixture builders, contract tests.
                                Imports no other package; no SDK, React, server, or filesystem code.

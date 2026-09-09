@@ -779,7 +779,7 @@ whitespace-normalized identical to the source.)
 Naming note (the board's own words, both preserved in place below): the
 recommended target shape provisionally labels the shared contract
 `@decaf-ts/paperclip-pixels-contract`, while the board's migration plan step 1
-states the restructured `./common` "will be your `paperclip-pixels-common`
+states the restructured `./common` "will be your `@decaf-ts/paperclip-pixels-common`
 (not contracts)" — the migration-plan wording is the board's packaging
 amendment for the same neutral contract package (common knows no other
 package; the plugins know only common, never each other).
@@ -1004,7 +1004,7 @@ three-component architecture while retaining testability.
 1. restructure repo to:
    - ./pixel-agents: remaisn as is;
    - ./paperclip: remais as is;
-   - ./common: independent contracts package - this will be your `paperclip-pixels-common` (not contracts)
+   - ./common: independent contracts package - this will be your `@decaf-ts/paperclip-pixels-common` (not contracts)
    - ./plugins/paperclip: idependent paperclip plugin package;
    - ./plugins/pixel-agents: independent pixel agents plugin
    - common doesnt know any other package; plguins only know common, have no connection to each other
@@ -1075,7 +1075,7 @@ indexed here for the remediation re-plan:
   composition): "license/provenance review accepted internally;" (appended to
   "Port external assets.")
 - Migration plan, step 1 (contract package naming): "./common: independent
-  contracts package - this will be your `paperclip-pixels-common` (not
+  contracts package - this will be your `@decaf-ts/paperclip-pixels-common` (not
   contracts)" — amending the target shape's provisional
   `@decaf-ts/paperclip-pixels-contract` label (see the naming note above)
 
@@ -3045,7 +3045,7 @@ state `blocked` → CEO resumes to decompose under CTO execution, carrying
   deployment, partial plugin UX and character assets); target architecture
   converging on two installable plugins (`@decaf-ts/paperclip-pixels`,
   `@decaf-ts/pixel-agents-paperclip-plugin`) joined by the neutral `./common`
-  `paperclip-pixels-common` contract package; the repo-restructure migration
+  `@decaf-ts/paperclip-pixels-common` contract package; the repo-restructure migration
   plan (four steps; the temporary combined-package entry is removed only after
   a documented, tested migration path for Compose, Kubernetes, and current
   users); the board's inline amendments (release CI defaults to decaf-ts
@@ -3690,7 +3690,7 @@ until i tell you to start it;"). The hold was released 2026-09-06 ("Start
 remediation now"). The audit is recorded verbatim as **Revision 3** (readiness
 verdict; the two-plugin target architecture — `@decaf-ts/paperclip-pixels` and
 `@decaf-ts/pixel-agents-paperclip-plugin` joined by the neutral `./common`
-`paperclip-pixels-common` contract package; the repo-restructure migration plan
+`@decaf-ts/paperclip-pixels-common` contract package; the repo-restructure migration plan
 with the combined-package entry removed only after a documented, tested
 migration path; the board's inline amendments; the six remediation workstreams;
 the concern-ownership table; the bridge/transport gaps; and the

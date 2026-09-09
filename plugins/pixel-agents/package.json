@@ -1,7 +1,7 @@
 {
   "name": "@decaf-ts/pixel-agents-paperclip-plugin",
   "version": "0.6.0",
-  "description": "Independent Pixel Agents plugin surface for the Paperclip <-> Pixel Agents bridge: manifest + lifecycle registration, the mountable `POST /api/plugin-feed` endpoint, idempotent feed-operation application, the WS4-A/WC4 appearance adoption, reverse-action intake/feedback forwarding, and the feed mapper + HTTP sink for the combined-entry interim. Depends only on `paperclip-pixels-common`.",
+  "description": "Independent Pixel Agents plugin surface for the Paperclip <-> Pixel Agents bridge: manifest + lifecycle registration, the mountable `POST /api/plugin-feed` endpoint, idempotent feed-operation application, the WS4-A/WC4 appearance adoption, reverse-action intake/feedback forwarding, and the feed mapper + HTTP sink for the combined-entry interim. Depends only on `@decaf-ts/paperclip-pixels-common`.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -36,7 +36,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "paperclip-pixels-common": "0.1.0"
+    "@decaf-ts/paperclip-pixels-common": "0.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
@@ -49,5 +49,9 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.68.0",
     "vitest": "^4.1.11"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
   }
 }

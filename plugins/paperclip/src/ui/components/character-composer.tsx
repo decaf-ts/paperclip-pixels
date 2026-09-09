@@ -30,7 +30,7 @@ import {
   type CharacterComposition,
   type CompositionPartKind,
   type AppearanceAssignment,
-} from "paperclip-pixels-common";
+} from "@decaf-ts/paperclip-pixels-common";
 
 /** Editable working composition for one agent, not yet persisted. */
 interface WorkingComposition {

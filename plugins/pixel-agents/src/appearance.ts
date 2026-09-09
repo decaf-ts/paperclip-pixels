@@ -31,7 +31,7 @@ import type {
   CharacterCatalogEntry,
   PluginAppearanceSource,
   PluginCharacterSheetDeclaration,
-} from "paperclip-pixels-common";
+} from "@decaf-ts/paperclip-pixels-common";
 import { parseCharacterCatalog, resolveCharacterCatalogDir } from "./characters.js";
 
 /** The plugin's character sheets in declaration order, plus the

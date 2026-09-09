@@ -22,11 +22,11 @@ import type {
   PluginFeedDialogLinesOperation,
   PluginFeedOperation,
   PluginFeedStatusOperation,
-} from "paperclip-pixels-common";
-import { PLUGIN_FEED_SCHEMA_VERSION } from "paperclip-pixels-common";
+} from "@decaf-ts/paperclip-pixels-common";
+import { PLUGIN_FEED_SCHEMA_VERSION } from "@decaf-ts/paperclip-pixels-common";
 
 // The feed wire contract (operation DTOs, batch envelope, schema version) is
-// owned by `paperclip-pixels-common`; this module re-exports those shared
+// owned by `@decaf-ts/paperclip-pixels-common`; this module re-exports those shared
 // shapes and carries the re-implemented fail-closed batch validator whose
 // exact diagnostic strings the plugin's own tests pin (the common package
 // ships a `validatePluginFeedBatchLegacy` with a different, zod-derived

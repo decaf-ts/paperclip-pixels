@@ -23,7 +23,7 @@ import type {
   PluginAgentSource,
   PluginFeedDialogLine,
   PluginFeedOperation,
-} from "paperclip-pixels-common";
+} from "@decaf-ts/paperclip-pixels-common";
 
 /** Structural validation mirrors of the host's declaration gates
  * (pluginHost.ts AGENT_KEY_PATTERN etc.): the host re-validates everything

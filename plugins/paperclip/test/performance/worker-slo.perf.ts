@@ -39,8 +39,8 @@ import {
 } from "../../src/core/index.js";
 import type { BridgeInputEvent } from "../../src/core/index.js";
 import { RelayCommsStore, DEFAULT_RELAY_COMMS_LIMIT } from "../../src/comms-store.js";
-import { buildBridgeEvent, buildSnapshot } from "paperclip-pixels-common";
-import type { PluginFeedBatch } from "paperclip-pixels-common";
+import { buildBridgeEvent, buildSnapshot } from "@decaf-ts/paperclip-pixels-common";
+import type { PluginFeedBatch } from "@decaf-ts/paperclip-pixels-common";
 import {
   BACKPRESSURE_RUN,
   FEED_LATENCY_RUN,

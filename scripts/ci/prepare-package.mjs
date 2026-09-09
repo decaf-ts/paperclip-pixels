@@ -3,7 +3,7 @@
  * CI bootstrap helper: install and wire a package so its own pipeline
  * (typecheck / lint / build / test / pack) can run from a clean clone.
  *
- * `paperclip-pixels-common` is intentionally not yet published (the board
+ * `@decaf-ts/paperclip-pixels-common` is intentionally not yet published (the board
  * provides npm/registry auth keys only after this CI work lands), so the
  * plugin packages must resolve it locally during install. This script builds
  * `common` and symlinks it into the target package's node_modules, matching
@@ -79,13 +79,13 @@ if (target === "common") {
 }
 
 // -- a plugin package -----------------------------------------------------
-const dependsOnCommon = Boolean(pkg.dependencies?.["paperclip-pixels-common"]);
+const dependsOnCommon = Boolean(pkg.dependencies?.["@decaf-ts/paperclip-pixels-common"]);
 const needsSdk = Boolean(pkg.dependencies?.["@paperclipai/plugin-sdk"]);
 
 if (dependsOnCommon) {
   if (!commonBuilt) buildCommon();
   linkIfNeeded(
-    path.join(pkgDir, "node_modules", "paperclip-pixels-common"),
+    path.join(pkgDir, "node_modules", "@decaf-ts/paperclip-pixels-common"),
     path.join(root, "common"),
   );
 }
