@@ -13,8 +13,8 @@
 import type {
   PluginFeedBatch,
   PluginFeedOperation,
-} from "@decaf-ts/paperclip-pixels-common";
-import { PLUGIN_FEED_SCHEMA_VERSION } from "@decaf-ts/paperclip-pixels-common";
+} from "paperclip-pixels-common";
+import { PLUGIN_FEED_SCHEMA_VERSION } from "paperclip-pixels-common";
 
 /** Minimal fetch-like function (injectable so the package stays pure-TS). */
 export type FeedFetchLike = (

@@ -3,7 +3,7 @@
  * CI bootstrap helper: install and wire a package so its own pipeline
  * (typecheck / lint / build / test / pack) can run from a clean clone.
  *
- * `@decaf-ts/paperclip-pixels-common` is intentionally not yet published (the board
+ * `paperclip-pixels-common` is intentionally not yet published (the board
  * provides npm/registry auth keys only after this CI work lands), so the
  * plugin packages must resolve it locally during install. This script builds
  * `common` and symlinks it into the target package's node_modules, matching
@@ -79,13 +79,13 @@ if (target === "common") {
 }
 
 // -- a plugin package -----------------------------------------------------
-const dependsOnCommon = Boolean(pkg.dependencies?.["@decaf-ts/paperclip-pixels-common"]);
-const needsSdk = Boolean(pkg.dependencies?.["@paperclipai/plugin-sdk"]);
+const dependsOnCommon = Boolean(pkg.dependencies?.["paperclip-pixels-common"]);
+const needsSdk = target === "plugins/paperclip" || Boolean(pkg.dependencies?.["@paperclipai/plugin-sdk"]);
 
 if (dependsOnCommon) {
   if (!commonBuilt) buildCommon();
   linkIfNeeded(
-    path.join(pkgDir, "node_modules", "@decaf-ts/paperclip-pixels-common"),
+    path.join(pkgDir, "node_modules", "paperclip-pixels-common"),
     path.join(root, "common"),
   );
 }
@@ -105,6 +105,12 @@ if (needsSdk && existsSync(path.join(root, "paperclip"))) {
   );
   linkIfNeeded(
     path.join(pkgDir, "node_modules", "@paperclipai", "shared"),
+    path.join(root, "paperclip", "packages", "shared"),
+  );
+  // esbuild resolves imports from the SDK package's real path, so also
+  // provide the workspace dependency inside the SDK itself after npm prune.
+  linkIfNeeded(
+    path.join(root, "paperclip", "packages", "plugins", "sdk", "node_modules", "@paperclipai", "shared"),
     path.join(root, "paperclip", "packages", "shared"),
   );
 }

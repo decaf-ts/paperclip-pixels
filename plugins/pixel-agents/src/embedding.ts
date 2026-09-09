@@ -65,7 +65,7 @@ import type {
   PixelAgentsPluginHost,
   PluginAgentSource,
   PluginAppearanceSource,
-} from "@decaf-ts/paperclip-pixels-common";
+} from "paperclip-pixels-common";
 
 /** Feed endpoint path served by the embedding surface's sidecar listener. */
 export const PLUGIN_FEED_PATH = "/api/plugin-feed";

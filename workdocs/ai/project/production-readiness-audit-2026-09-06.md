@@ -220,7 +220,7 @@ three-component architecture while retaining testability.
 1. restructure repo to:
    - ./pixel-agents: remaisn as is;
    - ./paperclip: remais as is;
-   - ./common: independent contracts package - this will be your `@decaf-ts/paperclip-pixels-common` (not contracts)
+   - ./common: independent contracts package - this will be your `paperclip-pixels-common` (not contracts)
    - ./plugins/paperclip: idependent paperclip plugin package;
    - ./plugins/pixel-agents: independent pixel agents plugin
    - common doesnt know any other package; plguins only know common, have no connection to each other

@@ -33,7 +33,7 @@ import type {
   PixelAgentsPluginHost,
   PixelAgentsPluginRegistration,
   PluginAgentDeclaration,
-} from "@decaf-ts/paperclip-pixels-common";
+} from "paperclip-pixels-common";
 
 /** Dependencies the embedding surface injects into the plugin. */
 export interface PaperclipPluginDeps {

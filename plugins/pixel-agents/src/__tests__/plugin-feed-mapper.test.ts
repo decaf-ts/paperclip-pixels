@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   AuthoritativeSnapshotInput,
   BridgeInputEvent,
-} from "@decaf-ts/paperclip-pixels-common";
+} from "paperclip-pixels-common";
 import { PluginFeedMapper } from "../index.js";
 
 /**

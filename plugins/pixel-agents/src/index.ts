@@ -17,7 +17,7 @@
  * team-metadata transcripts, `saveAgentSeats` seat-driving) have no
  * counterpart here by construction.
  *
- * This package depends only on `@decaf-ts/paperclip-pixels-common` (the neutral wire
+ * This package depends only on `paperclip-pixels-common` (the neutral wire
  * contract) plus its own local runtime helpers (`constants.ts`, `dialog.ts`,
  * `characters.ts`). It never imports the Paperclip plugin package or the
  * outer `src/` tree.
@@ -126,4 +126,4 @@ export type {
   PluginContributions,
   PluginMessageDeclaration,
   PluginSourceDeclarations,
-} from "@decaf-ts/paperclip-pixels-common";
+} from "paperclip-pixels-common";

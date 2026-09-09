@@ -4,7 +4,7 @@
  *
  * Proves, cheaply, the upgrade-order compatibility the board waived for full
  * version-drift control: the Paperclip plugin (producer) and the Pixel Agents
- * plugin (consumer) must agree with `@decaf-ts/paperclip-pixels-common`'s wire schema
+ * plugin (consumer) must agree with `paperclip-pixels-common`'s wire schema
  * rules at each version pairing. The runtime package tests already validate
  * behaviour; this harness asserts the version/pairing invariants that block a
  * release when the two plugin surfaces drift apart.
@@ -47,8 +47,8 @@ expect(pixelAgents.version === expectedPixelAgents, `pixel-agents plugin version
 // Both plugins must depend on the same common contract version currently in the
 // tree, and never on each other (target-shape invariant: plugins only know common).
 for (const [name, pkg] of [["paperclip", paperclip], ["pixel-agents", pixelAgents]]) {
-  const dep = pkg.dependencies?.["@decaf-ts/paperclip-pixels-common"];
-  expect(dep === common.version, `${name} plugin pins @decaf-ts/paperclip-pixels-common@${dep}; tree is ${common.version}`);
+  const dep = pkg.dependencies?.["paperclip-pixels-common"];
+  expect(dep === common.version, `${name} plugin pins paperclip-pixels-common@${dep}; tree is ${common.version}`);
   expect(pkg.dependencies?.["@decaf-ts/pixel-agents-paperclip-plugin"] === undefined, `${name} plugin must NOT depend on the pixel-agents plugin`);
   expect(pkg.dependencies?.["@decaf-ts/paperclip-pixels-plugin"] === undefined, `${name} plugin must NOT depend on the paperclip plugin`);
 }

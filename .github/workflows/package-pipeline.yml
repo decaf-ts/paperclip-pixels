@@ -6,7 +6,7 @@ name: "Package clean-clone pipeline"
 # tests and an `npm pack --dry-run` smoke. The paperclip plugin additionally
 # builds the pinned `paperclip/` submodule's plugin SDK (the reference-only
 # submodule is git-ignored for its dist/), and every plugin package resolves the
-# intentionally unpublished `@decaf-ts/paperclip-pixels-common` locally.
+# intentionally unpublished `paperclip-pixels-common` locally.
 #
 # Called by the release gate and by package-ci.yml with a `package` input.
 

@@ -5,7 +5,7 @@
 #
 # The plugin worker + manifest are bundled by esbuild into self-contained
 # single files (plugins/paperclip/scripts/build.mjs) that inline the plugin's
-# own src/ source, @decaf-ts/paperclip-pixels-common, @paperclipai/plugin-sdk,
+# own src/ source, paperclip-pixels-common, @paperclipai/plugin-sdk,
 # @paperclipai/shared, and zod, externalizing only node built-ins (and, for
 # the UI bundle, react/react-dom). So the install location only needs the
 # plugin package.json (with the paperclipPlugin manifest/worker pointers), the

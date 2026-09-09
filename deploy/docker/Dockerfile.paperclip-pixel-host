@@ -62,7 +62,7 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # `plugins/paperclip`, never the combined root build (removed in R3-M4). The
 # plugin worker + manifest are bundled by esbuild into self-contained single
 # files (plugins/paperclip/scripts/build.mjs) that inline the plugin's own
-# src/ source, @decaf-ts/paperclip-pixels-common, @paperclipai/plugin-sdk,
+# src/ source, paperclip-pixels-common, @paperclipai/plugin-sdk,
 # @paperclipai/shared, and zod, externalizing only node built-ins. The
 # install location needs the plugin package.json + its dist/ plus its
 # assets/characters (and assets/composition) — the WS3 per-agent character

@@ -15,7 +15,7 @@
  * path.
  */
 
-import { ACTION_KEYS } from "@decaf-ts/paperclip-pixels-common";
+import { ACTION_KEYS } from "paperclip-pixels-common";
 import { PAPERCLIP_PLUGIN_ACTIONS } from "./manifest.js";
 
 /** Fetch shape used by the forwarder (injectable; mirrors LogFetchLike). */

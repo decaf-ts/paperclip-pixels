@@ -21,7 +21,7 @@ import type {
   CapabilityId,
   PixelAgentsPluginManifest,
   PluginCapabilityDeclaration,
-} from "@decaf-ts/paperclip-pixels-common";
+} from "paperclip-pixels-common";
 
 /** Plugin id in the Pixel Agents host registry (A1 id pattern: lowercase slug). */
 export const PAPERCLIP_PIXEL_PLUGIN_ID = "paperclip";

@@ -70,5 +70,5 @@ if (bytes) {
   console.log(`[build-embedding] bundle size: ${(bytes / 1024).toFixed(1)} KiB`);
 }
 console.log(
-  "[build-embedding] runtime deps inlined: @decaf-ts/paperclip-pixels-common + zod; externalized: node built-ins",
+  "[build-embedding] runtime deps inlined: paperclip-pixels-common + zod; externalized: node built-ins",
 );

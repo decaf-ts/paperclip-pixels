@@ -4,7 +4,7 @@ name: "Integration matrix"
 # compatibility fixtures (PAPERCLIP_PIXELS-2 R3-WS2, migration-plan step 3
 # second half). The board waived full version-drift control ("we control
 # versioning"), so this is a cheap upgrade-order proof: for each declared
-# version pairing, both plugins must agree with `@decaf-ts/paperclip-pixels-common`'s
+# version pairing, both plugins must agree with `paperclip-pixels-common`'s
 # wire-schema rules and never depend on each other.
 #
 # The `include` list is the version-pair matrix. Today only N = 0.6.0 exists

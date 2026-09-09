@@ -12,7 +12,7 @@ Root-level scripts (orchestration only):
 
 Per-package scripts (run from inside each package directory):
 
-- `common` (`@decaf-ts/paperclip-pixels-common`) - `build`, `typecheck`, `test` (vitest), `test:watch`, `lint`;
+- `common` (`paperclip-pixels-common`) - `build`, `typecheck`, `test` (vitest), `test:watch`, `lint`;
 - `plugins/pixel-agents` (`@decaf-ts/pixel-agents-paperclip-plugin`) - `build` (tsc output plus the self-contained `dist/pixel-agents-embedding.cjs` the fork's generic `--plugin` loader loads), `typecheck`, `test` (vitest), `test:watch`, `lint`;
 - `plugins/paperclip` (`@decaf-ts/paperclip-pixels-plugin`) - `build` / `build:worker` / `build:ui` / `build:types` (esbuild worker + UI bundle + declaration types), `typecheck` / `typecheck:ui`, `lint`, and the test suites: `test:domain` (jest), `test:worker` (vitest), `test` (UI, jest + jsdom + React Testing Library), `test:perf`, and `test:all` (all suites in sequence).
 

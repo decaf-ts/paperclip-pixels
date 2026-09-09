@@ -8,11 +8,11 @@ The bridge ships as **two independent plugins joined by a neutral contract packa
 
 | Package | Path | Runs in | Owns |
 |---|---|---|---|
-| `@decaf-ts/paperclip-pixels-common` | [`./common`](./common) | *(nowhere — schemas only)* | The versioned wire contract: feed DTOs, Zod validation, operation ids, error codes, `schemaVersion` compatibility rules, fixture builders. Imports no other package. |
+| `paperclip-pixels-common` | [`./common`](./common) | *(nowhere — schemas only)* | The versioned wire contract: feed DTOs, Zod validation, operation ids, error codes, `schemaVersion` compatibility rules, fixture builders. Imports no other package. |
 | `@decaf-ts/paperclip-pixels-plugin` | [`./plugins/paperclip`](./plugins/paperclip) | The Paperclip host (forked plugin worker) | Snapshot bootstrap + event subscriptions, temporal metrics, behavioral proxies, policy (fail-closed new-work gate), persistence, the Pixel Office UI (`page` + `sidebar` slots), and the outbound feed mapper + HTTP sink/retry client. |
 | `@decaf-ts/pixel-agents-paperclip-plugin` | [`./plugins/pixel-agents`](./plugins/pixel-agents) | The Pixel Agents server process | Plugin manifest + lifecycle registration, the authenticated `POST /api/plugin-feed` endpoint, idempotent feed-operation application, agent/appearance/layout sources, and reverse-action (reply) forwarding. |
 
-The two plugin packages depend **only** on `@decaf-ts/paperclip-pixels-common`, never on each other. The two upstream trees in this repo are references:
+The two plugin packages depend **only** on `paperclip-pixels-common`, never on each other. The two upstream trees in this repo are references:
 
 - [`./paperclip`](./paperclip) — the Paperclip core submodule. Reference-only, never modified: the bridge uses only the public Plugin SDK (`page`, `sidebar`, and agent-scoped `detailTab` slots).
 - [`./pixel-agents`](./pixel-agents) — a deliberate **fork** of upstream `pixel-agents-hq/pixel-agents` (baseline upstream tag `v1.4.1`, local tag `fork-baseline-v1.4.1`). The fork adds the generic plugin host the bridge loads through. Upstream is **reference-only — never PR'd**; divergence is tracked unilaterally in the fork's `FORK.md` policy and `DIVERGENCE.md` log (one row per fork-side change), and the fork lives at its own remote (`decaf-ts/as-pixels`, branch `legacy`).
