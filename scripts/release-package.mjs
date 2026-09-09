@@ -37,11 +37,11 @@ function syncRootLock(packageName, version) {
 try {
   const npmToken = path.join(cwd, '.npmtoken');
   if (existsSync(npmToken)) {
-    env.BRIDGE_NPM_TOKEN = readFileSync(npmToken, 'utf8').trim();
+    env.NPM_TOKEN = readFileSync(npmToken, 'utf8').trim();
     env.NPM_CONFIG_USERCONFIG = path.join(temp, 'npmrc');
     writeFileSync(
       env.NPM_CONFIG_USERCONFIG,
-      `//registry.npmjs.org/:_authToken=${env.BRIDGE_NPM_TOKEN}\n`,
+      '//registry.npmjs.org/:_authToken=${NPM_TOKEN}\n',
       { mode: 0o600 },
     );
   }
