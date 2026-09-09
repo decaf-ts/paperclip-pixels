@@ -1,6 +1,6 @@
 {
   "name": "@decaf-ts/pixel-agents-paperclip-plugin",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Independent Pixel Agents plugin surface for the Paperclip <-> Pixel Agents bridge: manifest + lifecycle registration, the mountable `POST /api/plugin-feed` endpoint, idempotent feed-operation application, the WS4-A/WC4 appearance adoption, reverse-action intake/feedback forwarding, and the feed mapper + HTTP sink for the combined-entry interim. Depends only on `paperclip-pixels-common`.",
   "type": "module",
   "main": "dist/index.js",
