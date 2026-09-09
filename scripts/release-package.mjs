@@ -131,7 +131,11 @@ try {
   } catch {
     run('git', ['tag', '-a', tag, '-m', message], root);
   }
-  run('git', ['push', 'origin', `HEAD:refs/heads/${branch}`, `refs/tags/${tag}`], root);
+  try {
+    run('git', ['push', 'origin', `HEAD:refs/heads/${branch}`, `refs/tags/${tag}`], root);
+  } catch (error) {
+    console.warn(`Published ${tag}, but GitHub push failed; local commit/tag retained: ${error.message}`);
+  }
   console.log(`Released and verified ${tag}`);
 } finally {
   rmSync(temp, { recursive: true, force: true });
