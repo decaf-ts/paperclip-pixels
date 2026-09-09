@@ -26,7 +26,7 @@ const fs = require('fs'), path = require('path');
 const args = process.argv.slice(2), command = path.basename(process.argv[1]);
 fs.appendFileSync(process.env.CALLS, JSON.stringify({command,args,cwd:process.cwd()})+'\\n');
 if(command==='git') { if(args[0]==='branch') console.log('master'); process.exit(0); }
-if(args[0]==='whoami' && process.env.FAILURE==='auth') process.exit(1);
+if(args[0]==='ping' && process.env.FAILURE==='auth') process.exit(1);
 if(args[0]==='run' && process.env.FAILURE==='tests') process.exit(1);
 if(args[0]==='version') { const p=JSON.parse(fs.readFileSync('package.json')); p.version='0.1.2'; fs.writeFileSync('package.json', JSON.stringify(p)); }
 if(args[0]==='install' && args.includes('--save-exact')) { fs.mkdirSync('node_modules/@decaf-ts/paperclip-pixels-common', {recursive:true}); fs.writeFileSync('node_modules/@decaf-ts/paperclip-pixels-common/package.json', JSON.stringify({version:'0.1.1'})); }

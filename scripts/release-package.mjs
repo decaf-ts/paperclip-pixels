@@ -24,6 +24,15 @@ function run(command, args, location = cwd, capture = false) {
   })?.trim();
 }
 function json(file) { return JSON.parse(readFileSync(file, 'utf8')); }
+function syncRootLock(packageName, version) {
+  const lockPath = path.join(root, 'package-lock.json');
+  const lock = json(lockPath);
+  const workspace = relative;
+  if (lock.packages?.[workspace]) lock.packages[workspace].version = version;
+  const installed = `node_modules/${packageName}`;
+  if (lock.packages?.[installed]) lock.packages[installed].version = version;
+  writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+}
 try {
   const githubToken = path.join(cwd, '.token');
   if (existsSync(githubToken)) {
@@ -44,7 +53,9 @@ try {
   const branch = run('git', ['branch', '--show-current'], root, true);
   if (!['main', 'master'].includes(branch)) throw new Error('Release from main or master');
   if (run('git', ['diff', '--cached', '--name-only'], root, true)) throw new Error('Commit or unstage existing staged changes before release');
-  run('npm', ['whoami', '--registry', 'https://npm.pkg.github.com'], cwd, true);
+  // GitHub Packages does not implement npm's `whoami` endpoint reliably;
+  // `npm ping` is the supported authenticated registry probe.
+  run('npm', ['ping', '--registry', 'https://npm.pkg.github.com'], cwd, true);
 
   // Install the published contract, not npm's local workspace symlink, before
   // starting any dependent package's build/test/version process.
@@ -63,12 +74,12 @@ try {
   run('npm', ['version', requested, '--no-git-tag-version', '--workspaces=false']);
   const pkg = json(path.join(cwd, 'package.json'));
   const constants = path.join(cwd, 'src/constants.ts');
-  if (existsSync(constants)) {
+  if (relative !== 'common' && existsSync(constants)) {
     const source = readFileSync(constants, 'utf8');
     if (!/export const PLUGIN_VERSION = "[^"]+";/.test(source)) throw new Error('Missing PLUGIN_VERSION');
     writeFileSync(constants, source.replace(/export const PLUGIN_VERSION = "[^"]+";/, `export const PLUGIN_VERSION = "${pkg.version}";`));
   }
-  run('npm', ['install', '--package-lock-only', '--ignore-scripts'], root);
+  syncRootLock(pkg.name, pkg.version);
   run('npm', ['run', 'prepare-release', '--workspaces=false']);
   const artifacts = path.join(root, 'release-artifacts');
   run('mkdir', ['-p', artifacts]);
