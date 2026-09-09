@@ -40,7 +40,7 @@ try {
     env.NPM_CONFIG_USERCONFIG = path.join(temp, 'npmrc');
     writeFileSync(
       env.NPM_CONFIG_USERCONFIG,
-      '@decaf-ts:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=${BRIDGE_GITHUB_TOKEN}\n',
+      `@decaf-ts:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=${env.BRIDGE_GITHUB_TOKEN}\n`,
       { mode: 0o600 },
     );
   }
@@ -71,7 +71,10 @@ try {
     console.log(`Verified registry dependency @decaf-ts/paperclip-pixels-common@${version}`);
   }
   // Version before building so bundles contain the released manifest version.
-  run('npm', ['version', requested, '--no-git-tag-version', '--workspaces=false']);
+  const currentPackage = json(path.join(cwd, 'package.json'));
+  if (currentPackage.version !== requested) {
+    run('npm', ['version', requested, '--no-git-tag-version', '--workspaces=false']);
+  }
   const pkg = json(path.join(cwd, 'package.json'));
   const constants = path.join(cwd, 'src/constants.ts');
   if (relative !== 'common' && existsSync(constants)) {
