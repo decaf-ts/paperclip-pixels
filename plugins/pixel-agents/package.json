@@ -32,6 +32,11 @@
     "manifest"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/decaf-ts/paperclip-pixels.git",
+    "directory": "plugins/pixel-agents"
+  },
   "engines": {
     "node": ">=20"
   },
