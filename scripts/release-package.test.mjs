@@ -14,12 +14,12 @@ function fixture(t, target, failure = '') {
   copyFileSync(new URL('./release-package.mjs', import.meta.url), path.join(root, 'scripts/release-package.mjs'));
   for (const dir of ['common', 'plugins/paperclip']) {
     mkdirSync(path.join(root, dir, 'src'), { recursive: true });
-    writeFileSync(path.join(root, dir, 'package.json'), JSON.stringify({ name: dir === 'common' ? 'paperclip-pixels-common' : '@decaf-ts/paperclip-pixels-plugin', version: '0.1.1' }));
+    writeFileSync(path.join(root, dir, 'package.json'), JSON.stringify({ name: dir === 'common' ? '@decaf-ts/paperclip-pixels-common' : '@decaf-ts/paperclip-pixels-plugin', version: '0.1.1' }));
   }
   if (target !== 'common') {
     mkdirSync(path.join(root, target, 'node_modules'));
     mkdirSync(path.join(root, target, 'node_modules/@decaf-ts'), { recursive: true });
-    symlinkSync(path.join(root, 'common'), path.join(root, target, 'node_modules/paperclip-pixels-common'), 'dir');
+    symlinkSync(path.join(root, 'common'), path.join(root, target, 'node_modules/@decaf-ts/paperclip-pixels-common'), 'dir');
   }
   writeFileSync(path.join(root, target, 'src/constants.ts'), 'export const PLUGIN_VERSION = "0.1.1";\n');
   const stub = `#!/usr/bin/env node
@@ -30,7 +30,7 @@ if(command==='git') { if(args[0]==='branch') console.log('master'); process.exit
 if(args[0]==='ping' && process.env.FAILURE==='auth') process.exit(1);
 if(args[0]==='run' && process.env.FAILURE==='tests') process.exit(1);
 if(args[0]==='version') { const p=JSON.parse(fs.readFileSync('package.json')); p.version='0.1.2'; fs.writeFileSync('package.json', JSON.stringify(p)); }
-if(args[0]==='install' && args.includes('--save-exact')) { fs.mkdirSync('node_modules/paperclip-pixels-common', {recursive:true}); fs.writeFileSync('node_modules/paperclip-pixels-common/package.json', JSON.stringify({version:'0.1.1'})); }
+if(args[0]==='install' && args.includes('--save-exact')) { fs.mkdirSync('node_modules/@decaf-ts/paperclip-pixels-common', {recursive:true}); fs.writeFileSync('node_modules/@decaf-ts/paperclip-pixels-common/package.json', JSON.stringify({version:'0.1.1'})); }
 if(args[0]==='pack') console.log(JSON.stringify([{filename:'test.tgz',integrity:'sha512-test'}]));
 if(args[0]==='view') console.log(args.includes('dist.integrity') ? 'sha512-test' : '0.1.1');
 `;
@@ -59,14 +59,14 @@ test('common release tests before publish and verifies before pushing its own ta
   assert.ok(index('run') < index('publish'));
   assert.ok(index('publish') < index('view'));
   assert.ok(index('view') < index('push'));
-  assert.ok(calls.find(c => c.args[0] === 'tag').args.includes('paperclip-pixels-common@0.1.2'));
+  assert.ok(calls.find(c => c.args[0] === 'tag').args.includes('@decaf-ts/paperclip-pixels-common@0.1.2'));
 });
 test('dependent release installs registry contract before versioning and tests', t => {
   const { result, calls } = fixture(t, 'plugins/paperclip');
   assert.equal(result.status, 0, result.stderr);
   const install = calls.findIndex(c => c.args[0] === 'install' && c.args.includes('--save-exact'));
   assert.ok(install >= 0);
-  assert.ok(calls[install].args.includes('paperclip-pixels-common@0.1.1'));
+  assert.ok(calls[install].args.includes('@decaf-ts/paperclip-pixels-common@0.1.1'));
   assert.ok(calls[install].args.includes('--workspaces=false'));
   assert.ok(install < calls.findIndex(c => c.args[0] === 'version'));
 });

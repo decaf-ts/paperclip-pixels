@@ -1,5 +1,5 @@
 /**
- * paperclip-pixels-common
+ * @decaf-ts/paperclip-pixels-common
  *
  * Neutral wire contract package (board Revision 3 migration-plan step 1-2).
  * Schemas only: DTOs, Zod validation, operation ids, error codes,
